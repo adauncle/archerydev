@@ -78,7 +78,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROLLBACK_SH="${SCRIPT_DIR}/03_rollback.sh"
 
 REPO="${REPO:-https://github.com/adauncle/archerydev.git}"
-PYTHON_BIN="${PYTHON_BIN:-python3.11}"
+PYTHON_BIN="${PYTHON_BIN:-/usr/local/bin/python3.11}"
 VENV_DIR="${REPO_DIR}/venv"
 
 DEPLOY_LOG="${LOG_DIR}/deploy_${ENV}.log"
@@ -191,8 +191,8 @@ fi
 
 PREV_VERSION="unknown"
 if [ -d "${REPO_DIR}/.git" ]; then
-    PREV_VERSION="$(sudo -u "${ARCHERY_USER}" -H git -C "${REPO_DIR}" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
-    PREV_TAG="$(sudo -u "${ARCHERY_USER}" -H git -C "${REPO_DIR}" describe --tags --always 2>/dev/null || echo 'unknown')"
+    PREV_VERSION="$(cd "${REPO_DIR}" 2>/dev/null && sudo -u "${ARCHERY_USER}" -H git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+    PREV_TAG="$(cd "${REPO_DIR}" 2>/dev/null && sudo -u "${ARCHERY_USER}" -H git describe --tags --always 2>/dev/null || echo 'unknown')"
     log "==> 0. 当前版本: ${PREV_VERSION} (${PREV_TAG})，目标版本: ${VERSION}"
 else
     log "==> 0. 首次部署（仓库不存在），目标版本: ${VERSION}"
@@ -219,7 +219,7 @@ sudo -u "${ARCHERY_USER}" -H bash -c "
 " || die "git checkout ${VERSION} 失败"
 
 # 记录新版本
-NEW_VERSION="$(sudo -u "${ARCHERY_USER}" -H git -C "${REPO_DIR}" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+NEW_VERSION="$(cd "${REPO_DIR}" 2>/dev/null && sudo -u "${ARCHERY_USER}" -H git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 log "  ✓ 代码已切换到 ${NEW_VERSION}"
 
 # ============================================================================
@@ -235,6 +235,11 @@ sudo -u "${ARCHERY_USER}" -H bash -c "
         ${PYTHON_BIN} -m venv venv
     fi
     source venv/bin/activate
+    # CentOS 7 GCC 4.8 默认 C90 模式，不支持 C99 for-loop。
+    # pillow/greenlet/python-ldap/gssapi 等 C 扩展需要 -std=gnu99 才能编译。
+    export CFLAGS='-std=gnu99'
+    export CXXFLAGS='-std=gnu++11'
+    export PYTHON_CFLAGS='-std=gnu99'
     pip install --upgrade pip wheel setuptools
     pip install -r requirements.txt
 " || die "pip install 失败"
