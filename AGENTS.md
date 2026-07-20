@@ -43,9 +43,10 @@
 
 - Python 包用 `pip-tools` 锁版本，新加依赖要写进 `requirements.in` 并 `pip-compile`
 - 数据库迁移用 Django 标准 `makemigrations` + `migrate`
-- Celery 任务放对应 app 下的 `tasks.py`
+- **定时任务用 `django-q2`**（项目用 `django_q.tasks.schedule` + `django_q.models.Schedule`，**没有 Celery**）—— 写定时函数放 `tasks.py`，但不要 `from celery import shared_task`；要兼容 Celery 风格就 try/except 装饰器
 - API 视图用 DRF 的 `APIView` 或 `ViewSet`，不要混用 FBV
 - 测试用 `pytest-django`，关键业务逻辑必须有覆盖
+- `archery/settings.py` 用 `django-environ 14`，`env()` 第二个位置参数是 **cast 不是 default**——必须用关键字 `env("X", default=...)`，否则 `'bool' object is not callable` 启动崩溃（**真实踩坑：2026-07-20 钉钉 OA settings 段**）
 
 ## 常用命令
 
