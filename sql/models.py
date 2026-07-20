@@ -383,6 +383,20 @@ class SqlWorkflow(models.Model, WorkflowAuditMixin):
         blank=True,  # 允许为空字符串
     )
 
+    ## CUSTOM-MODIFIED: 钉钉 OA 二次开发 —— 锁定审批驱动，避免历史工单被后续 policy 变更影响 @ 2026-07-20 @ coder-agent
+    ## 关联 changelog: docs/changelogs/2026-07-20_coder-dingtalk-oa-driver-integration.md
+    audit_driver = models.CharField(
+        "审批驱动",
+        max_length=32, default="archery",
+        help_text="policy 命中时锁定（archery / dingtalk_oa），后续 policy 变更不影响历史工单",
+    )
+    ## CUSTOM-MODIFIED: 钉钉 OA 二次开发 —— 降级原因显示（钉钉 OA 失败时回退到本地）@ 2026-07-20 @ coder-agent
+    audit_fallback_reason = models.CharField(
+        "审批驱动降级原因",
+        max_length=255, blank=True, default="",
+        help_text="如：钉钉 OA 启动失败 / 对账失败降级",
+    )
+
     def __str__(self):
         return self.workflow_name
 

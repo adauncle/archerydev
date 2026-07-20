@@ -355,6 +355,42 @@ if ENABLE_DINGDING:
     AUTH_DINGDING_APP_KEY = env("AUTH_DINGDING_APP_KEY")
     AUTH_DINGDING_APP_SECRET = env("AUTH_DINGDING_APP_SECRET")
 
+# ===== 钉钉 OA 二次开发（内部定制，CUSTOM-MODIFIED 段） =====
+## CUSTOM-MODIFIED: 钉钉 OA 二次开发 —— env 注入 + 特性开关 + 注册 app + 切换 auditor @ 2026-07-20 @ coder-agent
+## 关联 changelog: docs/changelogs/2026-07-20_coder-dingtalk-oa-driver-integration.md
+## 默认 False；开启需配合 .env 配置 + admin 维护 ApprovalFlow/Policy + archery/urls.py include
+CUSTOM_DINGTALK_OA_ENABLED = env("CUSTOM_DINGTALK_OA_ENABLED", default=False)
+CUSTOM_DINGTALK_OA_AUDITOR = env(
+    "CUSTOM_DINGTALK_OA_AUDITOR",
+    default="sql.extensions.audit_drivers.configurable_auditor:ConfigurableAuditor",
+)
+CUSTOM_DINGTALK_OA_RETRY_TIMES = env("CUSTOM_DINGTALK_OA_RETRY_TIMES", default=3)
+CUSTOM_DINGTALK_OA_TIMEOUT_SECONDS = env("CUSTOM_DINGTALK_OA_TIMEOUT_SECONDS", default=10)
+CUSTOM_DINGTALK_OA_RECONCILE_INTERVAL_MIN = env(
+    "CUSTOM_DINGTALK_OA_RECONCILE_INTERVAL_MIN", default=5,
+)
+CUSTOM_DINGTALK_OA_RECONCILE_TIMEOUT_MIN = env(
+    "CUSTOM_DINGTALK_OA_RECONCILE_TIMEOUT_MIN", default=30,
+)
+CUSTOM_DINGTALK_OA_FALLBACK_ENABLED = env(
+    "CUSTOM_DINGTALK_OA_FALLBACK_ENABLED", default=True,
+)
+## 钉钉 OA 应用凭据（与 AUTH_DINGDING 登录应用**不同**）
+DINGTALK_OA_APP_KEY = env("DINGTALK_OA_APP_KEY", default="")
+DINGTALK_OA_APP_SECRET = env("DINGTALK_OA_APP_SECRET", default="")
+DINGTALK_OA_AGENT_ID = env("DINGTALK_OA_AGENT_ID", default="")
+## 钉钉 OA 回调加密
+DINGTALK_OA_CALLBACK_TOKEN = env("DINGTALK_OA_CALLBACK_TOKEN", default="")
+DINGTALK_OA_CALLBACK_AES_KEY = env("DINGTALK_OA_CALLBACK_AES_KEY", default="")
+DINGTALK_OA_CALLBACK_RECEIVEID = env("DINGTALK_OA_CALLBACK_RECEIVEID", default="")
+## DBA 群 webhook（fallback / 安全告警用）
+DINGTALK_NOTIFY_WEBHOOK = env("DINGTALK_NOTIFY_WEBHOOK", default="")
+
+if CUSTOM_DINGTALK_OA_ENABLED:
+    INSTALLED_APPS += ("sql.extensions.dingtalk_oa.apps.DingtalkOaConfig",)
+    ## CUSTOM-MODIFIED: 钉钉 OA 启用时切换 auditor 为 ConfigurableAuditor @ 2026-07-20 @ coder-agent
+    CURRENT_AUDITOR = CUSTOM_DINGTALK_OA_AUDITOR
+
 # LDAP
 ENABLE_LDAP = env("ENABLE_LDAP", False)
 if ENABLE_LDAP:
