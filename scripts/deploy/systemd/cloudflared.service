@@ -1,0 +1,100 @@
+## CUSTOM-NEW: Cloudflare Tunnel 守护进程（钉钉 OA 回调隧道）@ 2026-07-20 @ devops-agent
+##
+## 设计依据：docs/designs/2026-07-20_devops-cicd.md §5.6
+## 部署位置：服务器上 /etc/systemd/system/cloudflared.service
+##
+## 用途：
+##   钉钉 OA 平台要求回调 URL 必须 HTTPS，172.20.2.134 没有 SSL 证书且没有公网 443。
+##   cloudflared 主动建立 outbound 连接到 Cloudflare 边缘节点，
+##   钉钉 → Cloudflare 边缘（HTTPS，自动证书）→ Tunnel → 172.20.2.134:80
+##
+## 前置条件：
+##   1. cloudflared 已安装（由 01_init_server.sh 安装）
+##   2. Tunnel 已创建：cloudflared tunnel create archery-oa
+##   3. 凭据已放到：/etc/cloudflared/<TUNNEL_ID>.json
+##   4. DNS 路由已配置：cloudflared tunnel route dns archery-oa archery-oa.your-domain.com
+##   5. /etc/cloudflared/config.yml 已就位（见 scripts/deploy/cloudflared/README.md）
+##
+## 启用方式（运维手工或由 CI/CD 推送）：
+##   sudo cp scripts/deploy/systemd/cloudflared.service /etc/systemd/system/
+##   sudo systemctl daemon-reload
+##   sudo systemctl enable --now cloudflared.service
+##   systemctl status cloudflared.service
+##   journalctl -u cloudflared.service -f
+##
+## Type=notify 说明：
+##   cloudflared 支持 sd_notify 协议，会在 tunnel 握手完成后通知 systemd "READY=1"。
+##   这让 systemd 能正确判断"启动成功" vs "启动失败但进程没退出"。
+##   如果使用 Type=simple，systemd 会立即认为"启动成功"，掩盖配置错误。
+
+[Unit]
+Description=Cloudflare Tunnel for Archery DingTalk OA Callback
+Documentation=https://github.com/adauncle/archerydev
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=notify
+
+# User=root 是必要的：
+#   1. cloudflared 绑定到特权端口或原始套接字时需要 root
+#   2. 默认 credential 路径在 /root/.cloudflared/
+#   3. systemd Type=notify 需要能 watch 主进程
+# 如使用 /etc/cloudflared/config.yml + credentials-file 显式指定路径，
+# 可以改为 User=cloudflared 配合 chown，但 root 模式配置最简单、最不容易出错。
+User=root
+
+# 主进程：跑名为 "archery-oa" 的 tunnel
+# tunnel 名字必须与 "cloudflared tunnel create" 时指定的一致
+ExecStart=/usr/local/bin/cloudflared tunnel run archery-oa
+
+# 进程管理
+Restart=always
+RestartSec=5
+# 给 cloudflared 一点时间优雅退出（Cloudflare 边缘可能需要重连窗口）
+TimeoutStopSec=15
+KillMode=mixed
+KillSignal=SIGTERM
+
+# 环境变量（如需覆盖默认配置路径或日志级别）
+# Environment=CLOUDFLARED_CONFIG=/etc/cloudflared/config.yml
+# Environment=CLOUDFLARED_LOG_LEVEL=info
+
+# 安全加固
+#   - NoNewPrivileges: 禁止提权
+#   - ProtectSystem=strict: /usr /etc /boot 只读，只有白名单目录可写
+#   - ProtectHome=false: 保留访问 /root（默认 credential 在这；也可用 ReadWritePaths 显式开 /etc/cloudflared）
+#   - PrivateTmp=true: 隔离 /tmp
+#   - ReadWritePaths: 显式允许 /etc/cloudflared（cert/credentials 目录）
+#   - ProtectKernelTunables / ProtectKernelModules: 防止 cloudflared 改内核参数
+#   - RestrictAddressFamilies: 限制 socket family，避免意外 IPv6/Unix socket
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=false
+PrivateTmp=true
+ReadWritePaths=/etc/cloudflared /var/log/cloudflared
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+# 资源
+LimitNOFILE=65536
+# cloudflared 本身很轻量（~30MB 内存），但留点余地
+MemoryMax=256M
+TasksMax=512
+
+# 输出到 journald（journalctl -u cloudflared.service -f 查看）
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflared
+
+[Install]
+WantedBy=multi-user.target
