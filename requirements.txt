@@ -1,47 +1,106 @@
 # Archery 二次开发项目依赖
-# 上游核心依赖见 requirements.in / requirements.txt（合入上游代码后生成）
+#
+# 合并说明：
+#   1) 上游 hhyo/Archery 依赖（Archery v1.14.0 必需，不可改版本）
+#   2) 内部定制与开发/测试增强（来自二次开发项目）
+#
+# 管理方式：建议改 requirements.in 后用 pip-compile 生成锁定版
+#   pip install pip-tools
+#   pip-compile requirements.in
 
-# ====== Web framework ======
-Django>=4.2,<5.0
-djangorestframework>=3.14
-django-cors-headers>=4.3
+# ============================================================
+# 1) 上游 Archery 必需依赖
+# ============================================================
+Django>=4.2
+mysqlclient==2.*
+requests==2.31.0
+simplejson==3.17.2
+mybatis_mapper2sql==0.1.9
+django-auth-ldap==4.1.0
+python-dateutil>=2.8.2
+pymongo==4.6.3
+psycopg2-binary==2.*
+pymysql==0.9.3
+mysql-replication==0.22
+django-q2==1.9.0
+django-redis==5.2.0
+redis==3.5.3
+redis-py-cluster==2.1.3
+pyodbc==5.*
+gunicorn==22.0.0
+pyecharts==2.0.4
+aliyun-python-sdk-rds==2.1.1
+oracledb==4.0.1
+supervisor==4.1.0
+phoenixdb==1.2.1
+django-mirage-field==1.4.0
+schema-sync==0.9.7
+parsedatetime==2.4
+sshtunnel==0.1.5
+pycryptodome==3.19.1
+pyodps==0.*
+numpy==2.*
+pandas==3.*
+clickhouse-driver==0.*
+djangorestframework>=3.14.0
+djangorestframework-simplejwt==5.5.1
+django-filter>=22.1
+drf-spectacular==0.29.0
+pyotp==2.6.0
+pillow>=12.2.0
+qrcode==7.3.1
+django-environ==0.13.0
+alibabacloud_dysmsapi20170525==2.0.9
+tencentcloud-sdk-python==3.0.656
+mozilla-django-oidc==3.0.0
+django-auth-dingding==0.0.3
+django-cas-ng==4.3.0
+cassandra-driver
+httpx
+OpenAI
+elasticsearch==8.14.0
+opensearch_py==2.6.0
+django_storages==1.14.6
+boto3
+azure_storage_blob==12.26.0
+openpyxl==3.1.5
+parameterized
+pymemcache==4.0.0
+taos-ws-py==0.6.9
 
-# ====== Database ======
-mysqlclient>=2.2.0
-PyMySQL>=1.1.0
+# ============================================================
+# 2) 内部定制与开发增强
+# ============================================================
 
-# ====== Cache & Queue ======
-redis>=5.0
-celery>=5.3
-django-redis>=5.4
+# 配置 & 工具
+python-dotenv>=1.0           # .env 加载
+whitenoise>=6.5              # 静态文件服务（开发/轻量部署）
+django-cors-headers>=4.3     # CORS（如有独立前端）
+cryptography>=41.0           # 加密（JWT/LDAP/SSO 需要）
 
-# ====== SQL 解析与处理 ======
+# SQL 解析与处理（与上游并存，定制用）
 sqlparse>=0.4.4
 sqlalchemy>=2.0
-pymysql-replication>=0.45
+pymysql-replication>=0.45    # binlog 解析（与 mysql-replication 并存）
 
-# ====== 认证 & 安全 ======
+# 通知 & 集成（如需飞书/钉钉/企微 Webhook 之外的 SDK）
 PyJWT>=2.8
-cryptography>=41.0
-python-ldap>=3.4.0; sys_platform != "win32"
+requests-toolbelt>=1.0
 
-# ====== 通知 & 集成 ======
-requests>=2.31
-dingtalk-sdk>=2.0
-# wechatpy>=1.8
+# 内部 SSO/账号对接占位
+# - 待对接具体服务时再加，比如：
+#   python-cas>=2.0
+#   pysaml2>=7.5
 
-# ====== 工具 ======
-python-dotenv>=1.0
-gunicorn>=21.2
-whitenoise>=6.5
-
-# ====== 测试 ======
+# ============================================================
+# 3) 开发与测试
+# ============================================================
 pytest>=7.4
 pytest-django>=4.7
 pytest-cov>=4.1
 factory-boy>=3.3
 responses>=0.24
-
-# ====== 二次开发定制依赖（内部）======
-# 如内部使用的二方库，放这里
-# -e ../internal-libs/audit-sdk
+freezegun>=1.4
+flake8>=6.1
+black>=23.12
+isort>=5.13

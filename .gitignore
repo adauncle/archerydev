@@ -1,44 +1,55 @@
-# ========== Python / Django ==========
+# ========== 合并自上游 Archery .gitignore ==========
+*.pyc
+*.swp
+*.lock
+*.log
+.idea/
+.DS_Store
+Thumbs.db
+*.tmp
+.archery/settings.py.github
+.archery/settings.py.dev
+archery/settings_dev.py
+sql/migrations/
+venv
+env
+.venv/
 __pycache__/
-*.py[cod]
+dist/
+*.egg-info/
+sonar-project.properties
+.scannerwork
+.env
+local_settings.py
+src/docker-compose-dev
+.coverage
+coverage.xml
+archery_custom
+static/
+nohup.out
+
+# ========== Python / Django ==========
 *$py.class
 *.so
 .Python
-venv/
-env/
 ENV/
-.venv/
-.env
-.env.local
-.env.*.local
-*.egg-info/
-dist/
-build/
 .eggs/
-
-# Django
-*.log
-local_settings.py
 db.sqlite3
 db.sqlite3-journal
 media/
 staticfiles/
-.coverage
-htmlcov/
-.pytest_cache/
 .tox/
 .cache/
-coverage.xml
-*.cover
-.hypothesis/
+.pytest_cache/
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-.DS_Store
-Thumbs.db
+# Django media/static（不要提交到 git）
+media/
+static/
+!media/.gitkeep
+!static/.gitkeep
 
 # ========== Node / Frontend ==========
 node_modules/
@@ -46,10 +57,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-.pnpm-store/
 .parcel-cache/
 .vite/
 .next/
@@ -64,16 +71,23 @@ pnpm-lock.yaml
 data/
 mysql_data/
 redis_data/
+downloads/
 
 # ========== Docker ==========
 .docker/
 docker-compose.override.yml
+
+# ========== IDE ==========
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 
 # ========== Logs & runtime ==========
 logs/
 *.log.*
 celerybeat-schedule
 celerybeat.pid
+nohup.out
 
 # ========== Secrets ==========
 *.pem
