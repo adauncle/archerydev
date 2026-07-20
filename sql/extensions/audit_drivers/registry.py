@@ -17,8 +17,9 @@ from .base import AuditDriver
 # driver 名称 -> "module.path:ClassName" 形式的可定位符
 DRIVER_REGISTRY: Dict[str, str] = {
     "archery": "sql.extensions.audit_drivers.archery:ArcheryDriver",
-    # 钉钉 OA driver 在第二阶段接入（DingtalkOaDriver 落地）后开放：
-    # "dingtalk_oa": "sql.extensions.dingtalk_oa.drivers.dingtalk:DingtalkOaDriver",
+    ## CUSTOM-MODIFIED: 注册钉钉 OA driver（v0.7 §6.2） @ 2026-07-20 @ coder-agent
+    ## 关联 changelog: docs/changelogs/2026-07-20_coder-dingtalk-oa-driver-integration.md
+    "dingtalk_oa": "sql.extensions.dingtalk_oa.drivers.dingtalk:DingtalkOaDriver",
 }
 
 
