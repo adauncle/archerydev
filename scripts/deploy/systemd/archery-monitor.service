@@ -1,0 +1,45 @@
+## CUSTOM-NEW: 健康检查执行单元（由 archery-monitor.timer 触发）@ 2026-07-20 @ devops-agent
+##
+## 设计依据：docs/designs/2026-07-20_devops-cicd.md §7.2
+## 部署位置：服务器上 /etc/systemd/system/archery-monitor.service
+## 工作目录：脚本假设部署在 /opt/archery/scripts/monitor/check_health.sh
+##         如路径不同，请修改 ExecStart
+##
+## Type=oneshot 表示：执行完脚本就退出（不守护），适合定时任务
+
+[Unit]
+Description=Archery health check (curl /healthz + DingTalk alert on failure)
+Documentation=https://github.com/adauncle/archerydev
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+# 脚本路径：如部署在 /opt/archery/scripts/monitor/，路径为 /opt/archery/scripts/monitor/check_health.sh
+ExecStart=/opt/archery/scripts/monitor/check_health.sh
+
+# 失败不自动重启（oneshot 默认就是 no）
+Restart=no
+
+# 环境变量（可在 systemd 启动时覆盖默认值；详见 check_health.sh 注释）
+Environment=HEALTH_URL=http://172.20.2.134:9003/healthz
+Environment=CURL_TIMEOUT=10
+Environment=ALERT_COOLDOWN=300
+# 调试时打开：Environment=DIAG_OUTPUT=true
+
+# 安全加固（最小权限）
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/archery /var/tmp/archery-monitor
+
+# 资源限制
+LimitNOFILE=1024
+MemoryMax=128M
+CPUQuota=10%
+
+# 输出到 journald（可用 journalctl -u archery-monitor.service 查看）
+StandardOutput=journal
+StandardError=journal

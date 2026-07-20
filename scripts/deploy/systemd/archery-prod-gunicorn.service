@@ -1,0 +1,55 @@
+## CUSTOM-NEW: Archery 生产环境 gunicorn 单元（演示用）@ 2026-07-20 @ devops-agent
+##
+## 设计依据：docs/designs/2026-07-20_devops-cicd.md §5.2
+## 部署位置：服务器上 /etc/systemd/system/archery-prod-gunicorn.service
+##
+## 启用方式（运维手工执行或由 CI/CD 推送）：
+##   sudo cp scripts/deploy/systemd/archery-prod-gunicorn.service /etc/systemd/system/
+##   sudo systemctl daemon-reload
+##   sudo systemctl enable --now archery-prod-gunicorn.service
+##   systemctl status archery-prod-gunicorn.service
+##
+## 对应 staging/dev 环境的 service 文件可由本文件派生（替换路径、端口、worker 数）
+
+[Unit]
+Description=Archery Production Gunicorn (port 9003, 4 workers)
+Documentation=https://github.com/adauncle/archerydev
+After=network.target mysql.service redis-server.service
+Requires=redis-server.service
+# 启动失败时不触发整体的 emergency.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=archery
+Group=archery
+WorkingDirectory=/opt/archery/prod
+EnvironmentFile=/opt/archery/prod/.env
+
+ExecStart=/opt/archery/prod/venv/bin/gunicorn archery.wsgi:application \
+    -w 4 \
+    -b 127.0.0.1:9003 \
+    --access-logfile - \
+    --error-logfile - \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --keep-alive 5
+
+# 进程管理
+Restart=always
+RestartSec=5
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/archery /var/log/archery
+
+# 资源限制
+LimitNOFILE=65536
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target

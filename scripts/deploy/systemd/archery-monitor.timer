@@ -1,0 +1,28 @@
+## CUSTOM-NEW: 健康检查 timer（每 5 分钟触发 archery-monitor.service）@ 2026-07-20 @ devops-agent
+##
+## 设计依据：docs/designs/2026-07-20_devops-cicd.md §7.2
+## 部署位置：服务器上 /etc/systemd/system/archery-monitor.timer
+## 启用方式（运维手工执行或由 CI/CD 推送）：
+##   sudo cp scripts/deploy/systemd/archery-monitor.{timer,service} /etc/systemd/system/
+##   sudo systemctl daemon-reload
+##   sudo systemctl enable --now archery-monitor.timer
+##   systemctl list-timers archery-monitor.timer
+##
+## 注意：OnCalendar=*:0/5 表示每 5 分钟的整点（如 00:00, 00:05, 00:10, ...）
+##       Persistent=true 表示：即使系统关机错过触发，开机后会补跑一次
+
+[Unit]
+Description=Archery health check timer (every 5 minutes)
+Documentation=https://github.com/adauncle/archerydev
+Requires=archery-monitor.service
+
+[Timer]
+# 每 5 分钟（00, 05, 10, 15, ... 50 分）的整点触发
+OnCalendar=*:0/5
+# 错过的时间点开机后补跑（避免长时间关机导致首次告警延迟）
+Persistent=true
+# 触发后立即激活 service（不需要等下一个 timer tick）
+Unit=archery-monitor.service
+
+[Install]
+WantedBy=timers.target
