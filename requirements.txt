@@ -81,7 +81,6 @@ cryptography>=41.0           # 加密（JWT/LDAP/SSO 需要）
 # SQL 解析与处理（与上游并存，定制用）
 sqlparse>=0.4.4
 sqlalchemy>=2.0
-pymysql-replication>=0.4.5   # binlog 解析（与 mysql-replication 并存）
 
 # 通知 & 集成（如需飞书/钉钉/企微 Webhook 之外的 SDK）
 PyJWT>=2.8
