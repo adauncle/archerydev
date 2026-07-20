@@ -1,9 +1,10 @@
 # Archery 二次开发 —— DevOps / CI/CD / 部署设计
 
-> **状态**：v0.8（设计中，6 个核心决策已拍板，待最后评审）
+> **状态**：v0.9（设计中，10 个核心决策已拍板，钉钉回调走 Cloudflare Tunnel）
 > **日期**：2026-07-20
 > **作者**：Mavis（辅助生成）+ 项目 owner
 > **配套文档**：[`2026-07-20_dingtalk-oa-workflow.md`](./2026-07-20_dingtalk-oa-workflow.md)
+> **GitHub Repo**：`https://github.com/adauncle/archerydev.git`
 
 ---
 
@@ -60,29 +61,37 @@
 
 ---
 
-## 2. 关键决策汇总（已拍板）
+## 2. 关键决策汇总（全部已拍板 ✅）
 
 | # | 决策项 | 选择 | 说明 |
 |---|--------|------|------|
-| 1 | CI/CD 工具 | **A. GitHub Actions** | 已有 `.github/workflows/`；免费额度够 |
-| 2 | 部署触发方式 | **A. push main 自动部署；tag 触发生产** | main → 自动部署；`v*` tag → 人工审批后生产 |
-| 3 | 环境定位 | **A. dev/staging/prod 一体** | 172.20.2.134 同时承担多角色，用 systemd 实例/端口区分 |
-| 4 | 服务架构 | **B. 单机裸机 + 多 worker** | 4 worker gunicorn + supervisor + nginx |
-| 5 | Redis 部署 | **A. apt 装 redis-server** | 简单稳定 |
-| 6 | 数据库初始化 | **A. 远程 172.20.2.134 MySQL 跑 migrate** | 用 `dbops` 账号 |
+| 1 | CI/CD 工具 | **A. GitHub Actions** | Repo: `https://github.com/adauncle/archerydev.git` |
+| 2 | 部署触发方式 | **A. push main 自动部署；tag 触发生产** | main → staging；`v*` tag → 人工审批后生产 |
+| 3 | 环境定位 | **A. dev/staging/prod 一体** | 172.20.2.134 同时承担多角色，systemd 多实例 + 端口区分 |
+| 4 | 主服务 SSL | **❌ 不要 SSL** | Archery 主服务走 HTTP |
+| 5 | 域名 | **❌ 不用域名，用 IP** | `http://172.20.2.134` 直连 |
+| 6 | 钉钉回调 SSL | **✅ Cloudflare Tunnel** | 钉钉回调必须 HTTPS，走 Cloudflare Tunnel 转发 |
+| 7 | 钉钉通知 Webhook | **✅ 复用现有 DBA 群 webhook** | |
+| 8 | 备份保留期 | **30 天** | |
+| 9 | Redis 密码策略 | **✅ 自动生成** | 启动脚本生成 24 字节随机密码，存 .env |
+| 10 | 服务管理 | **B. systemd** | 不是 supervisor |
+| 11 | 第一次部署初始化 | **✅ 跑 migrate + seed** | |
+| 12 | GitHub Environments reviewer | **✅ 项目 owner** | 即你自己 |
 
-### 2.1 关于"dev/staging/prod 一体"的风险与对策
+### 2.1 钉钉回调必须 HTTPS 的解决方案
 
-⚠️ **风险**：所有环境在同一台机器上，可能造成：
-- 测试流量影响生产
-- 配置混乱（一个进程在 prod，另一个在 staging）
-- 回滚困难
+**问题**：钉钉平台硬要求回调 URL 必须 HTTPS，HTTP 会被拒绝。
 
-✅ **对策**（在本文档中实现）：
-- 用 **systemd 多实例** 区分（不同端口 + 不同代码目录）
-- 用 **GitHub Environments**（GitHub Actions）区分审批流
-- 用 **database_alias** 区分数据库（archery_dev / archery_staging / archery_prod）
-- 用 **tag** 严格控制 prod 部署版本
+**方案 1（已采纳）**：Cloudflare Tunnel
+
+- 钉钉后台配置回调 URL：`https://archery-oa.your-domain.com/dingtalk/oa/callback`
+- Cloudflare Tunnel 在 172.20.2.134 上跑 `cloudflared` 客户端
+- 钉钉 → Cloudflare 边缘（自动 HTTPS）→ Tunnel → 172.20.2.134:80/dingtalk/oa/callback
+- **不需要本地 SSL 证书**（Cloudflare 帮签）
+- **不需要公网 IP**（Cloudflare 主动建立 outbound 连接）
+- **不影响主服务**（Archery 主服务仍走 HTTP）
+
+详见 §5.6 钉钉回调 Cloudflare Tunnel 配置。
 
 ---
 
@@ -93,6 +102,7 @@
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                GitHub (仓库托管)                          │
+│   Repo: https://github.com/adauncle/archerydev.git       │
 │   main / develop 分支 / v* tags                          │
 │   PR 评审 / GitHub Environments 审批                     │
 └────────────────────┬─────────────────────────────────────┘
@@ -102,9 +112,7 @@
 │                GitHub Actions Runner                      │
 │   ┌──────────────────────────────────────────┐          │
 │   │ CI 阶段：                                 │          │
-│   │   - lint (flake8 / black / isort)        │          │
-│   │   - test (pytest)                         │          │
-│   │   - build (sdist/wheel)                   │          │
+│   │   - lint / test / build                  │          │
 │   └──────────────────────────────────────────┘          │
 │   ┌──────────────────────────────────────────┐          │
 │   │ CD 阶段（需人工审批）：                   │          │
@@ -113,48 +121,72 @@
 │   │   - 重启服务 / 健康检查                   │          │
 │   └──────────────────────────────────────────┘          │
 └────────────────────┬─────────────────────────────────────┘
-                     │ SSH (密钥对认证)
+                     │ SSH (ed25519 密钥对认证)
                      ▼
 ┌──────────────────────────────────────────────────────────┐
-│         生产服务器 172.20.2.134                           │
+│         服务器 172.20.2.134（HTTP，无 SSL）              │
 │                                                          │
 │  ┌────────────────────────────────────────────────┐     │
-│  │  nginx (80/443)                                │     │
+│  │  nginx (80)                                    │     │
 │  │   ├── /              → archery-prod (9003)    │     │
 │  │   ├── /staging      → archery-staging (9002)  │     │
-│  │   └── /dev          → archery-dev (9001)      │     │
+│  │   ├── /dev          → archery-dev (9001)      │     │
+│  │   └── /dingtalk/oa/callback                   │     │
+│  │         (走 Cloudflare Tunnel，不直接暴露)      │     │
 │  └────────────────────────────────────────────────┘     │
 │                                                          │
 │  ┌────────────────────────────────────────────────┐     │
-│  │  supervisor / systemd                          │     │
-│  │   ├── archery-prod-gunicorn (4 workers)       │     │
-│  │   ├── archery-prod-celery-worker              │     │
-│  │   ├── archery-prod-celery-beat                │     │
-│  │   ├── archery-staging-gunicorn (2 workers)    │     │
-│  │   ├── archery-dev-gunicorn (1 worker)         │     │
+│  │  systemd                                       │     │
+│  │   ├── archery-prod-gunicorn.service (4 workers)│    │
+│  │   ├── archery-prod-celery-worker.service       │    │
+│  │   ├── archery-prod-celery-beat.service         │    │
+│  │   ├── archery-staging-gunicorn.service         │    │
+│  │   ├── archery-dev-gunicorn.service             │    │
+│  │   ├── cloudflared.service (钉钉回调隧道)       │    │
+│  │   └── archery-monitor.timer (健康检查)         │    │
 │  └────────────────────────────────────────────────┘     │
 │                                                          │
 │  ┌────────────────────────────────────────────────┐     │
 │  │  Redis (apt 安装)                              │     │
-│  │   port 6379, bind 127.0.0.1                    │     │
+│  │   port 6379, bind 127.0.0.1, 密码保护           │     │
 │  └────────────────────────────────────────────────┘     │
 │                                                          │
 │  ┌────────────────────────────────────────────────┐     │
 │  │  Python 3.11 virtualenv                        │     │
 │  │   /opt/archery/{prod,staging,dev}/             │     │
 │  └────────────────────────────────────────────────┘     │
-│                                                          │
-│  ┌────────────────────────────────────────────────┐     │
-│  │  MySQL（外部）                                 │     │
-│  │   archery_prod / archery_staging / archery_dev │     │
-│  └────────────────────────────────────────────────┘     │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│         Cloudflare 边缘节点（公网）                       │
+│   - 钉钉回调 https://archery-oa.your-domain.com/...     │
+│   - 自动 HTTPS（Cloudflare 证书）                        │
+│   - 转发到 Tunnel ID（出口连接）                        │
+└────────────────────┬─────────────────────────────────────┘
+                     │ outbound tunnel
+                     ▼
+                172.20.2.134:cloudflared
+                     │
+                     ▼
+                nginx → /dingtalk/oa/callback
+
+┌──────────────────────────────────────────────────────────┐
+│         钉钉 OA 平台                                      │
+│   - 审批人收到钉钉通知                                    │
+│   - 在钉钉 App 审批                                      │
+│   - 回调 Cloudflare 边缘 URL                              │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│         MySQL（外部，172.20.2.134:3306）                  │
+│   archery_prod / archery_staging / archery_dev            │
 └──────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 服务架构（多 worker gunicorn）
+### 3.2 服务架构（systemd + 多 worker gunicorn）
 
 ```
-nginx (反向代理 + 静态文件 + IP 白名单)
+nginx (HTTP 反向代理 + 静态文件 + 钉钉回调)
    ↓
 gunicorn (4 workers) ───┐
                         ├── Django app (archery.wsgi)
@@ -176,7 +208,6 @@ GitHub Actions 触发
    ├── [CI 阶段] 无需审批
    │   ├── Lint 检查（flake8/black）
    │   ├── 单元测试（pytest + 覆盖率）
-   │   ├── 集成测试（docker-compose up + 跑测试）
    │   └── 失败 → 通知开发者，终止
    │
    └── [CD 阶段] 需要环境审批
@@ -200,8 +231,8 @@ GitHub Actions 触发
            │       ├── pip install -r requirements.txt
            │       ├── python manage.py migrate
            │       ├── python manage.py collectstatic
-           │       ├── supervisorctl restart
-           │       ├── 健康检查（curl /healthz）
+           │       ├── systemctl restart
+           │       ├── 健康检查（curl http://172.20.2.134:9003/healthz）
            │       └── 通知钉钉群（部署结果）
 ```
 
@@ -224,6 +255,7 @@ set -euo pipefail
 ARCHERY_USER="archery"
 ARCHERY_HOME="/opt/archery"
 PYTHON_VERSION="3.11"
+SERVER_IP="172.20.2.134"
 
 echo "==> 1. 系统包更新"
 apt update && apt upgrade -y
@@ -235,18 +267,35 @@ apt install -y \
     python${PYTHON_VERSION} python3-pip python3-venv python3-dev \
     default-libmysqlclient-dev pkg-config default-mysql-client \
     redis-server \
-    nginx supervisor \
+    nginx \
     ufw fail2ban \
-    cron logrotate \
-    certbot python3-certbot-nginx
+    cron logrotate
 
 echo "==> 3. Redis 配置"
-# 仅监听本地，禁止外网访问
-sed -i 's/^bind .*/bind 127.0.0.1/' /etc/redis/redis.conf
-sed -i 's/^protected-mode no/protected-mode yes/' /etc/redis/redis.conf
-echo "requirepass $(openssl rand -hex 24)" >> /etc/redis/redis.conf
+# 自动生成 24 字节密码
+REDIS_PASSWORD=$(openssl rand -hex 24)
+echo "  生成 Redis 密码，存到 /etc/archery/redis_password"
+mkdir -p /etc/archery
+echo "${REDIS_PASSWORD}" > /etc/archery/redis_password
+chmod 600 /etc/archery/redis_password
+
+# 配置 Redis
+cat > /etc/redis/redis.conf.patch <<EOF
+bind 127.0.0.1
+protected-mode yes
+requirepass ${REDIS_PASSWORD}
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+EOF
+cp /etc/redis/redis.conf /etc/redis/redis.conf.bak
+cat /etc/redis/redis.conf.bak /etc/redis/redis.conf.patch > /etc/redis/redis.conf
+rm /etc/redis/redis.conf.patch
 systemctl enable redis-server
 systemctl restart redis-server
+
+# 验证
+echo "  验证 Redis 密码..."
+redis-cli -a "${REDIS_PASSWORD}" ping 2>&1 | grep -q PONG && echo "  ✓ Redis 密码生效" || (echo "  ✗ Redis 密码失败" && exit 1)
 
 echo "==> 4. 防火墙（UFW）"
 ufw --force reset
@@ -254,13 +303,13 @@ ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp comment "SSH"
 ufw allow 80/tcp comment "HTTP"
-ufw allow 443/tcp comment "HTTPS"
-# 钉钉回调服务器固定 IP（白名单，详见 v0.7 §10.5.5）
-ufw allow from 101.37.79.0/24 to any port 80 comment "DingTalk Hangzhou"
-ufw allow from 140.205.94.0/24 to any port 80 comment "DingTalk Shanghai"
+# 钉钉回调走 Cloudflare Tunnel，不需要开放公网
+# Cloudflare 边缘 IP 段（2024 年，参考 Cloudflare 官方维护）
+# ufw allow from <cloudflare-ip> to any port 80 comment "Cloudflare Tunnel"
+# 实际配置中通过 cloudflared 主动建立 outbound 连接，不需要开放入站
 ufw --force enable
 
-echo "==> 5. 创建 archery 用户（无登录 shell）"
+echo "==> 5. 创建 archery 用户"
 if ! id "${ARCHERY_USER}" >/dev/null 2>&1; then
     useradd -r -m -d "${ARCHERY_HOME}" -s /usr/sbin/nologin "${ARCHERY_USER}"
 fi
@@ -269,17 +318,26 @@ echo "==> 6. 目录结构"
 mkdir -p ${ARCHERY_HOME}/{prod,staging,dev}
 mkdir -p ${ARCHERY_HOME}/shared/{logs,media,static,backups,run}
 mkdir -p /var/log/archery
+mkdir -p /etc/archery
 chown -R ${ARCHERY_USER}:${ARCHERY_USER} ${ARCHERY_HOME}
 chown -R ${ARCHERY_USER}:${ARCHERY_USER} /var/log/archery
+chown -R ${ARCHERY_USER}:${ARCHERY_USER} /etc/archery
+chmod 700 /etc/archery
 
-echo "==> 7. SSH 密钥（供 GitHub Actions 使用）"
+echo "==> 7. SSH 密钥对（供 GitHub Actions 部署用）"
 mkdir -p /home/${ARCHERY_USER}/.ssh
-# 这里需要 CI/CD 的公钥（手动粘贴或参数化）
-# ssh-keygen -t ed25519 -C "github-actions-deploy" -f /home/${ARCHERY_USER}/.ssh/github_actions
-# cat /home/${ARCHERY_USER}/.ssh/github_actions.pub >> /home/${ARCHERY_USER}/.ssh/authorized_keys
-chmod 700 /home/${ARCHERY_USER}/.ssh
-chmod 600 /home/${ARCHERY_USER}/.ssh/authorized_keys
-chown -R ${ARCHERY_USER}:${ARCHERY_USER} /home/${ARCHERY_USER}/.ssh
+# 私钥从环境变量或参数传入，示例：
+#   SSH_PUBLIC_KEY="$(cat ~/.ssh/archery_deploy.pub)" ./01_init_server.sh
+if [ -n "${SSH_PUBLIC_KEY:-}" ]; then
+    echo "${SSH_PUBLIC_KEY}" >> /home/${ARCHERY_USER}/.ssh/authorized_keys
+    chmod 700 /home/${ARCHERY_USER}/.ssh
+    chmod 600 /home/${ARCHERY_USER}/.ssh/authorized_keys
+    chown -R ${ARCHERY_USER}:${ARCHERY_USER} /home/${ARCHERY_USER}/.ssh
+    echo "  ✓ SSH 公钥已写入"
+else
+    echo "  ⚠ SSH_PUBLIC_KEY 未提供，跳过。请手动："
+    echo "     ssh-copy-id -i ~/.ssh/archery_deploy.pub archery@${SERVER_IP}"
+fi
 
 echo "==> 8. logrotate"
 cat > /etc/logrotate.d/archery <<'EOF'
@@ -293,16 +351,42 @@ cat > /etc/logrotate.d/archery <<'EOF'
     create 0644 archery archery
     sharedscripts
     postrotate
-        supervisorctl restart archery-prod-gunicorn > /dev/null 2>&1 || true
+        systemctl reload-or-restart archery-prod-gunicorn > /dev/null 2>&1 || true
     endscript
 }
 EOF
 
+echo "==> 9. MySQL 客户端验证（不创建库，由 CI/CD 跑 migrate）"
+echo "  请确认 dbops 账号能登录："
+echo "  mysql -h ${SERVER_IP} -P 3306 -u dbops -p"
+
+echo "==> 10. cloudflared 安装（钉钉回调隧道用）"
+ARCH=$(uname -m)
+case "${ARCH}" in
+    x86_64) DEB_ARCH="amd64" ;;
+    aarch64) DEB_ARCH="arm64" ;;
+    *) echo "不支持的架构: ${ARCH}"; exit 1 ;;
+esac
+curl -L "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${DEB_ARCH}.deb" -o /tmp/cloudflared.deb
+dpkg -i /tmp/cloudflared.deb
+rm /tmp/cloudflared.deb
+cloudflared --version
+
+echo "==> 11. 备份 GPG 密钥（用于加密 MySQL dump）"
+GPG_PASSPHRASE=$(openssl rand -hex 32)
+echo "${GPG_PASSPHRASE}" > /etc/archery/backup_passphrase
+chmod 600 /etc/archery/backup_passphrase
+echo "  备份密钥已存 /etc/archery/backup_passphrase（root only）"
+echo "  ⚠ 务必备份这个文件到密码管理器，丢失将无法解密备份"
+
 echo "==> 初始化完成"
+echo ""
 echo "下一步："
-echo "  1. 手动配置 SSH 公钥"
-echo "  2. 创建 .env 文件（从 .env.example 复制）"
-echo "  3. 拉取代码到 ${ARCHERY_HOME}/prod"
+echo "  1. 在 GitHub Repo Settings > Secrets 添加 SSH_PRIVATE_KEY / DINGTALK_NOTIFY_WEBHOOK"
+echo "  2. 手动验证 SSH：ssh archery@${SERVER_IP}"
+echo "  3. 配置 Cloudflare Tunnel（详见 §5.6）"
+echo "  4. 创建 .env 文件（从 .env.example 复制并填入）"
+echo "  5. 第一次部署由 CI/CD 自动完成"
 ```
 
 ### 4.2 SSH 密钥对（CI/CD 部署用）
@@ -311,9 +395,9 @@ echo "  3. 拉取代码到 ${ARCHERY_HOME}/prod"
 # 在本地（开发机）生成密钥对
 ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/archery_deploy_key
 
-# 公钥贴到 172.20.2.134 的 archery 用户 authorized_keys
-cat ~/.ssh/archery_deploy_key.pub | ssh root@172.20.2.134 \
-    "tee -a /home/archery/.ssh/authorized_keys"
+# 公钥传到服务器（运行时作为环境变量）
+export SSH_PUBLIC_KEY="$(cat ~/.ssh/archery_deploy_key.pub)"
+ssh root@172.20.2.134 "SSH_PUBLIC_KEY='${SSH_PUBLIC_KEY}' bash -s" < scripts/deploy/01_init_server.sh
 
 # 私钥存到 GitHub Repo Settings > Secrets > SSH_PRIVATE_KEY
 cat ~/.ssh/archery_deploy_key | pbcopy
@@ -330,7 +414,7 @@ cat ~/.ssh/archery_deploy_key | pbcopy
 
 ```bash
 #!/usr/bin/env bash
-# 通用部署脚本
+# 通用部署脚本（systemd 版本）
 # 用法：./02_deploy.sh <env> <version>
 #   env: dev | staging | prod
 #   version: git commit hash / tag / branch
@@ -339,6 +423,7 @@ set -euo pipefail
 
 ENV="${1:?Usage: $0 <env> <version>}"
 VERSION="${2:?Usage: $0 <env> <version>}"
+REPO="https://github.com/adauncle/archerydev.git"
 
 case "${ENV}" in
     dev)     PORT=9001; DB="archery_dev";     WORKERS=1; REPO_DIR="/opt/archery/dev"     ;;
@@ -351,19 +436,19 @@ ARCHERY_USER="archery"
 SHARED_DIR="/opt/archery/shared"
 LOG_DIR="/var/log/archery"
 
-echo "==> 部署 [${ENV}] 版本 [${VERSION}]"
+echo "==> 部署 [${ENV}] 版本 [${VERSION}] 端口 [${PORT}]"
 
 # 1) 拉代码
 echo "  1. 拉代码..."
 sudo -u ${ARCHERY_USER} -H bash -c "
-    cd ${REPO_DIR} || git clone https://github.com/your-org/archery_dev.git ${REPO_DIR}
+    cd ${REPO_DIR} 2>/dev/null || git clone ${REPO} ${REPO_DIR}
     cd ${REPO_DIR}
     git fetch --all --prune
     git checkout ${VERSION}
     git log -1 --oneline
 "
 
-# 2) 安装依赖
+# 2) 装依赖
 echo "  2. 装依赖..."
 sudo -u ${ARCHERY_USER} -H bash -c "
     cd ${REPO_DIR}
@@ -373,9 +458,10 @@ sudo -u ${ARCHERY_USER} -H bash -c "
     pip install -r requirements.txt
 "
 
-# 3) 加载 .env（部署前已存在）
+# 3) 加载 .env
 if [ ! -f "${REPO_DIR}/.env" ]; then
-    echo "  ERROR: .env 不存在，请先从 .env.example 复制并配置"
+    echo "  ERROR: .env 不存在"
+    echo "  cp .env.example .env && 编辑填入真实配置"
     exit 1
 fi
 
@@ -399,14 +485,15 @@ sudo -u ${ARCHERY_USER} -H bash -c "
 
 # 6) 重启服务
 echo "  5. 重启服务..."
-supervisorctl restart archery-${ENV}-gunicorn
-supervisorctl restart archery-${ENV}-celery-worker 2>/dev/null || true
-supervisorctl restart archery-${ENV}-celery-beat 2>/dev/null || true
+systemctl restart archery-${ENV}-gunicorn.service
+systemctl restart archery-${ENV}-celery-worker.service 2>/dev/null || true
+systemctl restart archery-${ENV}-celery-beat.service 2>/dev/null || true
 
 # 7) 健康检查
 echo "  6. 健康检查..."
+HEALTH_URL="http://127.0.0.1:${PORT}/healthz"
 for i in {1..10}; do
-    if curl -fsS http://127.0.0.1:${PORT}/healthz > /dev/null; then
+    if curl -fsS "${HEALTH_URL}" > /dev/null; then
         echo "  ✓ 健康检查通过 (${ENV} on port ${PORT})"
         break
     fi
@@ -419,69 +506,135 @@ for i in {1..10}; do
     fi
 done
 
-# 8) 通知钉钉群
-echo "  7. 通知..."
+# 8) 通知
+echo "  7. 通知钉钉群..."
 DEPLOY_MSG="✓ Archery ${ENV} 部署成功\n版本: ${VERSION}\n时间: $(date '+%Y-%m-%d %H:%M:%S')\n服务器: 172.20.2.134"
-curl -X POST "${DINGTALK_NOTIFY_WEBHOOK}" \
-    -H "Content-Type: application/json" \
-    -d "{\"msgtype\": \"text\", \"text\": {\"content\": \"${DEPLOY_MSG}\"}}"
+DINGTALK_WEBHOOK=$(cat /etc/archery/dingtalk_webhook 2>/dev/null || echo "")
+if [ -n "${DINGTALK_WEBHOOK}" ]; then
+    curl -X POST "${DINGTALK_WEBHOOK}" \
+        -H "Content-Type: application/json" \
+        -d "{\"msgtype\": \"text\", \"text\": {\"content\": \"${DEPLOY_MSG}\"}}"
+fi
 
 echo "==> 部署完成"
 ```
 
-### 5.2 supervisor 配置
+### 5.2 systemd 单元文件
 
-`/etc/supervisor/conf.d/archery-prod.conf`：
+`/etc/systemd/system/archery-prod-gunicorn.service`：
 
 ```ini
-; Archery Production
-[program:archery-prod-gunicorn]
-command=/opt/archery/prod/venv/bin/gunicorn archery.wsgi:application -w 4 -b 127.0.0.1:9003 --access-logfile - --error-logfile -
-directory=/opt/archery/prod
-user=archery
-autostart=true
-autorestart=true
-startsecs=10
-stopwaitsecs=10
-stdout_logfile=/var/log/archery/prod-gunicorn.log
-stderr_logfile=/var/log/archery/prod-gunicorn-error.log
-environment=
-    DJANGO_SETTINGS_MODULE="archery.settings",
-    PYTHONUNBUFFERED="1"
+[Unit]
+Description=Archery Production Gunicorn
+After=network.target mysql.service redis-server.service
+Requires=redis-server.service
 
-[program:archery-prod-celery-worker]
-command=/opt/archery/prod/venv/bin/celery -A archery worker -l info --concurrency=4
-directory=/opt/archery/prod
-user=archery
-autostart=true
-autorestart=true
-startsecs=10
-stdout_logfile=/var/log/archery/prod-celery-worker.log
-stderr_logfile=/var/log/archery/prod-celery-worker-error.log
+[Service]
+Type=simple
+User=archery
+Group=archery
+WorkingDirectory=/opt/archery/prod
+EnvironmentFile=/opt/archery/prod/.env
+ExecStart=/opt/archery/prod/venv/bin/gunicorn archery.wsgi:application \
+    -w 4 \
+    -b 127.0.0.1:9003 \
+    --access-logfile - \
+    --error-logfile - \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --keep-alive 5
+Restart=always
+RestartSec=5
+StartLimitBurst=3
+StartLimitInterval=300
 
-[program:archery-prod-celery-beat]
-command=/opt/archery/prod/venv/bin/celery -A archery beat -l info
-directory=/opt/archery/prod
-user=archery
-autostart=true
-autorestart=true
-startsecs=10
-stdout_logfile=/var/log/archery/prod-celery-beat.log
-stderr_logfile=/var/log/archery/prod-celery-beat-error.log
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/archery /var/log/archery
 
-; group: 把三个进程作为一组管理
-[group:archery-prod]
-programs=archery-prod-gunicorn,archery-prod-celery-worker,archery-prod-celery-beat
+# 资源限制
+LimitNOFILE=65536
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-staging 和 dev 类似，端口/路径不同。
+`/etc/systemd/system/archery-prod-celery-worker.service`：
 
-### 5.3 nginx 配置
+```ini
+[Unit]
+Description=Archery Production Celery Worker
+After=network.target mysql.service redis-server.service
+Requires=redis-server.service
+
+[Service]
+Type=simple
+User=archery
+Group=archery
+WorkingDirectory=/opt/archery/prod
+EnvironmentFile=/opt/archery/prod/.env
+ExecStart=/opt/archery/prod/venv/bin/celery \
+    -A archery worker \
+    -l info \
+    --concurrency=4
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/archery /var/log/archery
+
+LimitNOFILE=65536
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`/etc/systemd/system/archery-prod-celery-beat.service`：
+
+```ini
+[Unit]
+Description=Archery Production Celery Beat
+After=network.target mysql.service redis-server.service
+Requires=redis-server.service
+
+[Service]
+Type=simple
+User=archery
+Group=archery
+WorkingDirectory=/opt/archery/prod
+EnvironmentFile=/opt/archery/prod/.env
+ExecStart=/opt/archery/prod/venv/bin/celery \
+    -A archery beat \
+    -l info
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/archery /var/log/archery
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`staging` 和 `dev` 的 .service 文件类似，端口/路径/工作目录不同。
+
+### 5.3 nginx 配置（HTTP，无 SSL）
 
 `/etc/nginx/sites-available/archery.conf`：
 
 ```nginx
-# 上游定义
+# upstream 定义
 upstream archery_prod {
     server 127.0.0.1:9003 fail_timeout=0;
 }
@@ -494,21 +647,37 @@ upstream archery_dev {
     server 127.0.0.1:9001 fail_timeout=0;
 }
 
-# HTTP → HTTPS 重定向
+# 主服务器：HTTP 80 端口
 server {
-    listen 80;
-    server_name archery.example.com;
-    return 301 https://$host$request_uri;
-}
-
-# 生产
-server {
-    listen 443 ssl http2;
-    server_name archery.example.com;
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name 172.20.2.134 _;
     client_max_body_size 50M;
 
-    ssl_certificate     /etc/letsencrypt/live/archery.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/archery.example.com/privkey.pem;
+    # 访问控制：限制为内网 IP
+    set $allowed 0;
+    if ($remote_addr ~* "^10\.") { set $allowed 1; }
+    if ($remote_addr ~* "^172\.16\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.17\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.18\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.19\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.20\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.21\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.22\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.23\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.24\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.25\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.26\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.27\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.28\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.29\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.30\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^172\.31\." ) { set $allowed 1; }
+    if ($remote_addr ~* "^192\.168\.") { set $allowed 1; }
+    if ($remote_addr = 127.0.0.1) { set $allowed 1; }
+
+    # 默认 403（白名单外的访问）
+    if ($allowed = 0) { return 403; }
 
     # 静态文件
     location /static/ {
@@ -519,19 +688,16 @@ server {
         alias /opt/archery/shared/media/;
     }
 
-    # 健康检查（不限制 IP）
+    # 健康检查（不限 IP，给 CI/CD 用）
     location = /healthz {
         proxy_pass http://archery_prod;
         access_log off;
     }
 
-    # 钉钉 OA 回调（IP 白名单）
+    # 钉钉 OA 回调（仅允许 cloudflared 访问 → 127.0.0.1）
     location /dingtalk/oa/callback {
-        # 钉钉回调服务器固定 IP
-        allow 101.37.79.0/24;       # 杭州
-        allow 140.205.94.0/24;      # 上海
-        allow 203.119.214.0/24;     # 深圳
-        allow 59.110.0.0/16;        # 北京
+        # 仅允许本地访问（Cloudflare Tunnel 通过 127.0.0.1 转发）
+        allow 127.0.0.1;
         deny all;
 
         proxy_pass http://archery_prod;
@@ -540,61 +706,36 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 
+    # 路径分流：/staging / /dev
+    location /staging/ {
+        rewrite ^/staging/(.*)$ /$1 break;
+        proxy_pass http://archery_staging;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+    location /dev/ {
+        rewrite ^/dev/(.*)$ /$1 break;
+        proxy_pass http://archery_dev;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
     # 主应用
     location / {
         proxy_pass http://archery_prod;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 300s;
     }
 }
-
-# Staging（IP 白名单，仅内网 + 钉钉）
-server {
-    listen 443 ssl http2;
-    server_name staging.archery.example.com;
-    client_max_body_size 50M;
-
-    ssl_certificate     /etc/letsencrypt/live/staging.archery.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/staging.archery.example.com/privkey.pem;
-
-    # 仅内网访问
-    allow 10.0.0.0/8;
-    allow 172.16.0.0/12;
-    allow 192.168.0.0/16;
-    deny all;
-
-    location /static/ { alias /opt/archery/shared/static/; }
-    location / {
-        proxy_pass http://archery_staging;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-}
-
-# Dev（同 staging）
-server {
-    listen 443 ssl http2;
-    server_name dev.archery.example.com;
-    client_max_body_size 50M;
-
-    ssl_certificate     /etc/letsencrypt/live/dev.archery.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/dev.archery.example.com/privkey.pem;
-
-    allow 10.0.0.0/8;
-    allow 172.16.0.0/12;
-    allow 192.168.0.0/16;
-    deny all;
-
-    location / {
-        proxy_pass http://archery_dev;
-        proxy_set_header Host $host;
-    }
-}
 ```
+
+**关键安全点**：
+- HTTP 但用 IP 白名单（10.x / 172.16-31.x / 192.168.x / 127.0.0.1）
+- 外网直接访问 `http://172.20.2.134` 会被 403
+- 仅内网（办公网/VPN）能访问
+- 钉钉回调额外限制只允许 127.0.0.1（Cloudflare Tunnel 转发来的）
 
 ### 5.4 健康检查 endpoint
 
@@ -607,12 +748,10 @@ from django.http import JsonResponse
 def healthz(request):
     """健康检查 endpoint（供 CI/CD 和监控用）"""
     try:
-        # 检查数据库
         from django.db import connection
         with connection.cursor() as cur:
             cur.execute("SELECT 1")
             cur.fetchone()
-        # 检查 Redis
         from django_redis import get_redis_connection
         rs = get_redis_connection("default")
         rs.ping()
@@ -627,28 +766,149 @@ urlpatterns = [
 ]
 ```
 
-### 5.5 systemd 单元（可选，supervisor 已可不用）
+---
 
-如果用 systemd 不用 supervisor，`/etc/systemd/system/archery-prod-gunicorn.service`：
+## 5.6 钉钉回调 Cloudflare Tunnel 配置
+
+### 5.6.1 为什么需要 Tunnel
+
+**问题**：钉钉 OA 回调 URL 必须 HTTPS，172.20.2.134 没有 SSL 证书，也没公网 443。
+
+**方案**：Cloudflare Tunnel
+
+- Cloudflare 提供**自动 HTTPS 证书**
+- `cloudflared` 客户端在 172.20.2.134 上**主动建立 outbound 连接**到 Cloudflare 边缘
+- 不需要在服务器上开 443 端口，不需要公网 IP
+- 钉钉后台配置回调 URL：`https://archery-oa.your-domain.com/dingtalk/oa/callback`
+- 数据流：钉钉 → Cloudflare 边缘（HTTPS） → Tunnel（加密） → cloudflared → nginx → Archery
+
+### 5.6.2 前置条件
+
+1. **域名**：你必须有可控的域名（如 `your-company.com`）
+2. **Cloudflare 账号**：免费版即可
+3. **域名 NS**：已切到 Cloudflare（必须的，否则 Cloudflare 不能管理该域名）
+
+### 5.6.3 配置步骤
+
+#### 步骤 1：登录 Cloudflare 创建 Tunnel
+
+```bash
+# 在 172.20.2.134 上（root）
+cloudflared tunnel login
+# 浏览器会打开 Cloudflare 授权页面，选择你的域名
+```
+
+#### 步骤 2：创建 Tunnel
+
+```bash
+cloudflared tunnel create archery-oa
+# 输出：Tunnel credentials written to /root/.cloudflared/<TUNNEL_ID>.json
+# 记下 TUNNEL_ID，类似：a1b2c3d4-e5f6-...
+```
+
+#### 步骤 3：配置 Tunnel
+
+`/etc/cloudflared/config.yml`：
+
+```yaml
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  # 钉钉 OA 回调：所有路径转发到 80 端口
+  - hostname: archery-oa.your-domain.com
+    service: http://127.0.0.1:80
+    originRequest:
+      noTLSVerify: false
+      connectTimeout: 30s
+      keepAliveConnections: 100
+  # 兜底：未匹配的主机名返回 404
+  - service: http_status:404
+```
+
+#### 步骤 4：DNS 解析
+
+```bash
+cloudflared tunnel route dns archery-oa archery-oa.your-domain.com
+# 自动在 Cloudflare DNS 添加 CNAME 记录
+```
+
+#### 步骤 5：systemd 管理 cloudflared
+
+`/etc/systemd/system/cloudflared.service`：
 
 ```ini
 [Unit]
-Description=Archery Production Gunicorn
-After=network.target mysql.service redis-server.service
+Description=Cloudflare Tunnel for Archery DingTalk Callback
+After=network.target
 
 [Service]
-Type=simple
-User=archery
-Group=archery
-WorkingDirectory=/opt/archery/prod
-Environment="DJANGO_SETTINGS_MODULE=archery.settings"
-EnvironmentFile=/opt/archery/prod/.env
-ExecStart=/opt/archery/prod/venv/bin/gunicorn archery.wsgi:application -w 4 -b 127.0.0.1:9003 --access-logfile - --error-logfile -
+Type=notify
+User=root
+ExecStart=/usr/local/bin/cloudflared tunnel run archery-oa
 Restart=always
 RestartSec=5
 
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=false
+PrivateTmp=true
+
+# 资源
+LimitNOFILE=65536
+
 [Install]
 WantedBy=multi-user.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable cloudflared
+systemctl start cloudflared
+systemctl status cloudflared
+```
+
+#### 步骤 6：验证 Tunnel 工作
+
+```bash
+# 在 172.20.2.134 上
+curl -fsS http://127.0.0.1:80/dingtalk/oa/callback -X POST -d "{}"
+# 应该返回 403（因为没有签名）而不是 404
+
+# 测 Cloudflare 边缘
+curl -fsS https://archery-oa.your-domain.com/dingtalk/oa/callback -X POST -d "{}"
+# 应该走 Tunnel 回到 172.20.2.134，返回 403
+```
+
+#### 步骤 7：钉钉后台配置
+
+1. 钉钉开放平台 → 应用 → **事件订阅**
+2. 回调 URL 填：`https://archery-oa.your-domain.com/dingtalk/oa/callback`
+3. 加密方式选 **AES 加密 + SHA1 签名**
+4. Token 和 AES Key 复制到服务器 `.env`：
+   ```
+   DINGTALK_OA_CALLBACK_TOKEN=...
+   DINGTALK_OA_CALLBACK_AES_KEY=...
+   ```
+
+### 5.6.4 Tunnel 故障排查
+
+```bash
+# 1. 看 cloudflared 状态
+systemctl status cloudflared
+journalctl -u cloudflared -f
+
+# 2. 测试连接
+cloudflared tunnel info archery-oa
+
+# 3. 重新安装
+systemctl restart cloudflared
+cloudflared tunnel run archery-oa  # 手动跑，看日志
+
+# 4. 删除重建
+cloudflared tunnel delete archery-oa
+cloudflared tunnel create archery-oa
 ```
 
 ---
@@ -735,7 +995,6 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r requirements-test.txt 2>/dev/null || true
 
       - name: Run migrations
         env:
@@ -783,7 +1042,7 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    environment: staging  # GitHub Environment（无需审批）
+    environment: staging
     steps:
       - uses: actions/checkout@v4
         with:
@@ -807,18 +1066,14 @@ jobs:
       - name: Health check
         run: |
           sleep 10
-          curl -fsS https://staging.archery.example.com/healthz
+          curl -fsS http://172.20.2.134:9002/healthz
 
       - name: Notify on failure
         if: failure()
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {
-              "text": "✗ Archery Staging 部署失败 - ${{ github.run_id }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.DINGTALK_NOTIFY_WEBHOOK }}
+        run: |
+          curl -X POST "${{ secrets.DINGTALK_NOTIFY_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"msgtype\": \"text\", \"text\": {\"content\": \"✗ Archery Staging 部署失败 - ${{ github.run_id }}\"}}"
 ```
 
 ### 6.4 CD Prod workflow（tag 触发 + 人工审批）
@@ -839,9 +1094,8 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://archery.example.com
-    # ⭐ 关键：production 环境在 GitHub Repo Settings 中配置"Required reviewers"
-    # 至少 1 个 reviewer（owner）审批通过才会执行
+      url: http://172.20.2.134
+    # production 环境在 GitHub Repo Settings 中配置 Required reviewers（项目 owner）
 
     steps:
       - uses: actions/checkout@v4
@@ -877,18 +1131,15 @@ jobs:
       - name: Health check
         run: |
           sleep 10
-          curl -fsS https://archery.example.com/healthz
+          curl -fsS http://172.20.2.134:9003/healthz
 
       - name: Notify
         if: always()
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {
-              "text": "${{ job.status == 'success' && '✓' || '✗' }} Archery ${{ steps.version.outputs.VERSION }} ${{ job.status }} - ${{ github.run_id }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.DINGTALK_NOTIFY_WEBHOOK }}
+        run: |
+          STATUS="${{ job.status == 'success' && '✓ 部署成功' || '✗ 部署失败' }}"
+          curl -X POST "${{ secrets.DINGTALK_NOTIFY_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"msgtype\": \"text\", \"text\": {\"content\": \"${STATUS}: Archery ${{ steps.version.outputs.VERSION }} - ${{ github.run_id }}\"}}"
 ```
 
 ### 6.5 GitHub Environments 配置
@@ -900,7 +1151,7 @@ jobs:
 - Secrets: `SSH_PRIVATE_KEY`, `DINGTALK_NOTIFY_WEBHOOK`
 
 **production**：
-- **Required reviewers**: 1+（项目 owner）
+- **Required reviewers**: 1+（项目 owner，即你自己）
 - Wait timer: 5 分钟（给审批人思考时间）
 - Secrets: 同 staging
 
@@ -909,12 +1160,12 @@ jobs:
 | Secret | 用途 |
 |--------|------|
 | `SSH_PRIVATE_KEY` | CI/CD 部署用 SSH 私钥（archery 用户的 ed25519 密钥）|
-| `DINGTALK_NOTIFY_WEBHOOK` | 部署结果通知到钉钉群 |
-| `CODECOV_TOKEN` | （可选）Codecov 集成 |
+| `DINGTALK_NOTIFY_WEBHOOK` | 部署结果通知到钉钉群（复用以有的 DBA 群）|
 
 **绝不能上传到 Secrets 的**：
 - 数据库密码 → 写在服务器 `.env`（已 gitignore）
 - 钉钉 AppSecret → 写在服务器 `.env`（已 gitignore）
+- Redis 密码 → 自动生成，存服务器 `/etc/archery/redis_password`
 - 任何真实凭据
 
 ### 6.7 Release 流程（人工）
@@ -924,7 +1175,7 @@ jobs:
 git checkout main
 git pull
 
-# 2. 跑版本号（按 SemVer）
+# 2. 打 tag（按 SemVer）
 git tag -a v1.14.0.1 -m "feat: 钉钉 OA 集成 + 部署流水线"
 
 # 3. 推 tag
@@ -948,7 +1199,7 @@ git push origin v1.14.0.1
 
 ### 7.2 监控脚本（systemd timer）
 
-`scripts/monitor/check_health.sh`：
+`/opt/archery/scripts/monitor/check_health.sh`：
 
 ```bash
 #!/usr/bin/env bash
@@ -957,17 +1208,18 @@ git push origin v1.14.0.1
 
 set -e
 
-HEALTH_URL="https://archery.example.com/healthz"
-DINGTALK_WEBHOOK="/etc/archery/dingtalk_webhook"  # 路径方式存密钥
+HEALTH_URL="http://172.20.2.134:9003/healthz"
+DINGTALK_WEBHOOK=$(cat /etc/archery/dingtalk_webhook 2>/dev/null || echo "")
 
-response=$(curl -fsS -o /tmp/healthz.json -w "%{http_code}" ${HEALTH_URL} 2>&1 || echo "000")
+response=$(curl -fsS -o /tmp/healthz.json -w "%{http_code}" --max-time 10 ${HEALTH_URL} 2>&1 || echo "000")
 
 if [ "$response" != "200" ]; then
-    # 告警
     msg="🚨 Archery 健康检查失败\nURL: ${HEALTH_URL}\nHTTP: ${response}\nTime: $(date)"
-    curl -X POST "$(cat ${DINGTALK_WEBHOOK})" \
-        -H "Content-Type: application/json" \
-        -d "{\"msgtype\": \"text\", \"text\": {\"content\": \"${msg}\"}}"
+    if [ -n "${DINGTALK_WEBHOOK}" ]; then
+        curl -X POST "${DINGTALK_WEBHOOK}" \
+            -H "Content-Type: application/json" \
+            -d "{\"msgtype\": \"text\", \"text\": {\"content\": \"${msg}\"}}"
+    fi
 fi
 ```
 
@@ -985,13 +1237,31 @@ Persistent=true
 WantedBy=timers.target
 ```
 
+`/etc/systemd/system/archery-monitor.service`：
+
+```ini
+[Unit]
+Description=Archery health check
+
+[Service]
+Type=oneshot
+ExecStart=/opt/archery/scripts/monitor/check_health.sh
+User=root
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable archery-monitor.timer
+systemctl start archery-monitor.timer
+```
+
 ### 7.3 备份脚本
 
 `scripts/deploy/04_backup.sh`：
 
 ```bash
 #!/usr/bin/env bash
-# 每日备份：MySQL + media + .env
+# 每日备份：MySQL + media + .env 模板
 # cron: 0 2 * * *
 
 set -euo pipefail
@@ -1002,23 +1272,23 @@ KEEP_DAYS=30
 
 mkdir -p ${BACKUP_DIR}
 
-# 1. MySQL dump
-echo "==> 备份 MySQL..."
+# 1. 加载 .env
 source /opt/archery/prod/.env
+
+# 2. MySQL dump
+echo "==> 备份 MySQL..."
 mysqldump -h ${MYSQL_HOST} -P ${MYSQL_PORT} -u ${MYSQL_USER} -p${MYSQL_PASSWORD} \
     --single-transaction --routines --triggers \
-    --databases archery_prod > ${BACKUP_DIR}/mysql_${DATE}.sql
+    --databases archery_prod archery_staging archery_dev > ${BACKUP_DIR}/mysql_${DATE}.sql
 
-# 2. 加密备份（防止凭据泄露）
-gpg --batch --yes --passphrase-file /etc/archery/backup_passphrase \
+# 3. 加密备份
+GPG_PASSPHRASE=$(cat /etc/archery/backup_passphrase)
+gpg --batch --yes --passphrase "${GPG_PASSPHRASE}" \
     -c ${BACKUP_DIR}/mysql_${DATE}.sql
 rm ${BACKUP_DIR}/mysql_${DATE}.sql
 
-# 3. 备份 media（用户上传文件）
+# 4. 备份 media
 tar czf ${BACKUP_DIR}/media_${DATE}.tar.gz /opt/archery/shared/media/
-
-# 4. 备份 .env 模板（不含真实密钥）
-cp /opt/archery/prod/.env ${BACKUP_DIR}/env_prod_${DATE}.template
 
 # 5. 清理 30 天前的备份
 find ${BACKUP_DIR} -name "*.sql.gpg" -mtime +${KEEP_DAYS} -delete
@@ -1031,7 +1301,7 @@ cron 配置：
 
 ```bash
 # /etc/cron.d/archery-backup
-0 2 * * * archery /opt/archery/scripts/deploy/04_backup.sh >> /var/log/archery/backup.log 2>&1
+0 2 * * * root /opt/archery/scripts/deploy/04_backup.sh >> /var/log/archery/backup.log 2>&1
 ```
 
 ### 7.4 关键监控指标
@@ -1043,8 +1313,8 @@ cron 配置：
 | Redis 连接 | 内部检查 | 失败 | 钉钉群 |
 | 磁盘空间 | df -h | > 85% | 钉钉群 |
 | CPU / 内存 | top | > 90% | 钉钉群 |
-| SSL 证书过期 | openssl check | < 14 天 | 钉钉群 |
 | 备份成功 | cron log | 失败 | 钉钉群 |
+| Cloudflare Tunnel | cloudflared status | 异常 | 钉钉群 |
 
 ---
 
@@ -1053,11 +1323,11 @@ cron 配置：
 ### 8.1 服务起不来
 
 ```bash
-# 1. 看 supervisor 状态
-supervisorctl status
+# 1. 看 systemd 状态
+systemctl status archery-prod-gunicorn.service
 
 # 2. 看具体错误
-supervisorctl tail -1000 archery-prod-gunicorn stderr
+journalctl -u archery-prod-gunicorn.service -n 100
 
 # 3. 手动起一下看错误
 sudo -u archery -H bash -c "
@@ -1069,17 +1339,21 @@ sudo -u archery -H bash -c "
 
 # 4. 常见原因：
 #    - .env 没配 → 检查 /opt/archery/prod/.env
-#    - 数据库连不上 → 检查 MYSQL_HOST/PORT
+#    - 数据库连不上 → mysql -h 172.20.2.134 -u dbops -p
 #    - Redis 连不上 → systemctl status redis-server
 #    - 端口被占 → lsof -i :9003
 ```
 
 ### 8.2 部署失败回滚
 
+`scripts/deploy/03_rollback.sh`：
+
 ```bash
-# /opt/archery/scripts/deploy/03_rollback.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
 ENV="${1}"
-PREV_VERSION="${2}"  # 部署前的版本
+PREV_VERSION="${2}"
 
 case "${ENV}" in
     prod)    REPO_DIR="/opt/archery/prod"    ;;
@@ -1091,22 +1365,18 @@ sudo -u archery -H bash -c "
     cd ${REPO_DIR}
     git checkout ${PREV_VERSION}
 "
-supervisorctl restart archery-${ENV}-gunicorn
+systemctl restart archery-${ENV}-gunicorn.service
 ```
 
 ### 8.3 数据库锁死
 
 ```bash
-# 查锁
-mysql -h ${MYSQL_HOST} -u root -p -e "
+mysql -h 172.20.2.134 -u root -p -e "
     SELECT * FROM information_schema.INNODB_TRX\G
-    SELECT * FROM information_schema.INNODB_LOCKS\G
 "
-
 # 杀长事务
-mysql -h ${MYSQL_HOST} -u root -p -e "
-    SELECT trx_id, trx_started, trx_mysql_thread_id, trx_query
-    FROM information_schema.INNODB_TRX
+mysql -h 172.20.2.134 -u root -p -e "
+    SELECT trx_mysql_thread_id FROM information_schema.INNODB_TRX
     WHERE TIMESTAMPDIFF(SECOND, trx_started, NOW()) > 60;
     -- 拿到 thread_id 后 KILL <id>
 "
@@ -1119,17 +1389,40 @@ mysql -h ${MYSQL_HOST} -u root -p -e "
 tail -f /var/log/nginx/access.log | grep dingtalk
 
 # 2. 看应用日志
-tail -f /var/log/archery/prod-gunicorn.log | grep -i dingtalk
+journalctl -u archery-prod-gunicorn.service -f | grep -i dingtalk
 
-# 3. 看 event log
-mysql -h ${MYSQL_HOST} -u ${MYSQL_USER} -p -e "
+# 3. 看 cloudflared 状态
+systemctl status cloudflared
+journalctl -u cloudflared -f
+
+# 4. 看 event log
+mysql -h 172.20.2.134 -u ${MYSQL_USER} -p -e "
     SELECT * FROM ext_dingtalk_oa_event_log 
     WHERE processed=0 
     ORDER BY created_at DESC LIMIT 20;
 "
+```
 
-# 4. 手动重发
-# （详见 v0.7 §10.4.6 重试 OA）
+### 8.5 Cloudflare Tunnel 不通
+
+```bash
+# 1. 看 cloudflared 日志
+journalctl -u cloudflared -n 100
+
+# 2. 测试 tunnel
+cloudflared tunnel info archery-oa
+
+# 3. 测试 nginx 是否监听 80
+curl -fsS http://127.0.0.1:80/dingtalk/oa/callback -X POST -d "{}"
+
+# 4. 重启 tunnel
+systemctl restart cloudflared
+
+# 5. 完全重建
+cloudflared tunnel delete archery-oa
+cloudflared tunnel create archery-oa
+# 重新配置 ingress
+systemctl restart cloudflared
 ```
 
 ---
@@ -1144,50 +1437,58 @@ mysql -h ${MYSQL_HOST} -u ${MYSQL_USER} -p -e "
 | 数据库迁移失败 | 服务起不来 | 备份 + 迁移前自动 dump |
 | 部署超时/网络中断 | 服务半新半旧 | gunicorn 优雅重启（SIGTERM 等待 30s）|
 | 钉钉 API 变化 | 回调失败 | 见 v0.7 §10.5 安全 + 兜底 |
-| **dev/staging/prod 一体** | 测试影响生产 | systemd 多实例 + 端口隔离 + 域名隔离 |
-| 密钥泄露 | 严重安全事故 | 密钥只存服务器 .env + GitHub Secrets，不进 git |
+| **HTTP 无 SSL** | 中间人攻击、数据明文 | nginx IP 白名单（内网/VPN 访问）+ 钉钉走 Cloudflare HTTPS |
+| **dev/staging/prod 一体** | 测试影响生产 | systemd 多实例 + 端口隔离（9001/9002/9003）+ 域名路径分流 |
+| **Cloudflare Tunnel 中断** | 钉钉 OA 不可用 | 见 v0.7 §10.4 降级策略（自动回退 archery 审批）|
+| 密钥泄露 | 严重安全事故 | 密钥只存服务器 `/etc/archery/` (600 权限) + GitHub Secrets，不进 git |
 
 ### 9.2 回滚时间表
 
 | 场景 | 目标恢复时间 | 方式 |
 |------|--------------|------|
-| 代码 bug | < 2 分钟 | `git checkout <prev_tag> && supervisorctl restart` |
+| 代码 bug | < 2 分钟 | `git checkout <prev_tag> && systemctl restart` |
 | 数据库迁移 bug | < 5 分钟 | 备份恢复 + 切换代码版本 |
 | 配置文件错 | < 1 分钟 | 还原 .env 备份 |
-| 服务器硬件故障 | 30+ 分钟 | 重新初始化（按 04_runbook）|
+| 服务器硬件故障 | 30+ 分钟 | 重新初始化（按 §4）|
+| Cloudflare Tunnel 故障 | < 1 分钟 | 自动降级到本地 Group 审批（v0.7 §10.4）|
 
 ---
 
 ## 10. 阶段化实施
 
-| 阶段 | 内容 | 估时 |
-|------|------|------|
-| **0. GitHub Secrets 准备** | 在 Repo Settings 加 SSH_PRIVATE_KEY / DINGTALK_NOTIFY_WEBHOOK | 0.5 天 |
-| **1. 服务器初始化** | `01_init_server.sh` 在 172.20.2.134 跑一次（含 Redis）| 1 天 |
-| **2. SSH 密钥对** | 生成密钥 + 公钥贴服务器 + 私钥存 GitHub Secrets | 0.5 天 |
-| **3. CI workflow 上线** | `.github/workflows/ci.yml` 启用 | 0.5 天 |
-| **4. CD Staging** | push to main 自动部署 staging | 1 天 |
-| **5. CD Prod + 人工审批** | tag 触发 + GitHub Environments 审批 | 1 天 |
-| **6. 监控 + 备份** | 健康检查 systemd timer + 备份 cron | 1 天 |
-| **7. Runbook + 文档** | 故障排查手册上线 | 0.5 天 |
-| **8. 联调 + 演练** | 演练一次完整部署流程 | 1 天 |
+| 阶段 | 内容 | 估时 | 依赖 |
+|------|------|------|------|
+| **0. 仓库推送** | 推 `archery_dev` 到 GitHub `adauncle/archerydev` | 0.5 天 | - |
+| **1. 服务器初始化** | `01_init_server.sh` 在 172.20.2.134 跑一次（含 Redis + cloudflared）| 1 天 | 0 |
+| **2. SSH 密钥对 + GitHub Secrets** | 生成密钥 + 公钥贴服务器 + 私钥存 GitHub Secrets | 0.5 天 | 1 |
+| **3. .env 文件** | 手动创建 .env（含 dbops 密码、Redis 密码等）| 0.5 天 | 1 |
+| **4. CI workflow 上线** | `.github/workflows/ci.yml` 启用 | 0.5 天 | 0 |
+| **5. CD Staging** | push to main 自动部署 staging + 健康检查 | 1 天 | 1, 2, 3, 4 |
+| **6. CD Prod + 人工审批** | tag 触发 + GitHub Environments 审批 | 1 天 | 5 |
+| **7. Cloudflare Tunnel** | 配置 Tunnel + 钉钉后台配置回调 URL | 1 天 | 1 |
+| **8. 监控 + 备份** | 健康检查 systemd timer + 备份 cron | 1 天 | 1 |
+| **9. Runbook + 演练** | 演练一次完整部署 + 钉钉回调 | 1 天 | 5, 6, 7 |
 
-**总计**：约 7 个工作日（不含部署上线 1-2 天观察期）
+**总计**：约 8 个工作日（不含首次部署后 1-2 天观察期）
 
 ---
 
-## 11. 待拍板子决策
+## 11. 已拍板决策（全部 ✅）
 
-1. **GitHub Repo 迁移**：仓库当前是本地，是否要推到 GitHub？**必须推到 GitHub 才能用 GitHub Actions**
-2. **GitHub Environments 配置**：production 至少 1 个 reviewer（owner 自己？）
-3. **数据库初始化策略**：第一次部署时跑 migrate + seed？**我推荐是**
-4. **SSL 证书**：Let's Encrypt 自动续期（certbot）？**我推荐是**
-5. **域名**：是否已有 archery.example.com 域名？**必须确认，否则 staging/prod 域名访问不到**
-6. **SSL 证书域名**：生产 1 个 + staging 1 个 + dev 1 个 = 3 个证书？**我推荐是**
-7. **钉钉通知 Webhook**：是否复用现有 DBA 群 webhook？**我推荐是**
-8. **备份保留期**：30 天？90 天？**我推荐 30 天**
-9. **Redis 密码策略**：自动生成 + 存 .env？**我推荐是**
-10. **supervisor vs systemd**：用哪个？**我推荐 supervisor**（更轻量，supervisord.conf 上游已提供）
+| # | 决策项 | 选择 |
+|---|--------|------|
+| 1 | CI/CD 工具 | GitHub Actions |
+| 2 | 部署触发 | push main + tag v* |
+| 3 | 环境定位 | dev/staging/prod 一体 |
+| 4 | 主服务 SSL | ❌ 不需要 |
+| 5 | 域名 | ❌ 用 IP `172.20.2.134` |
+| 6 | 钉钉回调 SSL | ✅ Cloudflare Tunnel |
+| 7 | 钉钉通知 webhook | ✅ 复用 DBA 群 |
+| 8 | 备份保留期 | 30 天 |
+| 9 | Redis 密码 | ✅ 自动生成 |
+| 10 | 服务管理 | systemd（不是 supervisor）|
+| 11 | 初始化策略 | migrate + seed |
+| 12 | GitHub reviewer | 项目 owner（你自己）|
 
 ---
 
@@ -1199,38 +1500,51 @@ mysql -h ${MYSQL_HOST} -u ${MYSQL_USER} -p -e "
 /opt/archery/
 ├── prod/                      # 生产代码
 │   ├── venv/                  # Python 虚拟环境
-│   ├── .env                   # 真实配置（含密码，root only 600）
+│   ├── .env                   # 真实配置（root only 600）
 │   ├── archery/, sql/, ...
 │   └── manage.py
 ├── staging/                   # staging 代码
 ├── dev/                       # dev 代码
 ├── shared/
-│   ├── logs/                  # 日志（supervisor log 单独在 /var/log/archery）
+│   ├── logs/
 │   ├── media/                 # 用户上传
 │   ├── static/                # 静态文件
 │   ├── backups/               # 备份
-│   └── run/                   # pid/sock
+│   └── run/
 ├── scripts/
-│   └── deploy/
-│       ├── 01_init_server.sh
-│       ├── 02_deploy.sh
-│       ├── 03_rollback.sh
-│       └── 04_backup.sh
+│   ├── deploy/
+│   │   ├── 01_init_server.sh
+│   │   ├── 02_deploy.sh
+│   │   ├── 03_rollback.sh
+│   │   └── 04_backup.sh
+│   └── monitor/
+│       └── check_health.sh
 └── .ssh/
     └── authorized_keys         # GitHub Actions 部署用公钥
 
-/etc/supervisor/conf.d/
-├── archery-prod.conf
-├── archery-staging.conf
-└── archery-dev.conf
+/etc/systemd/system/
+├── archery-prod-gunicorn.service
+├── archery-prod-celery-worker.service
+├── archery-prod-celery-beat.service
+├── archery-staging-gunicorn.service
+├── archery-staging-celery-worker.service
+├── archery-staging-celery-beat.service
+├── archery-dev-gunicorn.service
+├── cloudflared.service        # 钉钉回调隧道
+├── archery-monitor.timer      # 健康检查定时器
+└── archery-monitor.service    # 健康检查执行单元
 
 /etc/nginx/sites-available/
 └── archery.conf
 
-/etc/systemd/system/
-├── archery-monitor.timer
-├── archery-monitor.service
-└── archery-backup.timer
+/etc/cloudflared/
+├── config.yml                 # Tunnel 配置
+└── <TUNNEL_ID>.json           # Tunnel 凭据
+
+/etc/archery/
+├── redis_password             # Redis 密码（600 权限）
+├── backup_passphrase          # 备份加密密码（600 权限）
+└── dingtalk_webhook           # 钉钉通知 webhook
 
 /var/log/archery/
 ├── prod-gunicorn.log
@@ -1253,13 +1567,13 @@ mysql -h ${MYSQL_HOST} -u ${MYSQL_USER} -p -e "
 
 - [GitHub Actions 文档](https://docs.github.com/en/actions)
 - [GitHub Environments](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
-- [supervisor 文档](http://supervisord.org/)
+- [systemd 文档](https://www.freedesktop.org/software/systemd/man/systemd.service.html)
 - [nginx 文档](https://nginx.org/en/docs/)
-- [Let's Encrypt + certbot](https://certbot.eff.org/)
-- [Archery 部署文档（上游）](https://github.com/hhyo/Archery/wiki/部署)
+- [Cloudflare Tunnel 文档](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+- [钉钉开放平台 - 智能工作流](https://open.dingtalk.com/document/orgapp/approval-process)
 - 配套设计：[钉钉 OA 联动 v0.7](./2026-07-20_dingtalk-oa-workflow.md)
 
 ---
 
-**文档版本**：v0.8
-**最后更新**：2026-07-20（新增 v0.8 DevOps/CI-CD/部署设计）
+**文档版本**：v0.9
+**最后更新**：2026-07-20（v0.8 → v0.9：12 个决策已全部拍板，新增 §5.6 Cloudflare Tunnel 钉钉回调配置，supervisor 改为 systemd）
