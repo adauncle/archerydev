@@ -39,6 +39,7 @@ parsedatetime==2.4
 sshtunnel==0.1.5
 pycryptodome==3.19.1
 pyodps==0.*
+pyarrow<17
 numpy>=1.26,<2
 pandas>=2.2.3,<2.3
 clickhouse-driver==0.*
