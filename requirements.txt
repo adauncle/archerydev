@@ -40,7 +40,7 @@ sshtunnel==0.1.5
 pycryptodome==3.19.1
 pyodps==0.*
 numpy>=1.26,<2
-pandas>=2.2,<3
+pandas>=2.2.3,<2.3
 clickhouse-driver==0.*
 djangorestframework>=3.14.0
 djangorestframework-simplejwt==5.5.1
