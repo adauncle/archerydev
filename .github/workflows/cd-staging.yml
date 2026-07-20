@@ -1,0 +1,52 @@
+name: CD Staging
+
+# 自动部署到 staging
+# 触发：push 到 main（排除 docs 与 *.md 改动）
+# Environment: staging（无需审批）
+# 设计文档：docs/designs/2026-07-20_devops-cicd.md §6.3
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy to staging
+        env:
+          ENV: staging
+          VERSION: ${{ github.sha }}
+        run: |
+          # 注意：heredoc 不加引号（<< EOF），让本地 shell 把 ${VERSION} 展开为 commit hash
+          # 再传给远端执行。如果用 << 'EOF'（带引号），shell 不会展开变量，远端会收到字面量 ${VERSION}。
+          ssh -o StrictHostKeyChecking=no archery@172.20.2.134 << EOF
+            cd /opt/archery/scripts/deploy
+            ./02_deploy.sh staging ${VERSION}
+          EOF
+
+      - name: Health check
+        run: |
+          sleep 10
+          curl -fsS http://172.20.2.134:9002/healthz
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -X POST "${{ secrets.DINGTALK_NOTIFY_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"msgtype\": \"text\", \"text\": {\"content\": \"✗ Archery Staging 部署失败 - ${{ github.run_id }}\"}}"

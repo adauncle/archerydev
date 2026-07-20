@@ -1,5 +1,9 @@
 name: CI
 
+# 持续集成：lint + test
+# 触发：push 到 main / develop，PR 到 main / develop
+# 不需要审批
+
 on:
   push:
     branches: [main, develop]
@@ -7,7 +11,31 @@ on:
     branches: [main, develop]
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install lint tools
+        run: |
+          pip install flake8 black isort
+
+      - name: Black check
+        run: black --check --diff sql/ common/ archery/ sql_api/ sql/extensions/
+
+      - name: isort check
+        run: isort --check-only --diff sql/ common/ archery/ sql_api/ sql/extensions/
+
+      - name: Flake8
+        run: flake8 sql/ common/ archery/ sql_api/ sql/extensions/ --max-line-length=120 --exclude=migrations,__pycache__
+
   test:
+    name: Test
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -30,34 +58,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          cache: "pip"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Lint
+      - name: Run migrations
+        env:
+          MYSQL_HOST: localhost
+          REDIS_HOST: localhost
+          DJANGO_SETTINGS_MODULE: archery.settings
+          SECRET_KEY: test-secret
+          DEBUG: "True"
         run: |
-          pip install flake8
-          flake8 sql/ common/ archery/ --max-line-length=120 --exclude=migrations,__pycache__
+          python manage.py migrate --noinput
 
       - name: Run tests
         env:
           MYSQL_HOST: localhost
           REDIS_HOST: localhost
           DJANGO_SETTINGS_MODULE: archery.settings
+          SECRET_KEY: test-secret
+          DEBUG: "True"
         run: |
-          pytest --cov=sql --cov=common --cov-report=term-missing
+          pytest --cov=sql --cov=common --cov=sql_api --cov=sql.extensions --cov-report=xml --cov-report=term-missing -v
 
       - name: Upload coverage
         if: always()

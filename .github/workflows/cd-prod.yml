@@ -1,0 +1,67 @@
+name: CD Production
+
+# 部署到生产
+# 触发：push tag v*.*.*
+# Environment: production（需 reviewer 人工审批 —— 项目 owner = GitHub username adauncle）
+# 设计文档：docs/designs/2026-07-20_devops-cicd.md §6.4
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: http://172.20.2.134
+    # production 环境在 GitHub Repo Settings → Environments 中配置：
+    #   - Required reviewers: 1+（项目 owner，即 adauncle）
+    #   - Wait timer: 5 分钟（给审批人思考时间）
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ steps.version.outputs.VERSION }}
+          generate_release_notes: true
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy to production
+        env:
+          ENV: prod
+          VERSION: ${{ github.ref_name }}
+        run: |
+          # heredoc 不加引号（<< EOF），让本地 shell 把 ${VERSION} 展开为 tag 名称
+          ssh -o StrictHostKeyChecking=no archery@172.20.2.134 << EOF
+            cd /opt/archery/scripts/deploy
+            ./02_deploy.sh prod ${VERSION}
+          EOF
+
+      - name: Health check
+        run: |
+          sleep 10
+          curl -fsS http://172.20.2.134:9003/healthz
+
+      - name: Notify
+        if: always()
+        run: |
+          STATUS="${{ job.status == 'success' && '✓ 部署成功' || '✗ 部署失败' }}"
+          curl -X POST "${{ secrets.DINGTALK_NOTIFY_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"msgtype\": \"text\", \"text\": {\"content\": \"${STATUS}: Archery ${{ steps.version.outputs.VERSION }} - ${{ github.run_id }}\"}}"
