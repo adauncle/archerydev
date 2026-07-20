@@ -42,7 +42,7 @@ pyodps==0.*
 pyarrow<17
 numpy>=1.26,<2
 pandas>=2.2.3,<2.3
-greenlet<3
+greenlet==2.0.2
 # gevent 兼容老 GCC；新版 24+ 也用 C++20
 gevent<24
 clickhouse-driver==0.*
