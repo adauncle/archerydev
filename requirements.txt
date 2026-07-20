@@ -1,0 +1,47 @@
+# Archery 二次开发项目依赖
+# 上游核心依赖见 requirements.in / requirements.txt（合入上游代码后生成）
+
+# ====== Web framework ======
+Django>=4.2,<5.0
+djangorestframework>=3.14
+django-cors-headers>=4.3
+
+# ====== Database ======
+mysqlclient>=2.2.0
+PyMySQL>=1.1.0
+
+# ====== Cache & Queue ======
+redis>=5.0
+celery>=5.3
+django-redis>=5.4
+
+# ====== SQL 解析与处理 ======
+sqlparse>=0.4.4
+sqlalchemy>=2.0
+pymysql-replication>=0.45
+
+# ====== 认证 & 安全 ======
+PyJWT>=2.8
+cryptography>=41.0
+python-ldap>=3.4.0; sys_platform != "win32"
+
+# ====== 通知 & 集成 ======
+requests>=2.31
+dingtalk-sdk>=2.0
+# wechatpy>=1.8
+
+# ====== 工具 ======
+python-dotenv>=1.0
+gunicorn>=21.2
+whitenoise>=6.5
+
+# ====== 测试 ======
+pytest>=7.4
+pytest-django>=4.7
+pytest-cov>=4.1
+factory-boy>=3.3
+responses>=0.24
+
+# ====== 二次开发定制依赖（内部）======
+# 如内部使用的二方库，放这里
+# -e ../internal-libs/audit-sdk

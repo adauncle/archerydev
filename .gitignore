@@ -1,0 +1,83 @@
+# ========== Python / Django ==========
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+.env
+.env.local
+.env.*.local
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.cache/
+coverage.xml
+*.cover
+.hypothesis/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ========== Node / Frontend ==========
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.pnpm-store/
+.parcel-cache/
+.vite/
+.next/
+.nuxt/
+
+# ========== MySQL / Redis data ==========
+*.sql
+*.sql.gz
+!docs/**/*.sql
+!scripts/**/*.sql
+!migrations/**/*.sql
+data/
+mysql_data/
+redis_data/
+
+# ========== Docker ==========
+.docker/
+docker-compose.override.yml
+
+# ========== Logs & runtime ==========
+logs/
+*.log.*
+celerybeat-schedule
+celerybeat.pid
+
+# ========== Secrets ==========
+*.pem
+*.key
+*.crt
+secrets/
+credentials/

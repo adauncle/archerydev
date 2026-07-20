@@ -1,0 +1,118 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: archery-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DB:-archery}
+      MYSQL_USER: ${MYSQL_USER:-archery}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-archery}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/mysql/init:/docker-entrypoint-initdb.d:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: archery-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  archery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: archery-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - MYSQL_HOST=mysql
+      - REDIS_HOST=redis
+    ports:
+      - "9123:9123"
+    volumes:
+      - ./:/app
+      - archery_media:/app/media
+    command: >
+      bash -c "python manage.py migrate --noinput &&
+               python manage.py collectstatic --noinput &&
+               gunicorn archery.wsgi:application -w 4 -b 0.0.0.0:9123 --access-logfile -"
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: archery-celery-worker
+    restart: unless-stopped
+    depends_on:
+      - archery
+    env_file:
+      - .env
+    environment:
+      - MYSQL_HOST=mysql
+      - REDIS_HOST=redis
+    volumes:
+      - ./:/app
+    command: celery -A archery worker -l info
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: archery-celery-beat
+    restart: unless-stopped
+    depends_on:
+      - archery
+    env_file:
+      - .env
+    environment:
+      - MYSQL_HOST=mysql
+      - REDIS_HOST=redis
+    volumes:
+      - ./:/app
+    command: celery -A archery beat -l info
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: archery-nginx
+    restart: unless-stopped
+    depends_on:
+      - archery
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - archery_static:/app/static:ro
+
+volumes:
+  mysql_data:
+  redis_data:
+  archery_media:
+  archery_static:
