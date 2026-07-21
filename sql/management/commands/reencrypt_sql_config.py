@@ -1,20 +1,19 @@
-"""
 # -*- coding: UTF-8 -*-
 """
-# 一次性 management command：把 sql_config 表里所有 v1.10.0 导入的明文 value
-# 用当前 SECRET_KEY 重新加密。
-#
-# 触发场景：
-#   1. Navicat 全量导入 v1.10.0 库到 v1.14.0 库
-#   2. v1.10.0 的 Config.value 是 plain CharField
-#   3. v1.14.0 的 Config.value 是 EncryptedCharField
-#   4. ORM from_db_value 尝试解密明文失败 → auth.py int() 报 500
-#
-# 用法：
-#   python manage.py reencrypt_sql_config
-#   python manage.py reencrypt_sql_config --dry-run    # 只看不解
-#
-# 设计：raw SQL 拿原值（绕开 ORM），再用 mirage cipher 加密，UPDATE 写回
+一次性 management command：把 sql_config 表里所有 v1.10.0 导入的明文 value
+用当前 SECRET_KEY 重新加密。
+
+触发场景：
+  1. Navicat 全量导入 v1.10.0 库到 v1.14.0 库
+  2. v1.10.0 的 Config.value 是 plain CharField
+  3. v1.14.0 的 Config.value 是 EncryptedCharField
+  4. ORM from_db_value 尝试解密明文失败 → auth.py int() 报 500
+
+用法：
+  python manage.py reencrypt_sql_config
+  python manage.py reencrypt_sql_config --dry-run    # 只看不解
+
+设计：raw SQL 拿原值（绕开 ORM），再用 mirage cipher 加密，UPDATE 写回
 """
 import logging
 
