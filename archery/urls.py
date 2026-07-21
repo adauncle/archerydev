@@ -30,6 +30,15 @@ if settings.ENABLE_DINGDING:  # pragma: no cover
         path("dingding/", include("django_auth_dingding.urls")),
     ]
 
+## CUSTOM-MODIFIED: 钉钉 OA 二次开发 —— 接入 URL 路由 @ 2026-07-21 @ mavis
+## 关联设计: docs/designs/2026-07-20_dingtalk-oa-workflow.md
+## 注意：仅当 .env 中 CUSTOM_DINGTALK_OA_ENABLED=True 时 dingtalk_oa app 才会注册到 INSTALLED_APPS，
+##       这里 include 也仅在那个条件下才有意义；用 if getattr(settings, ...) 包一下做容错
+if getattr(settings, "CUSTOM_DINGTALK_OA_ENABLED", False):  # pragma: no cover
+    urlpatterns += [
+        path("dingtalk/oa/", include(("sql.extensions.dingtalk_oa.urls", "dingtalk_oa"), namespace="dingtalk_oa")),
+    ]
+
 handler400 = views.bad_request
 handler403 = views.permission_denied
 handler404 = views.page_not_found
