@@ -40,7 +40,9 @@ for f in /opt/archery_upstream/src/init_sql/v1.{1.0,2.0,3.0,3.2,3.7,4.0,4.3,4.5,
     [ -f "$f" ] && mysql_run archery_prod < "$f" 2>&1 | tail -1 > /dev/null || true
 done
 mysql_run archery_prod < /opt/archery_upstream/src/init_sql/del_permissions.sql 2>&1 | tail -1 > /dev/null || true
-mysql_run archery_prod < /opt/archery_upstream/sql/fixtures/auth_group.sql 2>&1 | tail -1 > /dev/null || true
+# auth_group.sql 里有 sql_instance_tag INSERT，Django 启动会建默认 auth_group(id=1) → 都可能 duplicate
+# 用 --force 让 mysql 遇到 error 继续跑后面的 auth_group + permissions 部分
+mysql -uroot -p"${ROOT_PWD}" -h 127.0.0.1 --force archery_prod < /opt/archery_upstream/sql/fixtures/auth_group.sql 2>/dev/null || true
 echo "  ok"
 
 echo ""
@@ -79,7 +81,10 @@ sudo -Hu archery -H bash -lc "cd /opt/archery/prod && set -a && source .env && s
 
 echo ""
 echo "=== 6. Django migrate ==="
-sudo -Hu archery -H bash -lc "cd /opt/archery/prod && set -a && source .env && set +a && venv/bin/python manage.py migrate --no-input 2>&1" | tail -5
+# 先 makemigrations 保险（万一 0001_initial 没在 git 里跑不动 migrate）
+# 跑过 makemigrations 后再 migrate
+sudo -Hu archery -H bash -lc "cd /opt/archery/prod && set -a && source .env && set +a && venv/bin/python manage.py makemigrations --no-input --dry-run --verbosity 1 2>&1" | grep -v 'No changes detected' | tail -3 || true
+sudo -Hu archery -H bash -lc "cd /opt/archery/prod && set -a && source .env && set +a && venv/bin/python manage.py migrate --no-input 2>&1" | tail -10
 
 echo ""
 echo "=== 7. seed_sql_types + init_fallback_flow ==="
