@@ -16,7 +16,8 @@ Description=Archery Production Celery Worker (concurrency=4)
 Documentation=https://github.com/adauncle/archerydev
 After=network.target mysql.service redis-server.service
 Requires=redis-server.service
-StartLimitIntervalSec=300
+# CentOS 7 systemd 219 兼容写法
+StartLimitInterval=300
 StartLimitBurst=3
 
 [Service]
@@ -35,16 +36,16 @@ ExecStart=/opt/archery/prod/venv/bin/celery \
 Restart=always
 RestartSec=5
 
-# 安全加固
+# 安全加固（CentOS 7 systemd 219 兼容写法）
 NoNewPrivileges=true
-ProtectSystem=strict
+ProtectSystem=yes
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/opt/archery /var/log/archery
+ReadWriteDirectories=/opt/archery /var/log/archery
 
 # 资源限制
 LimitNOFILE=65536
-MemoryMax=2G
+MemoryLimit=2G
 
 [Install]
 WantedBy=multi-user.target

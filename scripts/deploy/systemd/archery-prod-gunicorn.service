@@ -17,7 +17,8 @@ Documentation=https://github.com/adauncle/archerydev
 After=network.target mysql.service redis-server.service
 Requires=redis-server.service
 # 启动失败时不触发整体的 emergency.target
-StartLimitIntervalSec=300
+# CentOS 7 systemd 219 不支持 StartLimitIntervalSec/Burst，用 StartLimitInterval 兼容
+StartLimitInterval=300
 StartLimitBurst=3
 
 [Service]
@@ -40,16 +41,19 @@ ExecStart=/opt/archery/prod/venv/bin/gunicorn archery.wsgi:application \
 Restart=always
 RestartSec=5
 
-# 安全加固
+# 安全加固（CentOS 7 systemd 219 兼容写法）
 NoNewPrivileges=true
-ProtectSystem=strict
+# ProtectSystem=strict 改用 yes（systemd 219 支持 yes/no）
+ProtectSystem=yes
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/opt/archery /var/log/archery
+# ReadWritePaths 改用 ReadWriteDirectories（systemd 219 兼容名）
+ReadWriteDirectories=/opt/archery /var/log/archery
 
 # 资源限制
 LimitNOFILE=65536
-MemoryMax=2G
+# MemoryMax 改用 MemoryLimit（systemd 219 兼容名）
+MemoryLimit=2G
 
 [Install]
 WantedBy=multi-user.target
