@@ -199,7 +199,10 @@ STATIC_ROOT = os.path.join(BASE_DIR, "static")
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, "common/static"),
 ]
-STATICFILES_STORAGE = "common.storage.ForgivingManifestStaticFilesStorage"
+# 上游用的是 ForgivingManifestStaticFilesStorage，但里面 sql-formatter 等文件有重复
+# 路径冲突，collectstatic 时 manifest 静默失败，whitenoise 找不到文件 → 302 跳登录。
+# 改用 whitenoise 推荐的 CompressedStaticFilesStorage（带 gzip 压缩，不需手动维护 manifest）。
+STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
 
 # 扩展django admin里users字段用到，指定了sql/models.py里的class users
 AUTH_USER_MODEL = "sql.Users"
