@@ -43,7 +43,7 @@ ReadWriteDirectories=/opt/archery /var/log/archery
 
 # 资源限制
 LimitNOFILE=65536
-MemoryLimit=2G
+# 注：CentOS 7 systemd 219 不支持 MemoryMax/MemoryLimit（230+ 才有）
 
 [Install]
 WantedBy=multi-user.target

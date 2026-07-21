@@ -50,8 +50,8 @@ ReadWriteDirectories=/opt/archery /var/log/archery
 
 # 资源限制
 LimitNOFILE=65536
-# MemoryMax 改用 MemoryLimit（systemd 219 兼容名）
-MemoryLimit=2G
+# 注：CentOS 7 systemd 219 不支持 MemoryMax/MemoryLimit（230+ 才有）
+# 如需内存限制，部署到 CentOS 8+ 后再加
 
 [Install]
 WantedBy=multi-user.target
