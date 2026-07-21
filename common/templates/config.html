@@ -626,14 +626,18 @@
 
                         <script>
                             // 根据选择的存储类型显示配置项
+                            // CUSTOM-MODIFIED: 加 null check 防止 storageType 元素不存在时 JS 报错 @ 2026-07-21 @ mavis
                             function showStorageConfig() {
                                 const storageType = document.getElementById('storage_type').value;
                                 // 隐藏所有存储类型配置
                                 document.querySelectorAll('.storage-config').forEach(elem => {
                                     elem.style.display = 'none';
                                 });
-                                // 显示当前选中的存储类型配置
-                                document.getElementById(`storage-${storageType}`).style.display = 'block';
+                                // 显示当前选中的存储类型配置（加 null 保护）
+                                const targetElem = document.getElementById(`storage-${storageType}`);
+                                if (targetElem) {
+                                    targetElem.style.display = 'block';
+                                }
                             }
 
                             // 页面加载时初始化
