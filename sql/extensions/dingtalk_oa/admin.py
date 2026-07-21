@@ -77,7 +77,10 @@ class GroupDingtalkAuditorAdmin(admin.ModelAdmin):
     )
     list_filter = ("is_active", "group", "resource_group")
     search_fields = ("dingtalk_user_ids", "dingtalk_dept_id")
-    autocomplete_fields = ("group", "resource_group")
+    # CUSTOM-MODIFIED: 用 raw_id_fields 替 autocomplete_fields
+    # 原因: ResourceGroupAdmin 上游没定义 search_fields，Django admin.E040 报错
+    # raw_id_fields 不依赖目标 admin 的 search_fields，用 ID 输入框代替自动补全
+    raw_id_fields = ("group", "resource_group")
 
 
 @admin.register(WorkflowAuditExternal)
