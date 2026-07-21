@@ -28,17 +28,20 @@ staging 在 `2ddd91a`（tag `v0.1.0-staging`）已 100% 上线。
 
 mysql 命令加 `2>&1 | grep -v 'Using a password'` 屏蔽密码告警。
 
-## 使用方法
-
-```bash
-# 在 172.20.2.134 上
-scp scripts/deploy/deploy_prod.sh root@172.20.2.134:/tmp/
-ssh root@172.20.2.134
-bash /tmp/deploy_prod.sh
-```
-
 ## 注意事项
 
 - **会 DROP DATABASE**（`archery_prod`）—— 首次部署 OK，重跑前要确认里面没数据
 - 脚本幂等性：除 DROP 步骤外都可重跑（pip 跳过已装、gunicorn 启动前先 pkill 旧进程）
 - 跑通后建议删除 `/tmp/deploy_prod.sh`（避免留在服务器临时目录）
+
+## 已知坑 & 修复
+
+### v1.1 (commit 6b9dfee) — `set -e` + `grep -v` 退码 1
+
+**症状**：脚本在 step 1 后静默中止，archery_prod 库被 DROP+CREATE 但后续步骤都没跑。
+**根因**：`mysql ... 2>&1 | grep -v 'Using a password'` —— 当 mysql 只输密码告警那一行时，grep 过滤后空输出 → exit code 1 → `set -e` 让整个脚本死掉。
+**修复**：
+- 提取 `mysql_run()` 函数，统一 `2>/dev/null` 吞告警
+- pkill 加 `|| true` 兜底（首次部署没有旧进程时 pkill 也会退出 1）
+
+诊断方法：直接看 `/var/log/archery/deploy_prod.log`，停在 "=== 1. 重建 archery_prod 库 ===" 之后一行都没输出，就是这个坑。
