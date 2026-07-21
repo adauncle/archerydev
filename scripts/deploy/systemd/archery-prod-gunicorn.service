@@ -1,23 +1,7 @@
-## CUSTOM-NEW: Archery 生产环境 gunicorn 单元（演示用）@ 2026-07-20 @ devops-agent
-##
-## 设计依据：docs/designs/2026-07-20_devops-cicd.md §5.2
-## 部署位置：服务器上 /etc/systemd/system/archery-prod-gunicorn.service
-##
-## 启用方式（运维手工执行或由 CI/CD 推送）：
-##   sudo cp scripts/deploy/systemd/archery-prod-gunicorn.service /etc/systemd/system/
-##   sudo systemctl daemon-reload
-##   sudo systemctl enable --now archery-prod-gunicorn.service
-##   systemctl status archery-prod-gunicorn.service
-##
-## 对应 staging/dev 环境的 service 文件可由本文件派生（替换路径、端口、worker 数）
-
 [Unit]
 Description=Archery Production Gunicorn (port 9003, 4 workers)
 Documentation=https://github.com/adauncle/archerydev
-After=network.target mysql.service redis-server.service
-Requires=redis-server.service
-# 注：CentOS 7 systemd 219 不支持 StartLimitInterval/Burst（230+ 才有）
-# 默认 Restart=always 已经无限重试，不需要这个配置
+After=network.target mysqld.service redis.service
 
 [Service]
 Type=simple
@@ -31,27 +15,11 @@ ExecStart=/opt/archery/prod/venv/bin/gunicorn archery.wsgi:application \
     -b 0.0.0.0:9003 \
     --access-logfile - \
     --error-logfile - \
-    --timeout 120 \
-    --graceful-timeout 30 \
-    --keep-alive 5
+    --timeout 120
 
-# 进程管理
 Restart=always
 RestartSec=5
-
-# 安全加固（CentOS 7 systemd 219 兼容写法）
-NoNewPrivileges=true
-# ProtectSystem=strict 改用 yes（systemd 219 支持 yes/no）
-ProtectSystem=yes
-ProtectHome=true
-PrivateTmp=true
-# ReadWritePaths 改用 ReadWriteDirectories（systemd 219 兼容名）
-ReadWriteDirectories=/opt/archery /var/log/archery
-
-# 资源限制
 LimitNOFILE=65536
-# 注：CentOS 7 systemd 219 不支持 MemoryMax/MemoryLimit（230+ 才有）
-# 如需内存限制，部署到 CentOS 8+ 后再加
 
 [Install]
 WantedBy=multi-user.target

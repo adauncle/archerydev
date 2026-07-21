@@ -6,55 +6,57 @@
 
 | 服务 | 端口/路径 | 启动方式 | 进程模型 |
 |------|----------|---------|---------|
-| Archery prod gunicorn | `0.0.0.0:9003` | `nohup` + `bash -c`（不用 systemd） | 1 master + 4 workers |
+| Archery prod gunicorn | `0.0.0.0:9003` | **systemd** (`archery-prod-gunicorn.service`) | 1 master + 4 workers |
 | firewalld | 系统服务 | `systemctl` | — |
 | MySQL 8.0 | `127.0.0.1:3306` | `systemctl` | — |
 | Redis 3.2 | `127.0.0.1:6379` | `systemctl` | — |
 | cloudflared | 系统服务（按需） | `systemctl --user` | 钉钉 OA 回调用 |
 
-> ⚠️ Archery v0.1.0+ 不再用 systemd 跑 gunicorn（CentOS 7 systemd 219 有 cache bug，且部署流程走 `nohup` 更直接）。Celery 也没启用（项目用 `django-q2`）。
+> v0.1.1+ 改用 systemd 管理 gunicorn。Celery 仍不用（项目用 `django-q2`）。
 
 ## 服务启停速查
 
-### 1. Archery prod gunicorn（9003）
+### 1. Archery prod gunicorn（9003）— ⭐ systemd 管理
 
 ```bash
 # === 查状态 ===
-ssh root@172.20.2.134
-ps -ef | grep 'gunicorn.*9003' | grep -v grep
-ss -tlnp | grep ':9003 '
-curl -sS -m 5 -o /dev/null -w "HTTP %{http_code}\n" http://127.0.0.1:9003/login/
+ssh root@172.20.2.134 "systemctl status archery-prod-gunicorn.service"
+ssh root@172.20.2.134 "systemctl is-active archery-prod-gunicorn.service"
+ssh root@172.20.2.134 "curl -sS -m 5 -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:9003/login/"
 
 # === 启动 ===
-ssh root@172.20.2.134 "sudo -Hu archery bash -c 'cd /opt/archery/prod && \
-    set -a && source .env && set +a && \
-    /opt/archery/prod/venv/bin/gunicorn archery.wsgi:application \
-        -w 4 -b 0.0.0.0:9003 \
-        --access-logfile - --error-logfile - --timeout 120 \
-        > /var/log/archery/prod-gunicorn.log 2>&1 &'"
+ssh root@172.20.2.134 "systemctl start archery-prod-gunicorn.service"
 
-# === 优雅停（SIGTERM，master 收到后通知 workers drain）===
-ssh root@172.20.2.134 "pkill -TERM -f 'gunicorn.*9003'"
-# 等 5 秒
-ssh root@172.20.2.134 "sleep 5 && pgrep -f 'gunicorn.*9003' || echo '已全部退出'"
+# === 优雅停止（master 收到 SIGTERM，通知 workers drain，默认 30s 超时）===
+ssh root@172.20.2.134 "systemctl stop archery-prod-gunicorn.service"
 
-# === 强杀（SIGKILL，不优雅但立即生效）===
-ssh root@172.20.2.134 "pkill -9 -f 'gunicorn.*9003'"
+# === 重启（stop + start，等同于 systemctl restart）===
+ssh root@172.20.2.134 "systemctl restart archery-prod-gunicorn.service"
 
-# === 重启（先停后启）===
-ssh root@172.20.2.134 "pkill -TERM -f 'gunicorn.*9003' && sleep 5 && \
-    sudo -Hu archery bash -c 'cd /opt/archery/prod && \
-        set -a && source .env && set +a && \
-        /opt/archery/prod/venv/bin/gunicorn archery.wsgi:application \
-            -w 4 -b 0.0.0.0:9003 \
-            --access-logfile - --error-logfile - --timeout 120 \
-            > /var/log/archery/prod-gunicorn.log 2>&1 &'"
+# === 看日志（journalctl，systemd 接管后的 gunicorn 输出都在这）===
+ssh root@172.20.2.134 "journalctl -u archery-prod-gunicorn.service -f"
+ssh root@172.20.2.134 "journalctl -u archery-prod-gunicorn.service --since '1 hour ago'"
+
+# === 启用/禁用开机自启 ===
+ssh root@172.20.2.134 "systemctl enable archery-prod-gunicorn.service"   # 开机自启
+ssh root@172.20.2.134 "systemctl disable archery-prod-gunicorn.service"  # 取消自启
 ```
 
-**PID 文件**：gunicorn 当前**没写 PID 文件**（没用 `--pid` 选项）。要查 master PID 用：
+**unit 文件位置**：`/etc/systemd/system/archery-prod-gunicorn.service`
+**源码**：`scripts/deploy/systemd/archery-prod-gunicorn.service`（项目仓库）
+**PID 由 systemd 托管**：`systemctl status` 里 `Main PID` 就是 master
+
+**修改 unit 文件后的生效流程**：
 ```bash
-ssh root@172.20.2.134 "pgrep -f 'gunicorn.*9003' | head -1"
+ssh root@172.20.2.134
+# 1. 编辑文件（或 scp 上传新版本）
+# 2. 重载 systemd
+systemctl daemon-reload
+# 3. 重启服务
+systemctl restart archery-prod-gunicorn.service
 ```
+
+**开机自启已配置**：`systemctl is-enabled archery-prod-gunicorn.service` 应返回 `enabled`。
 
 ### 2. firewalld 端口管理
 
@@ -141,10 +143,15 @@ ssh archery@172.20.2.134 "cloudflared tunnel info <tunnel-name>"
 ## 日志位置
 
 ```bash
-# Archery prod 访问/错误日志（gunicorn --access-logfile - --error-logfile - 重定向到文件）
-/var/log/archery/prod-gunicorn.log
+# Archery prod gunicorn 日志（systemd 接管后用 journalctl 查）
+journalctl -u archery-prod-gunicorn.service -f           # 实时跟踪
+journalctl -u archery-prod-gunicorn.service -n 100       # 最近 100 条
+journalctl -u archery-prod-gunicorn.service --since today
 
-# Archery 部署日志
+# 如果 journalctl 没启用，旧的 /var/log/archery/prod-gunicorn.log 还有
+# （v0.1.1+ 改 systemd 后这个文件不会再写，但保留作 fallback）
+
+# 部署日志
 /var/log/archery/deploy_prod.log
 /var/log/archery/deploy_staging.log    # 历史
 
@@ -180,67 +187,66 @@ git push origin main
 ### 场景 2：手动重启 prod（不动代码）
 
 ```bash
-# SSH 上去，杀 gunicorn，起新 gunicorn
-ssh root@172.20.2.134 <<'EOF'
-pkill -TERM -f 'gunicorn.*9003'
-sleep 5
-sudo -Hu archery bash -c 'cd /opt/archery/prod && \
-    set -a && source .env && set +a && \
-    /opt/archery/prod/venv/bin/gunicorn archery.wsgi:application \
-        -w 4 -b 0.0.0.0:9003 \
-        --access-logfile - --error-logfile - --timeout 120 \
-        > /var/log/archery/prod-gunicorn.log 2>&1 &'
-sleep 4
-echo "=== 状态 ==="
-ps -ef | grep 'gunicorn.*9003' | grep -v grep
-ss -tlnp | grep ':9003 '
-EOF
+# systemd 一行搞定
+ssh root@172.20.2.134 "systemctl restart archery-prod-gunicorn.service"
+
+# 验证
+ssh root@172.20.2.134 "systemctl status archery-prod-gunicorn.service --no-pager"
+ssh root@172.20.2.134 "curl -sS -m 5 -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:9003/login/"
 ```
 
 ### 场景 3：紧急下线（保留数据）
 
 ```bash
 # 只关 gunicorn，不动数据库
-ssh root@172.20.2.134 "pkill -TERM -f 'gunicorn.*9003' && sleep 5 && \
-    pgrep -f 'gunicorn.*9003' || echo '已全部退出'"
+ssh root@172.20.2.134 "systemctl stop archery-prod-gunicorn.service"
 
-# 同时关端口
+# 同时关端口（防止误访问）
 ssh root@172.20.2.134 "firewall-cmd --permanent --remove-port=9003/tcp && \
     firewall-cmd --reload"
+
+# 重新启用
+ssh root@172.20.2.134 "firewall-cmd --permanent --add-port=9003/tcp && \
+    firewall-cmd --reload && \
+    systemctl start archery-prod-gunicorn.service"
 ```
 
 ### 场景 4：清空 prod 重新部署
 
 ```bash
 # 跑 scripts/deploy/deploy_prod.sh（在 172.20.2.134 上）
-# 会 DROP DATABASE archery_prod → 跑 SQL init → venv → pip install → migrate → seed → 启 gunicorn
-# ⚠️ 首次部署 OK，重跑前确认 prod 没数据
+# 会 DROP DATABASE archery_prod → 跑 SQL init → venv → pip install → migrate → seed
+# 部署完成后 systemd 启动要手动做（因为 deploy 脚本会 pkill 老 gunicorn）：
 ssh root@172.20.2.134 "bash /tmp/deploy_prod.sh"
+ssh root@172.20.2.134 "systemctl daemon-reload"   # 重新加载 unit
+ssh root@172.20.2.134 "systemctl restart archery-prod-gunicorn.service"
+# ⚠️ 首次部署 OK，重跑前确认 prod 没数据
 ```
 
-### 场景 5：从 prod 切回 staging（如果以后又想开 staging）
+### 场景 5：手动从 staging 切回 prod（如果以后又想开 staging）
 
 ```bash
-# 启 staging gunicorn（目录和 venv 都在 /opt/archery/staging）
+# 写一个 archery-staging-gunicorn.service（参考 prod 单元，9002 端口、-w 2）
+# 复制 prod unit 改路径和端口即可
+
 ssh root@172.20.2.134 "firewall-cmd --permanent --add-port=9002/tcp && \
     firewall-cmd --reload"
 
-ssh root@172.20.2.134 "sudo -Hu archery bash -c 'cd /opt/archery/staging && \
-    set -a && source .env && set +a && \
-    /opt/archery/staging/venv/bin/gunicorn archery.wsgi:application \
-        -w 2 -b 0.0.0.0:9002 \
-        --access-logfile - --error-logfile - --timeout 120 \
-        > /var/log/archery/staging-gunicorn.log 2>&1 &'"
+ssh root@172.20.2.134 "systemctl daemon-reload"
+ssh root@172.20.2.134 "systemctl enable --now archery-staging-gunicorn.service"
 ```
 
 ## 进程管理坑位（不要踩）
 
-1. **`pkill -9 -f 'gunicorn.*9003'` 在 ssh 内部用可能杀掉父 bash** —— 用 `pgrep` 先拿 PID 再 `kill`
-2. **gunicorn 没写 PID 文件** —— 没法用 `kill $(cat /var/run/archery.pid)`，必须用 pgrep
-3. **systemd 219 (CentOS 7) cache bug** —— `systemctl daemon-reexec` 后 service unit 显示 "Unit not found"，所以 v0.1.0+ 改用 `nohup` 不走 systemd
-4. **`sudo -Hu archery` 后 PATH 改了** —— 完整路径用 `/usr/local/bin/python3.11` 不用裸 `python`
-5. **`archery` 用户 git 1.8 没 `-C` 支持** —— 复杂 git 操作先 `cd DIR && sudo -Hu archery git ...`
-6. **firewalld `--permanent` 必须 `--reload` 才生效** —— 临时改 `--add-port` 不带 permanent 立即生效但 reload 后丢
+1. **systemd 219 (CentOS 7) "Unit not found" cache bug** —— `daemon-reexec` 或 `daemon-reload` 后 `start` 仍报 "Unit not found"（即使 `list-units` 显示 loaded）。  
+   解决：unit 文件**保持最简**（17 行就够），不要用 ProtectSystem/ReadWritePaths 这些 systemd 230+ 才稳定的指令。SELinux context 必须是 `systemd_unit_file_t`（`chcon -t systemd_unit_file_t`）。
+2. **dbops.service 死循环** —— 同服务器上的 dbops.service 找不到 uvicorn，每 10s 重启一次，会占满 systemd job queue，导致 archery unit 启动异常。  
+   解决：第一次部署时 `systemctl disable --now dbops.service` 停掉（如果不是你们在用的服务）。
+3. **gunicorn 没写 PID 文件** —— master 进程由 systemd 托管，`Main PID` 在 `systemctl status` 里看，不要去找 `/var/run/archery.pid`。
+4. **`sudo -Hu archery` 后 PATH 改了** —— systemd unit 里用 `ExecStart=/opt/archery/prod/venv/bin/gunicorn ...` 完整路径，不要 `ExecStart=gunicorn ...`。
+5. **`archery` 用户 git 1.8 没 `-C` 支持** —— 复杂 git 操作先 `cd DIR && sudo -Hu archery git ...`。
+6. **firewalld `--permanent` 必须 `--reload` 才生效** —— 临时改 `--add-port` 不带 permanent 立即生效但 reload 后丢。
+7. **Archery v0.1.1+ 不再单独管理 celery worker** —— 项目用 django-q2 替代 Celery，不需要 worker 进程。
 
 ## 应急联系
 
