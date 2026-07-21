@@ -1,8 +1,17 @@
 #!/bin/bash
 ## 部署 prod 环境（archery_prod 库 + 端口 9003 + 4 workers）
+##
+## 修过 set -e 兼容：
+##   旧版 `mysql ... 2>&1 | grep -v 'Using a password'` 当 mysql 只输密码告警时，
+##   grep 过滤后空输出 → exit code 1 → set -e 让脚本中止。
+##   改为 `mysql ... 2>/dev/null` 直接吞掉告警，简单可靠。
 set -e
 DBOPS_PWD="$(cat /etc/archery/dbops_password)"
 ROOT_PWD="$(cat /etc/archery/.mysql_root)"
+# 通用：吞掉密码告警的 mysql 函数（用 stderr 屏蔽，stdout 仍输出）
+mysql_run() {
+    mysql -uroot -p"${ROOT_PWD}" -h 127.0.0.1 "$@" 2>/dev/null
+}
 
 echo "=== 0. 状态 ==="
 echo "  .env 存在: $(ls -l /opt/archery/prod/.env)"
@@ -10,32 +19,34 @@ echo "  HEAD: $(cd /opt/archery/prod && git log -1 --oneline)"
 
 echo ""
 echo "=== 1. 重建 archery_prod 库 ==="
-mysql -uroot -p"${ROOT_PWD}" -h 127.0.0.1 -e "DROP DATABASE IF EXISTS archery_prod; CREATE DATABASE archery_prod DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>&1 | grep -v 'Using a password'
+mysql_run -e "DROP DATABASE IF EXISTS archery_prod; CREATE DATABASE archery_prod DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 echo "  ok"
 
 echo ""
 echo "=== 2. 跑 Archery v1.0_init.sql + 升级 SQL ==="
-mysql -uroot -p"${ROOT_PWD}" -h 127.0.0.1 archery_prod < /opt/archery_upstream/src/init_sql/v1.0_init.sql 2>&1 | grep -v 'Using a password' | tail -3
+mysql_run archery_prod < /opt/archery_upstream/src/init_sql/v1.0_init.sql | tail -3
 for f in /opt/archery_upstream/src/init_sql/v1.{1.0,2.0,3.0,3.2,3.7,4.0,4.3,4.5,5.0,5.3_comment,6.0,6.1,6.2,6.3,6.6,6.7,7.0,7.1,7.2,7.3,7.5,7.7,7.8,7.11,7.12,8.3,8.4,9.0,10.0,12.0,13.0}.sql; do
-    [ -f "$f" ] && mysql -uroot -p"${ROOT_PWD}" -h 127.0.0.1 archery_prod < "$f" 2>&1 | grep -v 'Using a password' | tail -1 > /dev/null
+    [ -f "$f" ] && mysql_run archery_prod < "$f" > /dev/null
 done
-mysql -uroot -p"${ROOT_PWD}" -h 127.0.0.1 archery_prod < /opt/archery_upstream/src/init_sql/del_permissions.sql 2>&1 | grep -v 'Using a password' | tail -1 > /dev/null
-mysql -uroot -p"${ROOT_PWD}" -h 127.0.0.1 archery_prod < /opt/archery_upstream/sql/fixtures/auth_group.sql 2>&1 | grep -v 'Using a password' | tail -1 > /dev/null
+mysql_run archery_prod < /opt/archery_upstream/src/init_sql/del_permissions.sql > /dev/null
+mysql_run archery_prod < /opt/archery_upstream/sql/fixtures/auth_group.sql > /dev/null
 echo "  ok"
 
 echo ""
 echo "=== 3. 加 audit_driver 字段到 sql_workflow ==="
-mysql -uroot -p"${ROOT_PWD}" -h 127.0.0.1 archery_prod -e "
+mysql_run archery_prod -e "
 ALTER TABLE sql_workflow 
   ADD COLUMN audit_driver VARCHAR(32) NOT NULL DEFAULT 'archery' AFTER status,
   ADD COLUMN audit_fallback_reason VARCHAR(255) NOT NULL DEFAULT '' AFTER audit_driver;
-" 2>&1 | grep -v 'Using a password'
+"
+echo "  ok"
 
 echo ""
 echo "=== 4. 建 venv ==="
 if [ ! -d /opt/archery/prod/venv ]; then
     sudo -Hu archery /usr/local/bin/python3.11 -m venv /opt/archery/prod/venv
 fi
+echo "  ok"
 
 echo ""
 echo "=== 5. pip install ==="
@@ -86,7 +97,8 @@ sudo -Hu archery -H bash -lc "cd /opt/archery/prod && set -a && source .env && s
 
 echo ""
 echo "=== 11. 启动 gunicorn（9003 端口 0.0.0.0）==="
-pkill -f 'gunicorn.*prod' 2>/dev/null
+pkill -f 'gunicorn.*prod' 2>/dev/null || true
+pkill -f 'gunicorn.*9003' 2>/dev/null || true
 sleep 2
 sudo -Hu archery bash -c 'cd /opt/archery/prod && set -a && source .env && set +a && \
     /opt/archery/prod/venv/bin/gunicorn archery.wsgi:application \
