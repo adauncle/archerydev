@@ -28,7 +28,7 @@ EnvironmentFile=/opt/archery/prod/.env
 
 ExecStart=/opt/archery/prod/venv/bin/gunicorn archery.wsgi:application \
     -w 4 \
-    -b 127.0.0.1:9003 \
+    -b 0.0.0.0:9003 \
     --access-logfile - \
     --error-logfile - \
     --timeout 120 \
