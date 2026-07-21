@@ -16,9 +16,7 @@ Description=Archery Production Celery Worker (concurrency=4)
 Documentation=https://github.com/adauncle/archerydev
 After=network.target mysql.service redis-server.service
 Requires=redis-server.service
-# CentOS 7 systemd 219 兼容写法
-StartLimitInterval=300
-StartLimitBurst=3
+# 注：CentOS 7 systemd 219 不支持 StartLimitInterval/Burst（230+ 才有）
 
 [Service]
 Type=simple

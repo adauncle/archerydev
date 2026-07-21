@@ -16,10 +16,8 @@ Description=Archery Production Gunicorn (port 9003, 4 workers)
 Documentation=https://github.com/adauncle/archerydev
 After=network.target mysql.service redis-server.service
 Requires=redis-server.service
-# 启动失败时不触发整体的 emergency.target
-# CentOS 7 systemd 219 不支持 StartLimitIntervalSec/Burst，用 StartLimitInterval 兼容
-StartLimitInterval=300
-StartLimitBurst=3
+# 注：CentOS 7 systemd 219 不支持 StartLimitInterval/Burst（230+ 才有）
+# 默认 Restart=always 已经无限重试，不需要这个配置
 
 [Service]
 Type=simple
