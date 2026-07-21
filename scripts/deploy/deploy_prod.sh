@@ -26,20 +26,33 @@ echo ""
 echo "=== 2. 跑 Archery v1.0_init.sql + 升级 SQL ==="
 mysql_run archery_prod < /opt/archery_upstream/src/init_sql/v1.0_init.sql | tail -3
 for f in /opt/archery_upstream/src/init_sql/v1.{1.0,2.0,3.0,3.2,3.7,4.0,4.3,4.5,5.0,5.3_comment,6.0,6.1,6.2,6.3,6.6,6.7,7.0,7.1,7.2,7.3,7.5,7.7,7.8,7.11,7.12,8.3,8.4,9.0,10.0,12.0,13.0}.sql; do
-    [ -f "$f" ] && mysql_run archery_prod < "$f" > /dev/null
+    # 升级 SQL 多数有 IF NOT EXISTS 兜底，但 v1.1.0 / v1.2.0 / v1.5.0 / v1.5.3 / v1.7.7 / v1.10.0 等会因
+    # 表/列已存在而报错（DROP 重建后跑全 loop 是幂等依赖这些 IF NOT EXISTS 的）。
+    # 升级 SQL 是 best-effort，每个文件失败不影响后续 → || true 兜底
+    [ -f "$f" ] && mysql_run archery_prod < "$f" 2>&1 | tail -1 > /dev/null || true
 done
-mysql_run archery_prod < /opt/archery_upstream/src/init_sql/del_permissions.sql > /dev/null
-mysql_run archery_prod < /opt/archery_upstream/sql/fixtures/auth_group.sql > /dev/null
+mysql_run archery_prod < /opt/archery_upstream/src/init_sql/del_permissions.sql 2>&1 | tail -1 > /dev/null || true
+mysql_run archery_prod < /opt/archery_upstream/sql/fixtures/auth_group.sql 2>&1 | tail -1 > /dev/null || true
 echo "  ok"
 
 echo ""
 echo "=== 3. 加 audit_driver 字段到 sql_workflow ==="
-mysql_run archery_prod -e "
-ALTER TABLE sql_workflow 
+# 用 INFORMATION_SCHEMA 判断字段是否已存在，避免 ALTER 报 Duplicate column
+EXISTING=$(mysql_run archery_prod -N -B -e "
+SELECT COUNT(*) FROM information_schema.columns
+WHERE table_schema='archery_prod' AND table_name='sql_workflow'
+  AND column_name IN ('audit_driver','audit_fallback_reason');
+")
+if [ "$EXISTING" = "0" ]; then
+    mysql_run archery_prod -e "
+ALTER TABLE sql_workflow
   ADD COLUMN audit_driver VARCHAR(32) NOT NULL DEFAULT 'archery' AFTER status,
   ADD COLUMN audit_fallback_reason VARCHAR(255) NOT NULL DEFAULT '' AFTER audit_driver;
 "
-echo "  ok"
+    echo "  ok (已加 2 个字段)"
+else
+    echo "  skip (字段已存在，count=$EXISTING)"
+fi
 
 echo ""
 echo "=== 4. 建 venv ==="
