@@ -15,7 +15,7 @@ venv
 env
 .venv/
 __pycache__/
-dist/
+/dist/
 *.egg-info/
 sonar-project.properties
 .scannerwork
@@ -25,7 +25,7 @@ src/docker-compose-dev
 .coverage
 coverage.xml
 archery_custom
-static/
+/static/
 nohup.out
 
 # ========== Python / Django ==========
@@ -47,9 +47,9 @@ htmlcov/
 
 # Django media/static（不要提交到 git）
 media/
-static/
+/static/
 !media/.gitkeep
-!static/.gitkeep
+!/static/.gitkeep
 
 # ========== Node / Frontend ==========
 node_modules/
