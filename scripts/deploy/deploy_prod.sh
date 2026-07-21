@@ -15,7 +15,15 @@ mysql_run() {
 
 echo "=== 0. 状态 ==="
 echo "  .env 存在: $(ls -l /opt/archery/prod/.env)"
-echo "  HEAD: $(cd /opt/archery/prod && git log -1 --oneline)"
+echo "  HEAD (前): $(cd /opt/archery/prod && git log -1 --oneline)"
+
+echo ""
+echo "=== 0.5 git pull（确保 requirements.txt / 代码是最新的）==="
+# 注意：archery 用户的 git 是 1.8（没 -C 支持），所以先 cd 再 sudo -Hu
+cd /opt/archery/prod
+sudo -Hu archery git fetch origin 2>&1 | tail -2
+sudo -Hu archery git reset --hard origin/main 2>&1 | tail -2
+echo "  HEAD (后): $(git log -1 --oneline)"
 
 echo ""
 echo "=== 1. 重建 archery_prod 库 ==="
