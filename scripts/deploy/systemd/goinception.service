@@ -1,0 +1,17 @@
+[Unit]
+Description=GoInception SQL Audit Engine
+Documentation=https://github.com/hanchuanchuan/goInception
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/goinception
+ExecStart=/opt/goinception/goInception -config=/opt/goinception/config/config.toml
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

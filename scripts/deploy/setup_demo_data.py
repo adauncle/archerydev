@@ -5,6 +5,8 @@ setup_demo_data.py
 依赖：
     - setup_test_group.py 必须先跑（建 group_id=25 测试组）
     - 需要 /etc/archery/dbops_password
+    - 需要 goInception 装好并跑起来（install_goinception.sh）
+    - 需要 configure_goinception.py 跑过（写 SysConfig）
 
 步骤：
     1) 建测试 Instance（本机 MySQL 8.0）
@@ -31,6 +33,7 @@ from sql.models import Instance, WorkflowAuditSetting
 from sql.extensions.dingtalk_oa.models import (
     SqlTypeRegistry, CoreBusinessTable, ApprovalFlow, ApprovalPolicy
 )
+from common.config import SysConfig
 
 DBOPS_PWD_FILE = "/etc/archery/dbops_password"
 with open(DBOPS_PWD_FILE) as f:
@@ -199,6 +202,26 @@ print(f"  {'✓ 新建' if created else '↻ 更新'} workflow_audit_setting "
       f"audit_auth_groups={obj.audit_auth_groups!r}")
 print("  说明: 这是 *默认* 审流，提交后 ConfigurableAuditor 仍会按")
 print("        ext_approval_flow 的策略匹配重新决定走 archery / dingtalk_oa")
+
+print()
+print("=" * 60)
+print("8.5) 配 SysConfig goInception (sql/engines/goinception.py 用)")
+print("=" * 60)
+cfg = SysConfig()
+sys_settings = {
+    "go_inception_host": "127.0.0.1",
+    "go_inception_port": "4000",
+    "go_inception_user": "root",        # goInception 不真鉴权，但 MySQLdb 拿到 None 会报错
+    "go_inception_password": "",
+    "inception_remote_backup_host": "", # 留空 = 关闭 backup
+    "inception_remote_backup_port": "3306",
+    "inception_remote_backup_user": "root",
+    "inception_remote_backup_password": "",
+}
+for k, v in sys_settings.items():
+    cfg.set(k, v)
+print(f"  ✓ SysConfig goInception 配置已写: {list(sys_settings.keys())}")
+print(f"  验证: go_inception_host = {cfg.get('go_inception_host')!r}")
 
 print()
 print("=" * 60)
