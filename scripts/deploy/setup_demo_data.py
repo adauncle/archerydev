@@ -1,6 +1,24 @@
 ﻿"""
 setup_demo_data.py
 在 172.20.2.134 prod 上创建钉钉 OA 流程演示数据
+
+依赖：
+    - setup_test_group.py 必须先跑（建 group_id=25 测试组）
+    - 需要 /etc/archery/dbops_password
+
+步骤：
+    1) 建测试 Instance（本机 MySQL 8.0）
+    2) 改 default ApprovalFlow 的 audit_auth_groups (新驱动系统)
+    3) 建 archery 内审 ApprovalFlow (normal)
+    4) 建钉钉 OA ApprovalFlow (high_risk, 占位 process_code)
+    5) 建 ApprovalPolicy 1: 高风险 → 钉钉 OA
+    6) 建 ApprovalPolicy 2: 中风险 → archery 内审
+    7) 建 CoreBusinessTable 示例
+    8) 补 workflow_audit_setting 上游审流配置
+       原因：/submitsql/ 页面通过 sql/utils/workflow_audit.py:691
+       Audit.settings() 读的是上游 workflow_audit_setting 表，不补这条
+       测试组的下拉会空，提交时弹 '请配置审批流程'。
+    9) 打印最终状态
 """
 import os
 import sys
@@ -9,7 +27,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "archery.settings")
 import django
 django.setup()
 
-from sql.models import Instance
+from sql.models import Instance, WorkflowAuditSetting
 from sql.extensions.dingtalk_oa.models import (
     SqlTypeRegistry, CoreBusinessTable, ApprovalFlow, ApprovalPolicy
 )
@@ -163,7 +181,28 @@ print(f"    level={cbt.level!r}, instance={cbt.instance.instance_name!r}")
 
 print()
 print("=" * 60)
-print("8) 最终状态汇总")
+print("8) 补 workflow_audit_setting (上游审流配置)")
+print("=" * 60)
+# 这一步是 /submitsql/ 页面下拉能显示审批流程的关键
+# /submitsql/ 通过 Audit.settings(group_id, workflow_type) 读
+# 上游 workflow_audit_setting 表 (见 sql/utils/workflow_audit.py:691)
+# 不补这条 -> 表单校验 '请配置审批流程' -> 提交卡死
+obj, created = WorkflowAuditSetting.objects.update_or_create(
+    group_id=25, workflow_type=2,
+    defaults={
+        "group_name": "测试组",
+        "audit_auth_groups": "3",  # 3 = DBA 组
+    },
+)
+print(f"  {'✓ 新建' if created else '↻ 更新'} workflow_audit_setting "
+      f"id={obj.audit_setting_id} group_id=25 workflow_type=2 "
+      f"audit_auth_groups={obj.audit_auth_groups!r}")
+print("  说明: 这是 *默认* 审流，提交后 ConfigurableAuditor 仍会按")
+print("        ext_approval_flow 的策略匹配重新决定走 archery / dingtalk_oa")
+
+print()
+print("=" * 60)
+print("9) 最终状态汇总")
 print("=" * 60)
 print(f"  Instance 数: {Instance.objects.count()}")
 for x in Instance.objects.all():
@@ -177,6 +216,10 @@ for p in ApprovalPolicy.objects.all():
 print(f"  CoreBusinessTable 数: {CoreBusinessTable.objects.count()}")
 for c in CoreBusinessTable.objects.all():
     print(f"    - {c.db_name}.{c.table_name} level={c.level}")
+print(f"  workflow_audit_setting (上游, /submitsql/ 用):")
+for s in WorkflowAuditSetting.objects.filter(group_id=25):
+    print(f"    - id={s.audit_setting_id} group_id={s.group_id} "
+          f"workflow_type={s.workflow_type} audit_auth_groups={s.audit_auth_groups!r}")
 print()
-print("DONE - 重启 gunicorn 让 ORM 缓存刷新：")
-print("  systemctl restart archery-prod-gunicorn.service")
+print("DONE - 刷新 /submitsql/ 页面，下拉应显示 'DBA'（来自 auth_group id=3）")
+print("      之后点击 SQL检测 -> 提交，会走 ConfigurableAuditor 路由到正确的 driver")
