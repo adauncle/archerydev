@@ -11,7 +11,7 @@ from email.header import Header
 from email.utils import formataddr
 
 from common.config import SysConfig
-from common.utils.ding_api import get_access_token
+from common.utils.ding_api import get_access_token, get_oa_access_token
 from common.utils.wx_api import get_wx_access_token
 from common.utils.feishu_api import *
 
@@ -158,7 +158,7 @@ class MsgSender(object):
 
     def send_ding2user(self, userid_list, content):
         """
-        发送钉钉消息到个人
+        发送钉钉消息到个人 (登录 App 版，兼容老用法)
         :param userid_list:
         :param content:
         :return:
@@ -178,6 +178,54 @@ class MsgSender(object):
             logger.error(
                 f"钉钉推送失败\n请求连接:{send_url}\n请求参数:{data}\n请求响应:{r_json}"
             )
+
+    ## CUSTOM-MODIFIED: 钉钉 OA 二次开发 —— send_ding2user_via_oa 用 OA App 推工作通知
+    ##                  区别于 send_ding2user (登录 App)：access_token / agent_id 都是 OA App 的
+    ##                  OA App 在钉钉开放平台单独建，权限范围更小（仅工作通知/OA审批），
+    ##                  适合给 Archery 后台通知用，避免污染登录 App 的鉴权。
+    ##                  关联 changelog: docs/changelogs/2026-07-23_v0.1.7-dingtalk-1on1-notify.md
+    def send_ding2user_via_oa(self, userid_list, content, msg_type="text"):
+        """
+        发送钉钉 OA App 工作通知 (一对一/工作通知列表)
+        :param userid_list: 钉钉 userid 列表
+        :param content: 消息内容 (msg_type='text' 时)
+        :param msg_type: 消息类型，目前只支持 'text'
+        :return: dict 钉钉原始返回
+        """
+        from django.conf import settings
+        agent_id = settings.DINGTALK_OA_AGENT_ID
+        if not agent_id:
+            logger.error("send_ding2user_via_oa: DINGTALK_OA_AGENT_ID 未配置")
+            return {"errcode": -1, "errmsg": "DINGTALK_OA_AGENT_ID not set"}
+        access_token = get_oa_access_token()
+        if not access_token:
+            logger.error("send_ding2user_via_oa: get_oa_access_token 失败")
+            return {"errcode": -1, "errmsg": "get_oa_access_token failed"}
+        send_url = (
+            f"https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2"
+            f"?access_token={access_token}"
+        )
+        msg = {"msgtype": msg_type, "text": {"content": f"{content}"}}
+        data = {
+            "userid_list": ",".join(list(set(userid_list))),
+            "agent_id": agent_id,
+            "msg": msg,
+        }
+        try:
+            r = requests.post(url=send_url, json=data, timeout=5)
+            r_json = r.json()
+        except Exception as e:
+            logger.error(f"send_ding2user_via_oa HTTP 失败: {e}")
+            return {"errcode": -1, "errmsg": str(e)}
+        if r_json.get("errcode") == 0:
+            logger.debug(
+                f"钉钉 OA 工作通知发送成功\n通知对象:{userid_list}\n消息内容:{content}"
+            )
+        else:
+            logger.error(
+                f"钉钉 OA 工作通知发送失败\nurl:{send_url}\ndata:{data}\nresp:{r_json}"
+            )
+        return r_json
 
     def send_wx2user(self, msg, user_list):
         if not user_list:

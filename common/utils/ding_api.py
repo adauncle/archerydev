@@ -44,6 +44,74 @@ def get_access_token():
         return None
 
 
+# ======================== 钉钉 OA 二次开发 (CUSTOM-MODIFIED) ========================
+## CUSTOM-MODIFIED: 钉钉 OA 二次开发 —— get_oa_access_token 用 OA App 拿 token
+##                  (与登录 App 的 get_access_token 独立，缓存 key 也不一样)
+##                  用于 DingdingPersonNotifier 推工作通知、DingtalkOaDriver 推 OA 流程
+##                  关联 changelog: docs/changelogs/2026-07-23_v0.1.7-dingtalk-1on1-notify.md
+def get_oa_access_token(app_key=None, app_secret=None):
+    """获取钉钉 OA App 的 access_token (与登录 App 独立).
+
+    优先用 settings.DINGTALK_OA_APP_KEY/SECRET (.env 注入),
+    没配置再 fallback 到 SysConfig (兼容老的 sys_config 写法).
+
+    缓存 key 用 `dingtalk_oa_access_token` 避免与登录 App 冲突.
+    """
+    from django.conf import settings
+    app_key = app_key or settings.DINGTALK_OA_APP_KEY
+    app_secret = app_secret or settings.DINGTALK_OA_APP_SECRET
+    if not app_key or not app_secret:
+        logger.error("get_oa_access_token: DINGTALK_OA_APP_KEY/SECRET 未配置")
+        return None
+    # 缓存
+    try:
+        cached = rs.execute_command("get dingtalk_oa_access_token")
+    except Exception as e:
+        logger.error(f"get_oa_access_token 缓存读失败: {e}")
+        cached = None
+    if cached:
+        return cached.decode() if isinstance(cached, bytes) else cached
+    # 拉新
+    url = f"https://oapi.dingtalk.com/gettoken?appkey={app_key}&appsecret={app_secret}"
+    try:
+        resp = requests.get(url, timeout=3).json()
+    except Exception as e:
+        logger.error(f"get_oa_access_token HTTP 失败: {e}")
+        return None
+    if resp.get("errcode") == 0:
+        token = resp.get("access_token")
+        expires_in = resp.get("expires_in", 7200)
+        try:
+            rs.execute_command(f"SETEX dingtalk_oa_access_token {int(expires_in) - 60} {token}")
+        except Exception as e:
+            logger.warning(f"get_oa_access_token 缓存写失败: {e}")
+        return token
+    logger.error(f"get_oa_access_token 钉钉返回错误: {resp}")
+    return None
+
+
+def get_dept_user_ids(dept_id: str, access_token: str) -> list:
+    """递归拉取部门下所有 userid, 用于 GroupDingtalkAuditor.dingtalk_dept_id 字段.
+
+    用钉钉 topapi/user/list (新版) 或 oapi/user/simplelist (老版).
+    老版接口更通用, 一次返回部门下所有 user.
+    """
+    if not dept_id or not access_token:
+        return []
+    # 先查本部门 + 子部门
+    url = f"https://oapi.dingtalk.com/user/simplelist?access_token={access_token}&department_id={dept_id}"
+    try:
+        resp = requests.get(url, timeout=5).json()
+    except Exception as e:
+        logger.error(f"get_dept_user_ids HTTP 失败: {e}")
+        return []
+    if resp.get("errcode") != 0:
+        logger.error(f"get_dept_user_ids 钉钉返回错误: {resp}")
+        return []
+    userlist = resp.get("userlist", []) or []
+    return [u.get("userid") for u in userlist if u.get("userid")]
+
+
 def get_ding_user_id(username):
     """更新用户ding_user_id"""
     try:

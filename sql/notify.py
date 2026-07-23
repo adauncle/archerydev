@@ -381,17 +381,92 @@ class DingdingPersonNotifier(LegacyRender):
     name = "ding_to_person"
     sys_config_key: str = "ding_to_person"
 
+    ## CUSTOM-MODIFIED: 钉钉 OA 二次开发 —— DingdingPersonNotifier 优先读 GroupDingtalkAuditor
+    ##                  关联 changelog: docs/changelogs/2026-07-23_v0.1.7-dingtalk-1on1-notify.md
     def send(self):
+        from django.conf import settings
         msg_sender = MsgSender()
+        use_oa_app = bool(getattr(settings, "DINGTALK_OA_APP_KEY", ""))
         for m in self.messages:
-            ding_user_id_list = [
-                user.ding_user_id
-                for user in chain(m.msg_to, m.msg_cc)
-                if user.ding_user_id
-            ]
-            msg_sender.send_ding2user(
-                ding_user_id_list, f"{m.msg_title}\n{m.msg_content}"
+            # 1) 先按 GroupDingtalkAuditor 路由 (auth_group + resource_group) 拿到钉钉 userids
+            ding_user_id_list = self._resolve_dingtalk_user_ids(m)
+            if not ding_user_id_list:
+                continue
+            content = f"{m.msg_title}\n{m.msg_content}"
+            # 2) 用 OA App 还是登录 App 推
+            if use_oa_app:
+                msg_sender.send_ding2user_via_oa(ding_user_id_list, content)
+            else:
+                msg_sender.send_ding2user(ding_user_id_list, content)
+
+    def _resolve_dingtalk_user_ids(self, m):
+        """把 Archery Users 解析成钉钉 userid 列表.
+
+        优先级:
+          1) GroupDingtalkAuditor: 按 (current_audit auth_group, resource_group) 查
+             - 找到 dingtalk_user_ids (JSON 数组) -> 用
+             - 找到 dingtalk_dept_id -> 拉部门下所有 userid (需 access_token)
+             - dingtalk_cc_user_ids 一并加进结果
+          2) fallback: Users.ding_user_id 字段
+        """
+        from sql.extensions.dingtalk_oa.models import GroupDingtalkAuditor
+        import json as _json
+        from common.utils.ding_api import get_oa_access_token, get_dept_user_ids
+
+        result = set()
+        resource_group_id = self.audit.group_id if self.audit else None
+        # current_audit 可能是 "3" 或 "3,4" 多级，先按主当前节点匹配
+        auth_group_ids = []
+        if self.audit and self.audit.current_audit and self.audit.current_audit != "-1":
+            auth_group_ids = [int(x) for x in str(self.audit.current_audit).split(",") if x]
+
+        # 1) 查 GroupDingtalkAuditor
+        for auth_gid in auth_group_ids:
+            qs = GroupDingtalkAuditor.objects.filter(
+                group_id=auth_gid,
+                is_active=True,
             )
+            # 优先精确匹配 resource_group，没匹配到再 fallback 到跨资源组通用
+            ga = qs.filter(resource_group_id=resource_group_id).first()
+            if not ga:
+                ga = qs.filter(resource_group_id__isnull=True).first()
+            if not ga:
+                continue
+            if ga.dingtalk_user_ids:
+                try:
+                    user_ids = _json.loads(ga.dingtalk_user_ids)
+                    if isinstance(user_ids, list):
+                        result.update(str(u) for u in user_ids if u)
+                except Exception:
+                    logger.warning(
+                        f"GroupDingtalkAuditor({ga.id}).dingtalk_user_ids 解析失败: "
+                        f"{ga.dingtalk_user_ids!r}"
+                    )
+            if ga.dingtalk_cc_user_ids:
+                try:
+                    cc_ids = _json.loads(ga.dingtalk_cc_user_ids)
+                    if isinstance(cc_ids, list):
+                        result.update(str(u) for u in cc_ids if u)
+                except Exception:
+                    logger.warning(
+                        f"GroupDingtalkAuditor({ga.id}).dingtalk_cc_user_ids 解析失败"
+                    )
+            if ga.dingtalk_dept_id:
+                # 拉部门下所有 userid
+                token = get_oa_access_token()
+                if token:
+                    dept_user_ids = get_dept_user_ids(ga.dingtalk_dept_id, token)
+                    result.update(dept_user_ids)
+        if result:
+            return list(result)
+
+        # 2) fallback 到 Users.ding_user_id
+        result = {
+            user.ding_user_id
+            for user in chain(m.msg_to, m.msg_cc)
+            if user.ding_user_id
+        }
+        return list(result)
 
 
 class FeishuWebhookNotifier(LegacyRender):
