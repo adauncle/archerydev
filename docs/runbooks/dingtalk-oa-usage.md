@@ -169,6 +169,8 @@ DINGTALK_OA_CALLBACK_RECEIVEID=<加密 ReceiveId>
 DINGTALK_NOTIFY_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=<机器人 token>
 ```
 
+> ⚠️ `DINGTALK_OA_AGENT_ID` 这个值在 1对1 通知 (Section 11) 也会用上，不要漏配。
+
 改完**重启 gunicorn**:
 
 ```bash
@@ -429,6 +431,154 @@ UPDATE sql_workflow SET audit_driver='archery', audit_fallback_reason='DBA 临�
 
 ---
 
+## 11. 一对一钉钉工作通知（v0.1.7+）
+
+> **适用场景**: 工单走 `archery` 内审 driver（不是钉钉 OA）时，也能给当前审批节点的具体审批人**一对一**推送钉钉工作通知。
+> 收到通知的人点开是 `Archery` 应用的卡片，**跳到工单详情页审批**（无法在聊天框内直接点通过/拒绝）。
+> 想聊天框内审批，仍需走 `dingtalk_oa` driver（见 Section 1.2）。
+
+### 11.1 触发条件
+
+工单节点切换时（`notify_for_audit`）自动触发，**前提是**：
+
+1. `sys_config.ding_to_person` 设为真值（如 `"true"` 或 `"1"`）
+2. `DINGTALK_OA_APP_KEY` / `DINGTALK_OA_APP_SECRET` / `DINGTALK_OA_AGENT_ID` 至少 3 项配了 `.env`
+
+配置示例（`sys_config` 表）：
+```bash
+sudo -Hu archery /opt/archery/prod/venv/bin/python -c "
+import os, sys
+sys.path.insert(0, '/opt/archery/prod')
+os.environ['DJANGO_SETTINGS_MODULE'] = 'archery.settings'
+import django; django.setup()
+from common.config import SysConfig
+SysConfig().set('ding_to_person', 'true')
+"
+```
+
+`.env` 已在 Section 4.2 配好，1对1 通知共用 `DINGTALK_OA_AGENT_ID`。
+
+### 11.2 路由逻辑: `GroupDingtalkAuditor` 优先
+
+通知发谁不只读 `Users.ding_user_id`，而是按**审批节点 + 资源组** 查 `ext_group_dingtalk_auditor` 表：
+
+```
+当前审批节点 = archery auth_group_id (e.g. 3 = DBA 组)
+资源组       = workflow_audit.group_id (e.g. 25 = 测试组)
+                              ↓
+       GroupDingtalkAuditor.objects.filter(
+           group_id=3, resource_group_id=25, is_active=True
+       ).first()
+                              ↓
+       找到 → 用其 dingtalk_user_ids / dingtalk_cc_user_ids / dingtalk_dept_id
+       找不到 → fallback 跨资源组通用 (resource_group_id=None)
+       还找不到 → fallback Users.ding_user_id (老逻辑)
+```
+
+优先级：
+
+1. `dingtalk_user_ids` (JSON 数组，如 `["user1","user2"]`) → 直接发给这些人
+2. `dingtalk_cc_user_ids` (抄送) → 一并加入
+3. `dingtalk_dept_id` → 通过钉钉 API 拉部门下所有 userid (递归查子部门)
+4. fallback → `Users.ding_user_id`
+
+### 11.3 配置步骤
+
+#### Step 1: 在钉钉开放平台建 App（如果还没建）
+
+见 Section 4.1。需要的**权限范围**:
+- `企业通讯录` (读成员, 读部门) — 拉部门 user 时要
+- `应用功能` → `消息推送` (推送工作通知给员工) — 核心
+- `回调` — 接收审批事件 (OA 用)
+
+#### Step 2: 配置 `.env` (跟 Section 4.2 共用)
+
+```bash
+DINGTALK_OA_APP_KEY=<你的 AppKey>
+DINGTALK_OA_APP_SECRET=<你的 AppSecret>
+DINGTALK_OA_AGENT_ID=<你的 AgentId>
+```
+
+> 不需要再额外配 OA App，1对1 通知**复用**钉钉 OA 审批用的 App，避免维护多套凭据。
+
+#### Step 3: 启用 sys_config 开关
+
+```bash
+# 在 archery 服务里跑
+sudo -Hu archery /opt/archery/prod/venv/bin/python -c "
+import os, sys
+sys.path.insert(0, '/opt/archery/prod')
+os.environ['DJANGO_SETTINGS_MODULE'] = 'archery.settings'
+import django; django.setup()
+from common.config import SysConfig
+cfg = SysConfig()
+cfg.set('ding_to_person', 'true')
+print('ding_to_person:', cfg.get('ding_to_person'))
+"
+```
+
+#### Step 4: 在 admin 配 `GroupDingtalkAuditor`
+
+访问 `http://<your-domain>/admin/dingtalk_oa/groupdingtalkauditor/add/`，字段：
+
+> ⚠️ URL 里只有 **1 个 s**（`groupdingtalkauditor`），不是 `groupdingtstalkauditor`。拼错会 404。
+> 找这个表也可用 admin 首页搜索框打 "dingtalk" 或 "auditor"。
+
+| 字段 | 值 | 说明 |
+|---|---|---|
+| Group | DBA（选 archery auth_group） | 哪个审批组用这个映射 |
+| Resource group | 测试组（不填 = 跨资源组通用） | 限定到具体资源组 |
+| Dingtalk user ids (JSON) | `["zhangsan_id","lisi_id"]` | 精确审批人 |
+| Dingtalk cc user ids (JSON) | `["wangwu_id"]` | 抄送人 |
+| Dingtalk dept id | `123456` | 拉部门下所有人（与 user_ids 二选一） |
+| Is active | ✓ | 启用 |
+
+**怎么拿钉钉 userid / dept_id**:
+- userid: 钉钉 → 「通讯录」 → 选人 → 右上角「...」 → 复制 userid
+- dept_id: 钉钉管理后台 → 「通讯录」 → 部门 → URL 里的数字
+
+#### Step 5: 验证
+
+提交一条 SQL 让工单走 archery driver（不命中任何 policy 的低风险）→ 审批节点切换到 DBA → 检查：
+1. 钉钉 app 是否有「工作通知」推送（OA App 名）
+2. 点开是否跳到 Archery 工单详情页
+3. 登录后能否完成审批
+
+### 11.4 常见问题
+
+#### Q: 没收到通知？
+排查顺序：
+1. `sys_config.ding_to_person` 是否为真值
+2. `.env` 三个 OA 变量都配了吗
+3. 查 `gunicorn` 错误日志: `journalctl -u archery-prod-gunicorn -n 100`
+4. 看是不是 fallback 链: `Users.ding_user_id` 是否填了
+5. 看是不是 mapping 缺失: `GroupDingtalkAuditor.objects.filter(group_id=<auth_group_id>, is_active=True)` 返回什么
+
+#### Q: 通知推到了错误的组？
+检查 `audit.current_audit` (auth_group_id) 是否填对。
+可以用 admin 看 `WorkflowAudit` 表的 `current_audit` 字段值。
+`audit_auth_groups` 是完整路径（如 `"3,2"`），但 `current_audit` 是当前节点（只是 `"3"`）。
+
+#### Q: 想给某个 user 单发但他不在 `GroupDingtalkAuditor` 里？
+可以填 fallback 链的最后一项 `Users.ding_user_id`:
+```python
+u = Users.objects.get(username="zhangsan")
+u.ding_user_id = "zhangsan_actual_id"
+u.save()
+```
+
+#### Q: `DINGTALK_OA_AGENT_ID` 配错了会怎样？
+不会崩，但钉钉返回 `errcode != 0`，日志记 ERROR，**收不到通知**。
+查 `gunicorn` 日志: `grep "send_ding2user_via_oa" /var/log/archery/prod-gunicorn.log`
+
+### 11.5 安全注意
+
+- `GroupDingtalkAuditor.dingtalk_user_ids` 是 JSON 数组，**不要让非 admin 看见**
+- 钉钉 App 权限: 只勾 `通讯录读` + `消息推送` + `OA 审批` 这 3 个, 别的别勾
+- `DINGTALK_OA_AGENT_ID` 是数字 ID 不是 secret, 泄露风险低，但跟 `APP_SECRET` 一起放 `.env`, 别提交到 git
+
+---
+
 ## 10. 变更历史
 
 | 日期 | 变更 | 负责人 |
@@ -437,6 +587,7 @@ UPDATE sql_workflow SET audit_driver='archery', audit_fallback_reason='DBA 临�
 | 2026-07-20 | driver 集成 commit cb5b0b5 / 85d859e / 342b494 | coder-agent |
 | 2026-07-21 | 部署到 staging (b99dbda) | Mavis |
 | 2026-07-21 | 补全 missing 环节（migrations / URL / seed）| Mavis |
+| 2026-07-23 | v0.1.7 一对一钉钉通知（Section 11） | Mavis |
 
 ---
 
