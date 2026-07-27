@@ -150,4 +150,23 @@ echo "=== 14. 端口监听 ==="
 ss -tlnp 2>&1 | grep -E '9002|9003'
 
 echo ""
+echo "=== 15. 安装并启动 qcluster (django-q2 异步 worker) ==="
+# v0.1.9+ 必装，否则提交工单后钉钉通知全部丢失
+# 见 docs/changelogs/2026-07-27_v0.1.9-qcluster-and-oa-observability.md
+QCLUSTER_UNIT_SRC="/opt/archery/prod/scripts/deploy/systemd/archery-prod-qcluster.service"
+QCLUSTER_UNIT_DST="/etc/systemd/system/archery-prod-qcluster.service"
+if [ -f "$QCLUSTER_UNIT_SRC" ]; then
+    cp "$QCLUSTER_UNIT_SRC" "$QCLUSTER_UNIT_DST"
+    chmod 644 "$QCLUSTER_UNIT_DST"
+    systemctl daemon-reload
+    systemctl enable archery-prod-qcluster
+    systemctl restart archery-prod-qcluster
+    sleep 3
+    systemctl is-active archery-prod-qcluster
+    ps -ef | grep 'manage.py qcluster' | grep -v grep | wc -l
+else
+    echo "  WARNING: qcluster unit not found at $QCLUSTER_UNIT_SRC, skipping"
+fi
+
+echo ""
 echo "DONE - prod 部署完成"

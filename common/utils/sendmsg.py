@@ -218,7 +218,10 @@ class MsgSender(object):
             logger.error(f"send_ding2user_via_oa HTTP 失败: {e}")
             return {"errcode": -1, "errmsg": str(e)}
         if r_json.get("errcode") == 0:
-            logger.debug(
+            ## CUSTOM-MODIFIED: 钉钉 OA 二次开发 —— 成功时改 logger.info，方便 qcluster 异步任务可观测
+            ##                  默认 logger level=WARNING，debug 不写盘，运维盲区
+            ##                  关联 changelog: docs/changelogs/2026-07-27_v0.1.9-qcluster-and-oa-observability.md
+            logger.info(
                 f"钉钉 OA 工作通知发送成功\n通知对象:{userid_list}\n消息内容:{content}"
             )
         else:

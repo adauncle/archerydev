@@ -1,0 +1,20 @@
+[Unit]
+Description=Archery Production qcluster (django-q2, port 0)
+After=network.target mysql.service redis.service
+
+[Service]
+Type=simple
+User=archery
+Group=archery
+WorkingDirectory=/opt/archery/prod
+EnvironmentFile=/opt/archery/prod/.env
+# qcluster 异步任务需要 INFO 级别日志看通知/审批执行
+Environment=ARCHERY_LOG_LEVEL=INFO
+ExecStart=/opt/archery/prod/venv/bin/python manage.py qcluster
+Restart=always
+RestartSec=3
+StandardOutput=append:/opt/archery/prod/logs/qcluster.log
+StandardError=append:/opt/archery/prod/logs/qcluster.log
+
+[Install]
+WantedBy=multi-user.target

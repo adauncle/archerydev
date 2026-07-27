@@ -124,7 +124,49 @@ ssh root@172.20.2.134 "redis-cli -a $(cat /etc/archery/redis_password) PING"
 ssh root@172.20.2.134 "systemctl {start|stop|restart|enable} redis"
 ```
 
-### 5. cloudflared（钉钉 OA 回调用，按需启动）
+### 5. qcluster（django-q2 异步任务 worker，v0.1.9+ 必装）
+
+负责消费 `redis://127.0.0.1:6379/0` 的 `django_q:archery:q` 队列，跑：
+- 提交工单后的钉钉通知 (`notify_for_audit`)
+- SQL 工单审批流转
+- 各种异步任务 (`sqlreview-pass-*`, `sqlreview-submit-*`)
+
+**没装 qcluster → 钉钉通知全部丢失，但页面提交仍"成功"（silent 失败）**。
+
+```bash
+# === 查状态 ===
+ssh root@172.20.2.134 "systemctl status archery-prod-qcluster"
+ssh root@172.20.2.134 "systemctl is-active archery-prod-qcluster"
+
+# === 启停 ===
+ssh root@172.20.2.134 "systemctl {start|stop|restart|enable} archery-prod-qcluster"
+
+# === 看 7 个 worker 子进程 + 1 个 pusher + 1 个 monitor ===
+ssh root@172.20.2.134 "ps -ef | grep 'manage.py qcluster' | grep -v grep"
+# 应该看到 1 主 + 7 子进程 = 4 worker + 1 monitor + 1 pusher + 1 guard + 1 sentinel (django-q2 默认 4 workers)
+
+# === 看 redis 队列消费 ===
+ssh root@172.20.2.134 'redis-cli -a $(cat /etc/archery/redis_password) LLEN django_q:archery:q'
+# 应该接近 0；如果 > 0 持续增长，说明 worker 没在消费
+ssh root@172.20.2.134 'redis-cli -a $(cat /etc/archery/redis_password) INFO clients | grep blocked_clients'
+# 应该 = 1 (BLPOP 阻塞等待)；如果 = 0 说明 worker 全部 idle 死掉
+
+# === 看日志（INFO 级别，qcluster 专用） ===
+ssh root@172.20.2.134 "journalctl -u archery-prod-qcluster -f"
+ssh root@172.20.2.134 "tail -f /opt/archery/prod/logs/qcluster.log"
+# 关键关键字: "ready for work", "processing", "Processed", "钉钉 OA 工作通知发送成功"
+```
+
+**故障排查**：
+
+| 症状 | 检查 | 解决 |
+|------|------|------|
+| 提交工单后马克群没收到通知 | `LLEN django_q:archery:q` 持续 > 0 | `systemctl start archery-prod-qcluster` |
+| 任务执行失败 | `qcluster.log` 看 "Error"/"Traceback" 行 | 看具体堆栈，可能需要重启 worker |
+| redis 密码变了 | `Q_CLUSTER.django_redis="default"` 用 `CACHES.default` | 改 `archery_prod` 的 `.env` 的 `CACHE_URL`，重启 qcluster + gunicorn |
+| 任务被消费但没发通知 | `archery.log` 搜 `ding_to_person` / `GroupDingtalkAuditor` | 看 v0.1.7 `GroupDingtalkAuditor` 配置是否正确 |
+
+
 
 ```bash
 # === 启动 tunnel（需要先在 cloudflare 后台配好 tunnel） ===
@@ -150,6 +192,13 @@ journalctl -u archery-prod-gunicorn.service --since today
 
 # 如果 journalctl 没启用，旧的 /var/log/archery/prod-gunicorn.log 还有
 # （v0.1.1+ 改 systemd 后这个文件不会再写，但保留作 fallback）
+
+# Archery qcluster 异步 worker 日志（v0.1.9+ 才有）
+journalctl -u archery-prod-qcluster.service -f
+/opt/archery/prod/logs/qcluster.log     # INFO 级别日志，qcluster 专用
+
+# Archery Web 业务日志（gunicorn 进程 + qcluster 进程都写这里）
+/opt/archery/prod/logs/archery.log      # 100MB × 5 滚动
 
 # 部署日志
 /var/log/archery/deploy_prod.log

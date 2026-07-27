@@ -515,11 +515,14 @@ LOGGING = {
     "loggers": {
         "default": {  # default日志
             "handlers": ["console", "default"],
-            "level": "WARNING",
+            ## CUSTOM-MODIFIED: logger level 支持 env 控制，qcluster 异步任务用 INFO 方便观测
+            ##                  默认 WARNING 保持上游行为；ARCHERY_LOG_LEVEL=INFO 可打开
+            ##                  关联 changelog: docs/changelogs/2026-07-27_v0.1.9-qcluster-and-oa-observability.md
+            "level": env("ARCHERY_LOG_LEVEL", default="WARNING"),
         },
         "django-q": {  # django_q模块相关日志
             "handlers": ["console", "django-q"],
-            "level": "WARNING",
+            "level": env("ARCHERY_LOG_LEVEL", default="WARNING"),
             "propagate": False,
         },
         "django_auth_ldap": {  # django_auth_ldap模块相关日志
