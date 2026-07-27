@@ -159,15 +159,17 @@ def dingtalk_oa_callback(request: HttpRequest):
 def _handle_event(event: dict, signature: str, raw_encrypted: str) -> None:
     """处理解密后的事件。
 
-    v0.7 §10.4.2 描述的事件类型：
+    v0.2.0 改动：把核心业务处理委托给
+    :func:`sql.extensions.dingtalk_oa.services.oa_callback_handler.handle_oa_callback`，
+    后者真正推进 ``workflow_audit`` / 写 ``workflow_audit_detail`` / 写 ``workflow_log`` /
+    更新 ``sql_workflow.status``。本函数保留审批人白名单校验和审计人解析。
+
+    事件类型（v0.7 §10.4.2）：
         * ``bpms_instance_change`` 流程实例状态变更
         * ``bpms_task_change``      任务（节点）状态变更
-
-    业务动作：
-        1. 通过 ``processInstanceId`` 找 ``WorkflowAuditExternal``；
-        2. （可选）校验钉钉审批人在白名单；
-        3. 同步 ``external_status``。
     """
+    from .services.oa_callback_handler import handle_oa_callback
+
     process_instance_id = (
         event.get("processInstanceId")
         or event.get("ProcessInstanceId")
@@ -177,12 +179,12 @@ def _handle_event(event: dict, signature: str, raw_encrypted: str) -> None:
         logger.info("dingtalk event without processInstanceId, skip: %s", event)
         return
 
+    # 提前查 ext 仅为审批人白名单校验（handler 内部也会查）
     try:
         ext = WorkflowAuditExternal.objects.select_related("audit").get(
             external_process_instance_id=process_instance_id,
         )
     except WorkflowAuditExternal.DoesNotExist:
-        # 未发起的流程被推送（很可能是测试 / 跨环境）——记日志 + 跳过
         logger.warning(
             "dingtalk event for unknown process_instance_id=%s",
             process_instance_id,
@@ -209,20 +211,17 @@ def _handle_event(event: dict, signature: str, raw_encrypted: str) -> None:
             # verify_auditor_permission 已记告警；这里静默返回即可
             return
 
-    # 同步 external_status
-    event_type = str(event.get("EventType") or event.get("eventType") or "")
-    inner_type = str(event.get("type") or "").lower()
-
-    if event_type == "bpms_instance_change" or inner_type in ("finish", "complete"):
-        ext.external_status = "APPROVED"
-    elif event_type.startswith("bpms_instance") and inner_type in ("terminate", "abort"):
-        ext.external_status = "TERMINATED"
-    elif event_type == "bpms_task_change":
-        # 任务级事件：不直接改 external_status（让对账 task 推进）
-        ext.last_synced_at = _now()
-    else:
-        ext.last_synced_at = _now()
-    ext.save()
+    # 真正推进本地 audit
+    try:
+        result = handle_oa_callback(event)
+        logger.info(
+            "dingtalk OA callback processed: processInstanceId=%s result=%s",
+            process_instance_id, result,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "handle_oa_callback failed for processInstanceId=%s", process_instance_id,
+        )
 
 
 # ============================== 辅助 ==============================
