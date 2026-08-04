@@ -41,12 +41,36 @@ done
 # 110 PROD 配置
 PROD_PATH="/dbdata/archery_v114"
 PROD_PORT="9123"
-PROD_DB_NAME="archery"
-PROD_DB_USER="archery"
-PROD_DB_PASS_FILE="/etc/archery/dbops_password"
 BACKUP_ROOT="/backup/promote"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_DIR="${BACKUP_ROOT}/${TIMESTAMP}"
+
+# 凭据从 110 现有 .env 解析（不写死 /etc/archery/dbops_password）
+# 110 v1.14.0 用 DATABASE_URL / CACHE_URL 统一配置，不是分开的 MYSQL_HOST/PORT/USER
+parse_db_creds() {
+    local env_file="$1"
+    if [[ ! -f "$env_file" ]]; then
+        err "找不到 $env_file"
+        return 1
+    fi
+    local db_url
+    db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -1 | cut -d= -f2-)
+    if [[ -z "$db_url" ]]; then
+        err "$env_file 里找不到 DATABASE_URL"
+        return 1
+    fi
+    # mysql://user:pass@host:port/db
+    PROD_DB_USER=$(echo "$db_url" | sed -E 's|^mysql://([^:]+):.*|\1|')
+    PROD_DB_PASS=$(echo "$db_url" | sed -E 's|^mysql://[^:]+:([^@]+)@.*|\1|')
+    PROD_DB_HOST=$(echo "$db_url" | sed -E 's|^mysql://[^@]+@([^:]+):.*|\1|')
+    PROD_DB_PORT=$(echo "$db_url" | sed -E 's|^mysql://[^@]+@[^:]+:([0-9]+)/.*|\1|')
+    PROD_DB_NAME=$(echo "$db_url" | sed -E 's|^mysql://[^@]+@[^/]+/([^?]+).*|\1|')
+    if [[ -z "$PROD_DB_USER" || -z "$PROD_DB_PASS" ]]; then
+        err "DATABASE_URL 解析失败: $db_url"
+        return 1
+    fi
+    return 0
+}
 
 # ====== Phase 0: 预检 ======
 phase0_precheck() {
@@ -155,14 +179,17 @@ phase1_backup() {
 
     # 1.1 mysqldump
     log "[1.1] mysqldump 110 $PROD_DB_NAME"
-    local db_pass
-    db_pass=$(cat "$PROD_DB_PASS_FILE" 2>/dev/null || echo "")
-    if mysqldump -h 127.0.0.1 -u"$PROD_DB_USER" -p"$db_pass" "$PROD_DB_NAME" 2>/dev/null | gzip > "$BACKUP_DIR/mysqldump.sql.gz"; then
+    if [[ -z "$PROD_DB_USER" ]]; then
+        parse_db_creds "$PROD_PATH/.env" || exit 1
+        log "       DB: $PROD_DB_USER@$PROD_DB_HOST:$PROD_DB_PORT/$PROD_DB_NAME"
+    fi
+    if mysqldump -h "$PROD_DB_HOST" -P "$PROD_DB_PORT" -u"$PROD_DB_USER" -p"$PROD_DB_PASS" "$PROD_DB_NAME" 2>/dev/null | gzip > "$BACKUP_DIR/mysqldump.sql.gz"; then
         local size
         size=$(stat -c%s "$BACKUP_DIR/mysqldump.sql.gz" 2>/dev/null || echo 0)
         ok "[1.1] mysqldump 完成: $size bytes"
     else
-        err "[1.1] mysqldump 失败"
+        err "[1.1] mysqldump 失败（重试一次显示真错误）"
+        mysqldump -h "$PROD_DB_HOST" -P "$PROD_DB_PORT" -u"$PROD_DB_USER" -p"$PROD_DB_PASS" "$PROD_DB_NAME" 2>&1 | head -3
         exit 1
     fi
 
@@ -299,20 +326,18 @@ phase3_adapt() {
         warn "     features.py 路径不存在（venv 结构可能不同）"
     fi
 
-    # 3.3 适配 .env
-    log "[3.3] 适配 .env"
+    # 3.3 适配 .env —— 110 已有 .env 走 DATABASE_URL 统一配置
+    # v0.x.x 134 dev 的 .env 用 MYSQL_HOST/PORT/USER/PASSWORD 散开配置
+    # 110 走 DATABASE_URL 统一配置，promote 不能破坏
+    # 策略：保留 110 现有 .env（已经在 phase 2.4 cp 过去），不 sed 改
+    log "[3.3] 保留 110 现有 .env（已 cp 过去）"
     if [[ -f "$TARGET_PATH/.env" ]]; then
-        cd "$TARGET_PATH"
-        sed -i 's|^MYSQL_HOST=.*|MYSQL_HOST=127.0.0.1|' .env
-        sed -i 's|^MYSQL_PORT=.*|MYSQL_PORT=3306|' .env
-        sed -i 's|^MYSQL_USER=.*|MYSQL_USER=archery|' .env
-        sed -i 's|^REDIS_HOST=.*|REDIS_HOST=127.0.0.1|' .env
-        sed -i 's|^REDIS_PORT=.*|REDIS_PORT=6379|' .env
-        # 钉钉 OA 凭据（如果 v0.x.x 用了）
-        grep -q '^DINGTALK_OA_ENABLED' .env || echo 'DINGTALK_OA_ENABLED=False' >> .env
-        ok "[3.3] .env 适配完成"
+        # 仅做最小必要补充：v0.x.x 新增的开关默认 False
+        grep -q '^DINGTALK_OA_ENABLED' "$TARGET_PATH/.env" || echo 'CUSTOM_DINGTALK_OA_ENABLED=False' >> "$TARGET_PATH/.env"
+        ok "[3.3] .env 保留 + 补 DINGTALK_OA_ENABLED 开关"
     else
-        warn "     .env 不存在，需手动配置"
+        err "[3.3] .env 不存在（phase 2.4 应该已 cp）"
+        exit 1
     fi
 
     # 3.4 systemd unit 路径
@@ -393,10 +418,11 @@ phase4_deploy() {
 
     # 4.7 ext_ 表数
     log "[4.7] 校验 ext_ 表数（v0.x.x 二次开发）"
-    local db_pass
-    db_pass=$(cat "$PROD_DB_PASS_FILE" 2>/dev/null || echo "")
+    if [[ -z "$PROD_DB_USER" ]]; then
+        parse_db_creds "$TARGET_PATH/.env" || exit 1
+    fi
     local ext_count
-    ext_count=$(mysql -h 127.0.0.1 -u"$PROD_DB_USER" -p"$db_pass" "$PROD_DB_NAME" -B -N -e 'SHOW TABLES LIKE "ext\_%"' 2>/dev/null | wc -l)
+    ext_count=$(mysql -h "$PROD_DB_HOST" -P "$PROD_DB_PORT" -u"$PROD_DB_USER" -p"$PROD_DB_PASS" "$PROD_DB_NAME" -B -N -e 'SHOW TABLES LIKE "ext\_%"' 2>/dev/null | wc -l)
     log "       ext_ 表数: $ext_count（v0.x.x 期望 ≥ 7）"
     if [[ $ext_count -lt 7 ]]; then
         warn "     ext_ 表数 < 7，migrate 可能漏跑"
