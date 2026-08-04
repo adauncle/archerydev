@@ -53,6 +53,7 @@ class SimpleJSONRenderer(JSONRenderer):
             allow_nan=not self.strict,
             separators=separators,
             default=self.default,
+            bigint_as_string=True,  # ## CUSTOM-MODIFIED: MR6 bigint precision @ 2026-08-03 @ mavis
         )
         # Keep DRF's default escaping so JSON stays safe if embedded into script content.
         ret = ret.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
