@@ -16,6 +16,28 @@ warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()  { echo -e "${RED}[ERR]${NC} $*" >&2; }
 ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
 
+# 110 出口 443 经常被 ISP 防火墙挡（ICMP 通 / HTTPS 不通）—— 5 次重试
+# 用法: retry_with_backoff "命令" "描述"
+retry_with_backoff() {
+    local cmd="$1"
+    local desc="${2:-cmd}"
+    local max=5
+    local delay=5
+    for i in $(seq 1 $max); do
+        if eval "$cmd" 2>/dev/null; then
+            if [[ $i -gt 1 ]]; then
+                ok "[retry] $desc 在第 $i 次成功"
+            fi
+            return 0
+        fi
+        warn "[retry] $desc 第 $i 次失败，$delay s 后重试"
+        sleep $delay
+        delay=$((delay * 2))
+    done
+    err "[retry] $desc 5 次重试全部失败"
+    return 1
+}
+
 GIT_REF="${1:-}"
 DRY_RUN="--dry-run"
 SKIP_MIGRATE=""
@@ -102,11 +124,11 @@ phase0_precheck() {
         warn "     $PROD_PATH 不存在（首次 promote？）"
     fi
 
-    # 0.3 网络可达 github
+    # 0.3 网络可达 github（带 retry，110 出口 443 经常被 ISP 挡）
     log "[0.3] 网络可达 github.com"
     if [[ -z "$DRY_RUN" ]]; then
-        if ! curl -s -m 8 -o /dev/null -w '%{http_code}' "$GITHUB_BASE" | grep -q '200\|301\|302'; then
-            err "github.com 不可达"
+        if ! retry_with_backoff "curl -s -m 10 -o /dev/null -w '%{http_code}' '$GITHUB_BASE' | grep -qE '200|301|302'" "github.com 探活"; then
+            err "[0.3] github.com 不可达（5 次重试失败）"
             exit 1
         fi
         ok "[0.3] github.com 可达"
@@ -239,12 +261,11 @@ phase2_fetch() {
         tarball_url="$GITHUB_BASE/archive/${SHORT_COMMIT}.tar.gz"
     fi
     log "       URL: $tarball_url"
-    if curl -sL -m 60 "$tarball_url" | tar -xz --strip-components=1 -C "$target_path" 2>&1 | tail -5; then
-        ok "[2.2] 拉取完成"
-    else
-        err "[2.2] 拉取失败"
+    if ! retry_with_backoff "curl -sL -m 120 '$tarball_url' | tar -xz --strip-components=1 -C '$target_path'" "拉取 github tarball"; then
+        err "[2.2] 拉取失败（5 次重试）"
         exit 1
     fi
+    ok "[2.2] 拉取完成"
 
     # 2.3 验证关键文件
     log "[2.3] 验证关键文件"
