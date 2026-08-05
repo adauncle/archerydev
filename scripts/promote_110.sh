@@ -140,17 +140,19 @@ phase0_precheck() {
     log "[0.4] 解析 git ref: $GIT_REF"
     if [[ -z "$DRY_RUN" ]]; then
         # 用 GitHub API 拿 ref 指向的 commit SHA
+        # 注意: set -euo pipefail 下 grep 找不到匹配会让 pipeline 失败，
+        # 所有 grep 后面加 || true 兜底
         local ref_type="tags"
         local api_url="https://api.github.com/repos/${GITHUB_REPO}/git/refs/tags/${GIT_REF}"
         local resp
         resp=$(curl -s -m 10 "$api_url" 2>&1)
         local commit
-        commit=$(echo "$resp" | grep -oP '"sha":\s*"\K[a-f0-9]+' | head -1)
+        commit=$(echo "$resp" | grep -oP '"sha":\s*"\K[a-f0-9]+' | head -1 || true)
         if [[ -z "$commit" ]]; then
             # 试 branches
             api_url="https://api.github.com/repos/${GITHUB_REPO}/git/refs/heads/${GIT_REF}"
             resp=$(curl -s -m 10 "$api_url" 2>&1)
-            commit=$(echo "$resp" | grep -oP '"sha":\s*"\K[a-f0-9]+' | head -1)
+            commit=$(echo "$resp" | grep -oP '"sha":\s*"\K[a-f0-9]+' | head -1 || true)
         fi
         if [[ -z "$commit" ]]; then
             # 试直接当 commit hash
@@ -161,6 +163,7 @@ phase0_precheck() {
         if [[ -z "$commit" ]]; then
             err "解析 git ref 失败: $GIT_REF"
             err "  试过 tags / branches / commit hash 都拿不到"
+            err "  最后一次 API 响应: $resp"
             exit 1
         fi
         export SHORT_COMMIT="${commit:0:7}"
