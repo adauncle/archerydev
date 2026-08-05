@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>无锁 DDL（gh-ost）产品设计文档 · Archery v0.3.0</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --line: #e9e3d6;
+    --line-soft: #f0eadf;
+    --ink: #14171e;
+    --ink-mid: #3a4256;
+    --ink-soft: #7c7a72;
+    --primary: #2f6f5e;
+    --primary-soft: rgba(47,111,94,.08);
+    --warn: #c97b3f;
+    --warn-soft: rgba(201,123,63,.08);
+    --danger: #b06367;
+    --danger-soft: rgba(176,99,103,.08);
+    --good: #2f6f5e;
+    --good-soft: rgba(47,111,94,.1);
+    --blue: #3b4b6b;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,.04);
+    --shadow-md: 0 4px 16px -2px rgba(0,0,0,.06);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background: radial-gradient(circle at 0% 0%, rgba(47,111,94,.05), transparent 40%),
+                radial-gradient(circle at 100% 100%, rgba(201,123,63,.05), transparent 40%);
+    pointer-events: none; z-index: -1;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 56px 32px 80px; }
+  .doc-head { padding-bottom: 24px; border-bottom: 1px solid var(--line); margin-bottom: 48px; }
+  .doc-eyebrow { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 12px; font-weight: 500; }
+  h1 { font-family: 'DM Serif Display', serif; font-size: 38px; font-weight: 400; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.01em; }
+  h1 .v { color: var(--primary); font-style: italic; }
+  .doc-sub { color: var(--ink-soft); font-size: 14px; }
+  .doc-meta { display: flex; gap: 20px; margin-top: 14px; font-size: 12px; color: var(--ink-soft); flex-wrap: wrap; }
+  .doc-meta b { color: var(--ink); font-weight: 500; }
+
+  .toc { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 26px; margin-bottom: 56px; }
+  .toc h3 { margin: 0 0 12px; font-size: 13px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+  .toc ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; }
+  .toc li { font-size: 14px; }
+  .toc a { color: var(--ink); text-decoration: none; }
+  .toc a:hover { color: var(--primary); }
+  .toc .num { color: var(--primary); font-weight: 600; margin-right: 8px; font-variant-numeric: tabular-nums; }
+
+  h2 { font-family: 'DM Serif Display', serif; font-size: 26px; font-weight: 400; margin: 64px 0 20px; letter-spacing: -0.005em; padding-top: 16px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+  h2 .h2-num { font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 600; color: var(--primary); background: var(--primary-soft); padding: 4px 10px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+  h3 { font-size: 18px; font-weight: 600; margin: 32px 0 12px; color: var(--ink); }
+
+  p { margin: 0 0 14px; color: var(--ink-mid); }
+  p.lead { font-size: 16px; color: var(--ink); }
+  strong { color: var(--ink); font-weight: 600; }
+  code { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: var(--line-soft); padding: 1px 6px; border-radius: 4px; color: var(--ink); }
+
+  .callout { padding: 18px 22px; border-radius: 12px; margin: 18px 0; display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--line); }
+  .callout .icon { flex-shrink: 0; margin-top: 2px; }
+  .callout p { margin: 0; }
+  .callout.warn { background: var(--warn-soft); border-color: rgba(201,123,63,.2); }
+  .callout.danger { background: var(--danger-soft); border-color: rgba(176,99,103,.2); }
+  .callout.good { background: var(--good-soft); border-color: rgba(47,111,94,.2); }
+  .callout.info { background: rgba(59,75,107,.06); border-color: rgba(59,75,107,.18); }
+
+  .compare { display: grid; grid-template-columns: 1fr 80px 1fr; gap: 0; align-items: stretch; margin: 32px 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--card); }
+  .compare-col { padding: 26px 24px; }
+  .compare-col.bad { background: var(--danger-soft); }
+  .compare-col.good { background: var(--good-soft); }
+  .compare-col h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--ink); }
+  .compare-col.bad h4 { color: var(--danger); }
+  .compare-col.good h4 { color: var(--good); }
+  .compare-col p { font-size: 13.5px; color: var(--ink-mid); margin: 0; }
+  .compare-mid { display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 18px; color: var(--ink-soft); background: var(--card); border-left: 1px solid var(--line); border-right: 1px solid var(--line); font-weight: 500; }
+
+  .story { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px 28px; margin: 24px 0; }
+  .story-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px dashed var(--line); }
+  .story-avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--primary-soft); color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; flex-shrink: 0; }
+  .story-name { font-weight: 600; font-size: 14px; }
+  .story-role { font-size: 12px; color: var(--ink-soft); }
+  .story-quote { font-size: 15px; line-height: 1.65; color: var(--ink); }
+  .story-quote::before { content: "“"; color: var(--primary); font-size: 28px; font-family: 'DM Serif Display'; line-height: 0; vertical-align: -10px; margin-right: 4px; }
+
+  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; margin: 28px 0; align-items: stretch; }
+  .flow-step { background: var(--card); border: 1px solid var(--line); padding: 20px 16px; text-align: center; position: relative; }
+  .flow-step:first-child { border-radius: 12px 0 0 12px; }
+  .flow-step:last-child { border-radius: 0 12px 12px 0; }
+  .flow-step .step-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-soft); font-weight: 500; margin-bottom: 8px; }
+  .flow-step .step-icon { color: var(--primary); margin: 0 auto 8px; display: block; }
+  .flow-step .step-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .flow-step .step-time { font-size: 11px; color: var(--ink-soft); font-family: 'JetBrains Mono', monospace; }
+  .flow-step .step-detail { font-size: 12px; color: var(--ink-soft); margin-top: 6px; line-height: 1.4; }
+  .flow-step.active { background: var(--primary-soft); border-color: var(--primary); z-index: 2; }
+  .flow-step.active .step-name { color: var(--primary); }
+
+  .ui-mock { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin: 24px 0; box-shadow: var(--shadow-sm); }
+  .ui-mock-head { background: #fafaf7; border-bottom: 1px solid var(--line); padding: 12px 18px; display: flex; align-items: center; gap: 8px; }
+  .ui-mock-dot { width: 10px; height: 10px; border-radius: 50%; background: #ddd; }
+  .ui-mock-dot.r { background: #ed6a5e; }
+  .ui-mock-dot.y { background: #f5bf4f; }
+  .ui-mock-dot.g { background: #62c554; }
+  .ui-mock-url { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-soft); margin-left: 12px; }
+  .ui-mock-body { padding: 24px 28px; }
+
+  .checklist { list-style: none; padding: 0; margin: 16px 0; }
+  .checklist li { padding: 8px 0 8px 30px; position: relative; font-size: 14px; color: var(--ink-mid); border-bottom: 1px solid var(--line-soft); }
+  .checklist li:last-child { border-bottom: 0; }
+  .checklist li::before { content: ""; position: absolute; left: 0; top: 12px; width: 18px; height: 18px; border-radius: 4px; border: 2px solid var(--primary); background: var(--card); }
+  .checklist li.fail::before { border-color: var(--danger); }
+  .checklist li::after { content: ""; position: absolute; left: 4px; top: 14px; width: 6px; height: 10px; border: solid var(--primary); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .checklist li.fail::after { border-color: var(--danger); }
+  .checklist li b { color: var(--ink); }
+
+  .progress-demo { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px 28px; margin: 24px 0; }
+  .progress-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+  .progress-pct { font-family: 'DM Serif Display', serif; font-size: 32px; color: var(--primary); }
+  .progress-stage { font-size: 13px; color: var(--ink-soft); padding: 4px 12px; background: var(--primary-soft); color: var(--primary); border-radius: 12px; }
+  .progress-bar { height: 10px; background: var(--line-soft); border-radius: 5px; overflow: hidden; margin: 12px 0 8px; }
+  .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--primary), #4a9582); border-radius: 5px; }
+  .progress-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line-soft); }
+  .progress-stat { }
+  .progress-stat .label { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .progress-stat .val { font-family: 'JetBrains Mono', monospace; font-size: 18px; color: var(--ink); font-weight: 500; }
+  .progress-stat .val .unit { font-size: 12px; color: var(--ink-soft); margin-left: 3px; font-weight: 400; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); margin: 20px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--line-soft); }
+  th { background: #fafaf7; font-weight: 600; color: var(--ink); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  tr:last-child td { border-bottom: 0; }
+  tr:hover td { background: var(--primary-soft); }
+  td.mono { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+  td.warn { color: var(--danger); }
+  td.good { color: var(--good); }
+
+  .tag { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; }
+  .tag-green { background: var(--good-soft); color: var(--good); }
+  .tag-warn { background: var(--warn-soft); color: var(--warn); }
+  .tag-red { background: var(--danger-soft); color: var(--danger); }
+  .tag-gray { background: var(--line-soft); color: var(--ink-soft); }
+
+  .timeline { list-style: none; padding: 0; margin: 28px 0; position: relative; }
+  .timeline::before { content: ""; position: absolute; left: 11px; top: 8px; bottom: 8px; width: 2px; background: var(--line); }
+  .timeline li { position: relative; padding: 0 0 32px 40px; }
+  .timeline li::before { content: ""; position: absolute; left: 4px; top: 4px; width: 16px; height: 16px; border-radius: 50%; background: var(--card); border: 2px solid var(--primary); }
+  .timeline li.future::before { background: var(--card); border-color: var(--ink-soft); }
+  .timeline li .tl-stage { font-size: 11px; color: var(--primary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+  .timeline li.future .tl-stage { color: var(--ink-soft); }
+  .timeline li .tl-name { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .timeline li .tl-desc { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .card-mini { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; }
+  .card-mini h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+  .card-mini p { font-size: 13px; color: var(--ink-mid); margin: 0; line-height: 1.6; }
+
+  .footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="doc-head">
+    <div class="doc-eyebrow">Archery 二次开发 · v0.3.0 产品设计文档</div>
+    <h1>无锁 DDL（gh-ost）<span class="v">用户视角</span></h1>
+    <p class="doc-sub">大表 DDL 不锁表，业务零中断。本文是产品视角的"开发完怎么用"——不写实现细节。</p>
+    <div class="doc-meta">
+      <span><b>版本</b> v0.3.0-alpha → v0.3.0</span>
+      <span><b>预计交付</b> 3 个迭代，每个 1 周</span>
+      <span><b>面向</b> DBA + 业务开发（提交 DDL 的人）</span>
+      <span><b>状态</b> 设计待拍板</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <h3>目录</h3>
+    <ol>
+      <li><a href="#why"><span class="num">01</span>为什么需要无锁 DDL</a></li>
+      <li><a href="#story"><span class="num">02</span>用户故事：3 个角色</a></li>
+      <li><a href="#flow"><span class="num">03</span>从提交到完成的 5 步</a></li>
+      <li><a href="#submit"><span class="num">04</span>提交工单时怎么选</a></li>
+      <li><a href="#precheck"><span class="num">05</span>预检查：什么能用什么不能</a></li>
+      <li><a href="#progress"><span class="num">06</span>进度面板长什么样</a></li>
+      <li><a href="#result"><span class="num">07</span>成功 / 失败 / 取消分别怎么通知</a></li>
+      <li><a href="#admin"><span class="num">08</span>DBA 视角：异常处理</a></li>
+      <li><a href="#safety"><span class="num">09</span>安全设计：怎么不翻车</a></li>
+      <li><a href="#timeline"><span class="num">10</span>3 阶段交付计划</a></li>
+      <li><a href="#checklist"><span class="num">11</span>验收标准</a></li>
+      <li><a href="#open"><span class="num">12</span>需要你拍板的 4 件事</a></li>
+    </ol>
+  </div>
+
+  <!-- 01 -->
+  <h2 id="why"><span class="h2-num">01</span>为什么需要无锁 DDL</h2>
+  <p class="lead">在 Archery 里提交 DDL 工单（如 <code>ALTER TABLE users ADD COLUMN age INT</code>），底层默认走 <strong>原生 <code>ALTER TABLE</code></strong>，会锁表。</p>
+
+  <div class="compare">
+    <div class="compare-col bad">
+      <h4>传统 ALTER TABLE</h4>
+      <p>100GB 用户表加字段<br>→ 锁表 <strong>2~8 小时</strong><br>→ 期间所有读写全部卡住<br>→ 用户登录失败、订单丢失</p>
+    </div>
+    <div class="compare-mid">→</div>
+    <div class="compare-col good">
+      <h4>gh-ost 无锁</h4>
+      <p>100GB 用户表加字段<br>→ 创建影子表 + 增量同步<br>→ 业务读写 <strong>零中断</strong><br>→ cut-over 切换，几秒延迟</p>
+    </div>
+  </div>
+
+  <p>gh-ost 是 GitHub 开源的 MySQL 在线改表工具。要在 Archery 里集成它做"无锁模式"。</p>
+
+  <div class="callout info">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    <p><strong>谁会用到</strong>：DBA 团队 100% 用得到（不用 gh-ost 改不了大表）。业务开发偶尔用（一般表 < 1GB 用传统方式就够）。</p>
+  </div>
+
+  <!-- 02 -->
+  <h2 id="story"><span class="h2-num">02</span>用户故事：3 个角色</h2>
+
+  <div class="story">
+    <div class="story-head">
+      <div class="story-avatar">小</div>
+      <div>
+        <div class="story-name">小李（业务开发）</div>
+        <div class="story-role">前端工程师，给 orders 表加 status 字段</div>
+      </div>
+    </div>
+    <p class="story-quote">orders 表有 8000 万行，下午 3 点想加个 status 字段。直接 ALTER 会锁表，业务高峰顶不住。我希望提交工单时勾一下"无锁模式"，Archery 帮我后台慢慢改，**我下班前看进度面板**就行。</p>
+  </div>
+
+  <div class="story">
+    <div class="story-head">
+      <div class="story-avatar">王</div>
+      <div>
+        <div class="story-name">王 DBA</div>
+        <div class="story-role">审核 + 监控 DDL 工单</div>
+      </div>
+    </div>
+    <p class="story-quote">每天 20+ 个 DDL 工单，**大表占 10%**。我审核时希望：1) 看到表大小；2) 看用户选了无锁没；3) 跑失败时能手动重试或回滚。**默认开启 "ALTER_TABLE_LOCK_WAIT_TIMEOUT" 监控**——传统 ALTER 跑超过 30s 自动告警给我。</p>
+  </div>
+
+  <div class="story">
+    <div class="story-head">
+      <div class="story-avatar">SRE</div>
+      <div>
+        <div class="story-name">SRE 老张</div>
+        <div class="story-role">管 Archery 平台 + 服务器</div>
+      </div>
+    </div>
+    <p class="story-quote">gh-ost 是装在 110 PROD 的二进制，跑起来占 CPU/IO。**每个工单一个 systemd 临时 unit**（systemd-run --scope），跑完自动销毁。如果 gh-ost 自己挂了，**systemd 5s 重启**或**保留 task 状态**让人工查。我不想要"孤儿进程"。</p>
+  </div>
+
+  <!-- 03 -->
+  <h2 id="flow"><span class="h2-num">03</span>从提交到完成的 5 步</h2>
+
+  <div class="flow">
+    <div class="flow-step active">
+      <div class="step-num">STEP 01</div>
+      <svg class="step-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      <div class="step-name">提交工单</div>
+      <div class="step-time">~1 min</div>
+      <div class="step-detail">填 SQL，勾"启用 gh-ost"</div>
+    </div>
+    <div class="flow-step active">
+      <div class="step-num">STEP 02</div>
+      <svg class="step-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <div class="step-name">预检查</div>
+      <div class="step-time">~5s</div>
+      <div class="step-detail">binlog_format / 磁盘 / 权限 / 表类型</div>
+    </div>
+    <div class="flow-step">
+      <div class="step-num">STEP 03</div>
+      <svg class="step-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      <div class="step-name">后台跑 gh-ost</div>
+      <div class="step-time">~30 min</div>
+      <div class="step-detail">systemd-run 临时 unit + 影子表同步</div>
+    </div>
+    <div class="flow-step">
+      <div class="step-num">STEP 04</div>
+      <svg class="step-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <div class="step-name">cut-over 切换</div>
+      <div class="step-time">~10s</div>
+      <div class="step-detail">原表 + 影子表 rename，几秒延迟</div>
+    </div>
+    <div class="flow-step">
+      <div class="step-num">STEP 05</div>
+      <svg class="step-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <div class="step-name">通知 + 清理</div>
+      <div class="step-time">~1 min</div>
+      <div class="step-detail">钉钉群通知 + 影子表 24h 后 cron 清</div>
+    </div>
+  </div>
+
+  <!-- 04 -->
+  <h2 id="submit"><span class="h2-num">04</span>提交工单时怎么选</h2>
+  <p class="lead">用户在 Archery 提交 DDL 工单时，多了一个 checkbox 让你选"是否启用无锁模式"。**默认关闭**——大部分小表不需要。</p>
+
+  <div class="ui-mock">
+    <div class="ui-mock-head">
+      <div class="ui-mock-dot r"></div>
+      <div class="ui-mock-dot y"></div>
+      <div class="ui-mock-dot g"></div>
+      <div class="ui-mock-url">prodarchery.ahggwl.com:9123/submitsql/</div>
+    </div>
+    <div class="ui-mock-body">
+
+      <div style="background:var(--bg); border-radius:8px; padding:14px 18px; margin-bottom:20px; font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--ink);">
+        <span style="color:var(--ink-soft);">SQL:</span><br>
+        <strong>ALTER TABLE</strong> orders <strong>ADD COLUMN</strong> status <strong>VARCHAR</strong>(20) <strong>DEFAULT</strong> 'pending';
+      </div>
+
+      <div style="border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin-bottom:14px; background:#fafaf7;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+          <div style="font-size:14px; font-weight:600;">表信息</div>
+          <span class="tag tag-warn">orders · 8,200 万行 · 142 GB</span>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px; font-size:13px;">
+          <div><div style="color:var(--ink-soft); font-size:11px; text-transform:uppercase;">预估锁表时间</div><div style="font-family:'JetBrains Mono'; color:var(--danger); font-weight:500;">~ 2.5 小时 <span style="font-size:11px; color:var(--ink-soft);">(传统 ALTER)</span></div></div>
+          <div><div style="color:var(--ink-soft); font-size:11px; text-transform:uppercase;">业务高峰</div><div style="font-family:'JetBrains Mono'; color:var(--warn); font-weight:500;">15:00-22:00</div></div>
+          <div><div style="color:var(--ink-soft); font-size:11px; text-transform:uppercase;">磁盘剩余</div><div style="font-family:'JetBrains Mono'; color:var(--good); font-weight:500;">512 GB ✓</div></div>
+        </div>
+      </div>
+
+      <div style="border:2px solid var(--primary); border-radius:10px; padding:18px 20px; background:var(--primary-soft); margin-bottom:14px;">
+        <label style="display:flex; align-items:flex-start; gap:14px; cursor:pointer;">
+          <input type="checkbox" checked style="margin-top:4px; width:18px; height:18px; accent-color:var(--primary);">
+          <div style="flex:1;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+              <strong style="font-size:15px;">启用在线无锁 DDL (gh-ost)</strong>
+              <span class="tag tag-green">推荐</span>
+            </div>
+            <p style="margin:0; font-size:13.5px; color:var(--ink-mid); line-height:1.55;">业务读写零中断，后台慢慢改，cut-over 时有几秒延迟。100GB+ 大表强烈推荐。</p>
+            <div style="margin-top:12px; padding-top:12px; border-top:1px dashed rgba(47,111,94,.3); display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px;">
+              <div><span style="color:var(--ink-soft);">预估执行时间：</span><strong style="color:var(--ink); font-family:'JetBrains Mono';">~ 25 min</strong></div>
+              <div><span style="color:var(--ink-soft);">影子表占用：</span><strong style="color:var(--ink); font-family:'JetBrains Mono';">~ 145 GB（cut-over 后清理）</strong></div>
+            </div>
+          </div>
+        </label>
+      </div>
+
+      <details style="margin-top:6px;">
+        <summary style="cursor:pointer; font-size:13px; color:var(--ink-soft); padding:6px 0;">⚙ 高级选项（pt-osc 兼容 / 自定义并发 / 切割阈值）</summary>
+        <div style="padding:12px 18px; background:#fafaf7; border-radius:8px; margin-top:6px; font-size:13px; color:var(--ink-mid);">
+          <p style="margin:0 0 8px;"><b>仅老 MySQL 5.6/5.7 实例</b>可切换 pt-online-schema-change（默认收起，灰度用户）。</p>
+          <p style="margin:0 0 8px;">切割阈值：<code>1000 rows</code>（gh-ost 默认）</p>
+          <p style="margin:0 0 0;">最大负载：<code>threads_running &lt; 30</code>（超过暂停）</p>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- 05 -->
+  <h2 id="precheck"><span class="h2-num">05</span>预检查：什么能用什么不能</h2>
+  <p>用户勾"启用 gh-ost" → 提交瞬间 Archery 自动跑预检查（~5s）。**全部通过才真跑 gh-ost**，否则弹窗告诉用户哪条不通过。</p>
+
+  <div class="grid-2">
+    <div class="card-mini">
+      <h4 style="color:var(--good);">✓ 启用 gh-ost 的条件</h4>
+      <ul class="checklist">
+        <li>实例 <code>binlog_format=ROW</code>（gh-ost 必需）</li>
+        <li>磁盘剩余 ≥ 1.2 × 表大小</li>
+        <li>账户有 <code>REPLICATION SLAVE</code>、<code>REPLICATION CLIENT</code> 权限</li>
+        <li>SQL 是 <code>ALTER TABLE</code>，不是 <code>RENAME</code>、<code>DROP</code>、<code>TRUNCATE</code></li>
+        <li>目标表非 <strong>分区表</strong>、非<strong>临时表</strong></li>
+      </ul>
+    </div>
+    <div class="card-mini">
+      <h4 style="color:var(--danger);">✗ 禁用 gh-ost 的情况</h4>
+      <ul class="checklist">
+        <li class="fail">改主键 / 改索引类型 / 全文索引</li>
+        <li class="fail"><code>binlog_format=STATEMENT</code> 或 <code>MIXED</code></li>
+        <li class="fail">GTID 模式不一致（多源复制）</li>
+        <li class="fail">外键约束 + 引用此表的其他表</li>
+        <li class="fail">表大小 < 1GB（建议走传统 ALTER）</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <p><strong>预检查失败时</strong>：工单不让提交 + 明确告诉用户哪条不通过 + 建议改用传统 ALTER 或找 DBA 处理。不会"看似跑了 gh-ost 其实跑挂了"。</p>
+  </div>
+
+  <!-- 06 -->
+  <h2 id="progress"><span class="h2-num">06</span>进度面板长什么样</h2>
+  <p>工单提交后，Archery 自动跳转到详情页，**实时显示 gh-ost 进度**（3 秒轮询，不是 WebSocket）。</p>
+
+  <div class="progress-demo">
+    <div class="progress-head">
+      <div>
+        <div class="progress-pct">67%</div>
+        <div style="font-size:12px; color:var(--ink-soft); margin-top:-4px;">Copying rows · 估计剩余 8 分钟</div>
+      </div>
+      <div class="progress-stage">gh-ost running</div>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-bar-fill" style="width:67%"></div>
+    </div>
+    <div class="progress-stats">
+      <div class="progress-stat">
+        <div class="label">已复制</div>
+        <div class="val">5,494<span class="unit">万 / 8,200 万行</span></div>
+      </div>
+      <div class="progress-stat">
+        <div class="label">复制速度</div>
+        <div class="val">1,820<span class="unit">行/s</span></div>
+      </div>
+      <div class="progress-stat">
+        <div class="label">当前阶段</div>
+        <div class="val" style="font-family:'Outfit',sans-serif; font-size:15px;">Copying rows</div>
+      </div>
+      <div class="progress-stat">
+        <div class="label">线程负载</div>
+        <div class="val" style="color:var(--good);">12<span class="unit">活跃</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <p>阶段依次是：<b>queued → connecting → copying rows → waiting for cut-over → cut-over → swapped → done</b>。每个阶段都有开始/结束时间戳 + stderr 摘要。</p>
+  </div>
+
+  <!-- 07 -->
+  <h2 id="result"><span class="h2-num">07</span>成功 / 失败 / 取消分别怎么通知</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>结果</th><th>钉钉群通知</th><th>工单状态</th><th>影子表</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="tag tag-green">成功</span></td>
+          <td class="mono">@小李 orders 表加字段完成 · 25 min · 影响行 0</td>
+          <td class="good">passed</td>
+          <td class="mono">24h 后 cron 清</td>
+        </tr>
+        <tr>
+          <td><span class="tag tag-red">失败</span></td>
+          <td class="mono">@小李 gh-ost 失败：磁盘不足 <br>@王DBA 请查看</td>
+          <td class="warn">failed</td>
+          <td class="mono">保留 7 天可手动回滚</td>
+        </tr>
+        <tr>
+          <td><span class="tag tag-warn">取消</span></td>
+          <td class="mono">@小李 gh-ost 已手动取消</td>
+          <td class="warn">cancelled</td>
+          <td class="mono">立即清理</td>
+        </tr>
+        <tr>
+          <td><span class="tag tag-gray">超时</span></td>
+          <td class="mono">@王DBA gh-ost 超过 2h 未完成 <br>请人工处理</td>
+          <td class="warn">stuck</td>
+          <td class="mono">保留 + 告警</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 08 -->
+  <h2 id="admin"><span class="h2-num">08</span>DBA 视角：异常处理</h2>
+  <p>所有 gh-ost 任务在 admin 多一个列表页，<strong>所有异常都进这里</strong>，DBA 不会漏看。</p>
+
+  <div class="ui-mock">
+    <div class="ui-mock-head">
+      <div class="ui-mock-dot r"></div>
+      <div class="ui-mock-dot y"></div>
+      <div class="ui-mock-dot g"></div>
+      <div class="ui-mock-url">prodarchery.ahggwl.com:9123/admin/ext_ddl_ghost_task/</div>
+    </div>
+    <div class="ui-mock-body">
+      <div class="table-wrap" style="margin:0;">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>工单</th><th>实例 / 表</th><th>状态</th><th>进度</th><th>开始</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">#4821</td>
+              <td class="mono"><a style="color:var(--primary); text-decoration:none;">#4698</a></td>
+              <td class="mono">prod-mysql-01 / orders</td>
+              <td><span class="tag tag-green">running</span></td>
+              <td class="mono">67%</td>
+              <td class="mono">15:32</td>
+              <td><a style="color:var(--primary); font-size:12px; cursor:pointer;">查看</a> · <a style="color:var(--danger); font-size:12px; cursor:pointer;">取消</a></td>
+            </tr>
+            <tr>
+              <td class="mono">#4820</td>
+              <td class="mono"><a style="color:var(--primary); text-decoration:none;">#4685</a></td>
+              <td class="mono">prod-mysql-02 / users</td>
+              <td><span class="tag tag-green">done</span></td>
+              <td class="mono good">100% · 18 min</td>
+              <td class="mono">15:14</td>
+              <td><a style="color:var(--primary); font-size:12px; cursor:pointer;">详情</a></td>
+            </tr>
+            <tr>
+              <td class="mono">#4818</td>
+              <td class="mono"><a style="color:var(--primary); text-decoration:none;">#4665</a></td>
+              <td class="mono">prod-mysql-01 / logs</td>
+              <td><span class="tag tag-red">failed</span></td>
+              <td class="mono warn">31% · 磁盘满</td>
+              <td class="mono">14:22</td>
+              <td><a style="color:var(--primary); font-size:12px; cursor:pointer;">查看</a> · <a style="color:var(--primary); font-size:12px; cursor:pointer;">重试</a> · <a style="color:var(--danger); font-size:12px; cursor:pointer;">回滚</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-top:18px;">
+    <div class="card-mini">
+      <h4>DBA 一键操作</h4>
+      <p><b>取消</b>：发 SIGTERM 给 gh-ost，影子表立即清理。<br><b>重试</b>：用相同 SQL 重启 gh-ost（从 queued 重新开始）。<br><b>回滚</b>：rename 影子表为原表名，砍掉已改的表结构。</p>
+    </div>
+    <div class="card-mini">
+      <h4>影子表回收</h4>
+      <p>每天凌晨 3 点 cron 扫 <code>ext_ddl_ghost_task</code>，<br>completed 超过 24h 的任务 → <code>DROP _ghc_del_xxx</code>。<br>失败任务的影子表保留 7 天供排查。</p>
+    </div>
+  </div>
+
+  <!-- 09 -->
+  <h2 id="safety"><span class="h2-num">09</span>安全设计：怎么不翻车</h2>
+
+  <ul class="checklist">
+    <li><b>默认关闭</b>：用户不勾选 = 走传统 ALTER（行为不变，向后兼容）</li>
+    <li><b>预检查拦 5 道</b>：binlog_format / 磁盘 / 权限 / SQL 类型 / 表类型，任何一条不过不让跑</li>
+    <li><b>systemd 临时 unit</b>：每个任务一个 <code>systemd-run --scope=ghost-&lt;audit_id&gt;</code>，跑完自动销毁，孤儿进程自动清理</li>
+    <li><b>cut-over 时机由 DBA 控制</b>：可选"业务低峰切换"模式（默认立刻切），可指定时间窗（如 02:00-04:00）</li>
+    <li><b>影子表保留 7 天</b>：cut-over 失败时人工回滚的最后机会</li>
+    <li><b>暂停阈值</b>：<code>threads_running &gt; 30</code> 自动暂停 gh-ost（避免压垮生产）</li>
+    <li><b>超时熔断</b>：超过 2h 未完成自动停止 + 告警 DBA</li>
+    <li><b>灰度开关</b>：v0.3.0-alpha 阶段只对标记为"灰度用户"的账号开放</li>
+  </ul>
+
+  <div class="callout danger">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+    <p><strong>cut-over 是关键时刻</strong>（rename 阶段，几秒锁表）。生产环境<strong>默认在业务低峰期切</strong>（22:00 后），可配"自动 cut-over 时间窗"。紧急情况 DBA 手动触发立即切。</p>
+  </div>
+
+  <!-- 10 -->
+  <h2 id="timeline"><span class="h2-num">10</span>3 阶段交付计划</h2>
+  <p>每个阶段独立可发布，建议按顺序。每个迭代约 1 周。</p>
+
+  <ol class="timeline">
+    <li>
+      <div class="tl-stage">v0.3.0-alpha · 骨架阶段</div>
+      <div class="tl-name">预检查 + 任务模型 + UI 框架</div>
+      <div class="tl-desc">
+        <ul style="margin:6px 0 0; padding-left:18px; color:var(--ink-mid);">
+          <li>装 gh-ost 二进制到 134 dev + 110 prod（systemd-run 跑临时 unit）</li>
+          <li>新建 <code>ext_ddl_ghost_task</code> 表（task 状态 / 进度 / 错误 / stdout 历史）</li>
+          <li>预检查 5 道：binlog_format / 磁盘 / 权限 / SQL 类型 / 表类型</li>
+          <li>工单详情页加 checkbox + 进度面板（polling 3s）</li>
+          <li>预检查失败弹窗 + 明确告诉用户改用传统 ALTER</li>
+          <li><b>不真跑 gh-ost</b>，只生成 task 记录（标记 "would use gh-ost"）</li>
+        </ul>
+      </div>
+    </li>
+    <li>
+      <div class="tl-stage">v0.3.0-beta · 执行阶段</div>
+      <div class="tl-name">真跑 gh-ost + 实时进度</div>
+      <div class="tl-desc">
+        <ul style="margin:6px 0 0; padding-left:18px; color:var(--ink-mid);">
+          <li>用户勾 gh-ost → Archery 调 gh-ost 二进制 + systemd-run</li>
+          <li>后台轮询 gh-ost stdout（3s）→ 解析 <code>Copy: 12345/100000 rows</code> → 写 task.progress</li>
+          <li>状态机：queued → connecting → copying → cut-over → done / failed</li>
+          <li>DBA admin 多一个 <code>ext_ddl_ghost_task</code> 列表页（取消/重试/回滚）</li>
+          <li>完成/失败 → 钉钉群通知（依赖 v0.2.1 OA 框架）</li>
+          <li>cut-over 时机：默认立刻切 / 可配"低峰期时间窗"</li>
+        </ul>
+      </div>
+    </li>
+    <li>
+      <div class="tl-stage future" style="opacity:.65;">
+      <div class="tl-stage">v0.3.0 · 完整版</div>
+      <div class="tl-name">pt-osc 兼容 + 影子表清理 + 上线 runbook</div>
+      <div class="tl-desc">
+        <ul style="margin:6px 0 0; padding-left:18px; color:var(--ink-mid);">
+          <li>老 MySQL 5.6/5.7 实例支持 pt-osc（默认收起"高级"tab，灰度用户）</li>
+          <li>影子表 <code>_ghc_del_xxx</code> 24h cron 自动清理</li>
+          <li>完整 e2e：演练大表（你公司 100GB+ 业务表）</li>
+          <li>上线 runbook + 故障排查手册</li>
+          <li>性能基准测试报告（cut-over 延迟、CPU/IO 峰值）</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <!-- 11 -->
+  <h2 id="checklist"><span class="h2-num">11</span>验收标准</h2>
+  <p>v0.3.0-beta 阶段需要全部满足：</p>
+
+  <ul class="checklist">
+    <li>提交 100GB+ 表的 <code>ALTER TABLE ADD COLUMN</code> 工单，勾"启用 gh-ost" → 业务读写<strong>零中断</strong>（监控 30 分钟无超时错误）</li>
+    <li>进度面板每 3 秒刷新，显示 <code>已复制行数 / 速度 / 当前阶段 / 线程负载</code></li>
+    <li>cut-over 自动完成后，业务开发<strong>收到钉钉通知</strong>（含工单号 / 耗时 / 影响行）</li>
+    <li>DBA 在 admin 可看所有 task，可一键取消/重试/回滚</li>
+    <li>预检查 5 道任一不通过 → 弹窗明确告诉用户，<strong>不静默</strong></li>
+    <li>gh-ost 自己挂了 → systemd 5s 重启，超过 2h 自动停止 + 告警</li>
+    <li>影子表 24h 后 cron 自动清（不污染数据库）</li>
+    <li>灰度阶段只对"灰度用户"开放，避免一上来全公司都能用</li>
+  </ul>
+
+  <!-- 12 -->
+  <h2 id="open"><span class="h2-num">12</span>需要你拍板的 4 件事</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>#</th><th>问题</th><th>我建议</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>gh-ost 二进制装在哪？134 dev + 110 prod 各装？</td>
+          <td class="good"><b>是</b>，各装一份（110 用 systemd-run 临时 unit）</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>演练大表选哪个？（测 gh-ost 真跑）</td>
+          <td class="warn"><b>你告诉我</b>，我猜不到（你公司哪张表最大）</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>前端 UI 谁做？</td>
+          <td class="good"><b>我自己做</b>（Vue + Element UI 现有栈，工单详情页 + admin 加组件）</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>Backlog 排期：v0.3.0 排 v0.2.3 之前还是之后？</td>
+          <td class="good"><b>之后</b>（v0.2.3 OA 对账稳定后启动 v0.3.0）</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout info" style="margin-top:24px;">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <p>4 个问题拍板后，我立刻开 v0.3.0-alpha（骨架阶段）。<b>v0.3.0-alpha 不真跑 gh-ost</b>，主要是把"勾选框 + 预检查 + task 模型"建出来，让你先看到界面长啥样。3-5 天交付。</p>
+  </div>
+
+  <div class="footer">
+    Archery 二次开发 · 2026-08-05 · v0.2.0 已切到 110，v0.3.0 规划中 · 配 Mavis 起草
+  </div>
+
+</div>
+</body>
+</html>
