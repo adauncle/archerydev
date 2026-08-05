@@ -67,8 +67,16 @@ BACKUP_ROOT="/backup/promote"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_DIR="${BACKUP_ROOT}/${TIMESTAMP}"
 
+# 数据库凭据（set -u 保底：parse_db_creds 调用前先初始化为空）
+PROD_DB_USER=""
+PROD_DB_PASS=""
+PROD_DB_HOST=""
+PROD_DB_PORT=""
+PROD_DB_NAME=""
+
 # 凭据从 110 现有 .env 解析（不写死 /etc/archery/dbops_password）
 # 110 v1.14.0 用 DATABASE_URL / CACHE_URL 统一配置，不是分开的 MYSQL_HOST/PORT/USER
+# 注意：不能用 local（函数退出后变量消失），直接赋值给全局变量
 parse_db_creds() {
     local env_file="$1"
     if [[ ! -f "$env_file" ]]; then
