@@ -1,0 +1,300 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>gh-ost 进度 · 工单 #{{ workflow.id }}</title>
+  <style>
+    :root {
+      --good: #67C23A;
+      --warn: #E6A23C;
+      --danger: #F56C6C;
+      --info: #409EFF;
+      --gray: #909399;
+      --ink: #303133;
+      --ink-mid: #606266;
+      --ink-soft: #909399;
+      --bg: #f5f7fa;
+      --card: #ffffff;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: var(--bg); color: var(--ink);
+      margin: 0; padding: 24px; line-height: 1.6;
+    }
+    .container { max-width: 880px; margin: 0 auto; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    .sub { color: var(--ink-soft); font-size: 13px; margin-bottom: 20px; }
+    .card {
+      background: var(--card); border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      padding: 20px; margin-bottom: 16px;
+    }
+    .row { display: flex; gap: 24px; flex-wrap: wrap; }
+    .row > div { flex: 1 1 180px; }
+    .label {
+      color: var(--ink-soft); font-size: 12px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .val { font-size: 18px; font-weight: 600; margin-top: 4px; }
+    .unit { color: var(--ink-soft); font-size: 12px; font-weight: 400; }
+
+    .progress-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .progress-pct { font-size: 36px; font-weight: 700; }
+    .progress-stage {
+      background: var(--info); color: #fff;
+      padding: 6px 14px; border-radius: 20px;
+      font-size: 13px; font-weight: 500;
+    }
+    .progress-stage.success { background: var(--good); }
+    .progress-stage.failed { background: var(--danger); }
+    .progress-stage.cancelled { background: var(--gray); }
+    .progress-bar {
+      height: 12px; background: #ebeef5; border-radius: 6px;
+      overflow: hidden; margin: 12px 0;
+    }
+    .progress-bar-fill {
+      height: 100%; background: var(--info);
+      transition: width 0.5s ease;
+    }
+    .progress-bar-fill.success { background: var(--good); }
+    .progress-bar-fill.failed { background: var(--danger); }
+
+    .actions { display: flex; gap: 10px; margin-top: 20px; }
+    .btn {
+      padding: 8px 18px; border: none; border-radius: 4px;
+      font-size: 14px; cursor: pointer; font-weight: 500;
+    }
+    .btn-primary { background: var(--info); color: #fff; }
+    .btn-primary:disabled { background: #c0c4cc; cursor: not-allowed; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-default { background: #fff; color: var(--ink-mid); border: 1px solid #dcdfe6; }
+
+    .meta { color: var(--ink-soft); font-size: 12px; }
+    pre {
+      background: #f5f5f5; padding: 12px; border-radius: 4px;
+      font-size: 12px; line-height: 1.4; overflow-x: auto;
+      max-height: 240px; overflow-y: auto;
+    }
+    .empty { text-align: center; color: var(--ink-soft); padding: 32px; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 4px;
+      font-size: 12px; color: #fff; background: var(--gray);
+    }
+    .badge.good { background: var(--good); }
+    .badge.danger { background: var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>gh-ost 迁移进度</h1>
+    <div class="sub">
+      工单 <b>#{{ workflow.id }}</b> ·
+      <a href="/admin/sql/sqlworkflow/{{ workflow.id }}/change/">{{ workflow.workflow_name }}</a>
+      · 实例 <b>{{ workflow.instance.instance_name }}</b> · 库 <b>{{ workflow.db_name }}</b>
+    </div>
+
+    {% if not task %}
+      <div class="card">
+        <div class="empty">
+          ⚠️ 该工单尚未启用 gh-ost（没有 DdlGhostTask 记录）<br><br>
+          <a class="btn btn-primary" href="/admin/sql/sqlworkflow/{{ workflow.id }}/change/">去工单详情启用</a>
+        </div>
+      </div>
+    {% else %}
+      <div class="card">
+        <div class="progress-head">
+          <div>
+            <div class="progress-pct" id="pct">{{ task.progress_pct|default:0 }}%</div>
+            <div class="meta" id="eta">
+              {% if task.status == "success" %}迁移完成 · 耗时 {{ task.duration_seconds }}s
+              {% elif task.status == "failed" %}迁移失败
+              {% elif task.status == "cancelled" %}已取消
+              {% else %}轮询中 · 3s 刷新{% endif %}
+            </div>
+          </div>
+          <div class="progress-stage {{ task.status }}"
+               id="stage">{{ task.get_status_display }}</div>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-bar-fill {{ task.status }}"
+               id="bar" style="width: {{ task.progress_pct|default:0 }}%;"></div>
+        </div>
+
+        <div class="row">
+          <div>
+            <div class="label">当前阶段</div>
+            <div class="val" id="currentStage">
+              {{ task.current_stage|default:"—" }}
+            </div>
+          </div>
+          <div>
+            <div class="label">已复制 / 总行</div>
+            <div class="val" id="rows">
+              {{ task.progress_rows_copied|default:"—" }}
+              <span class="unit">/ {{ task.progress_rows_total|default:"—" }}</span>
+            </div>
+          </div>
+          <div>
+            <div class="label">复制速度</div>
+            <div class="val" id="speed">
+              {{ task.progress_speed_rows_per_sec|default:"—" }}
+              <span class="unit">行/s</span>
+            </div>
+          </div>
+          <div>
+            <div class="label">预计剩余</div>
+            <div class="val" id="etaVal">
+              {{ task.progress_eta_seconds|default:"—" }}<span class="unit">s</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="actions">
+          {% if task.status == "queued" %}
+            <button class="btn btn-primary" id="startBtn">启动 gh-ost</button>
+          {% endif %}
+          {% if task.status in "running,cut_over,queued" %}
+            <button class="btn btn-danger" id="cancelBtn">取消迁移</button>
+          {% endif %}
+          <a class="btn btn-default" href="/admin/sql/extensions%20ddl_gh_ost/ddlghosttask/{{ task.id }}/change/">
+            查看 admin 详情
+          </a>
+        </div>
+      </div>
+
+      {% if task.precheck_report %}
+      <div class="card">
+        <h3 style="margin:0 0 12px; font-size:16px;">预检报告</h3>
+        <table style="width:100%; font-size:13px; border-collapse:collapse;">
+          {% for c in task.precheck_report.checks %}
+            <tr style="border-bottom: 1px solid #ebeef5;">
+              <td style="padding:8px 0; width:140px;">
+                <span class="badge {% if c.passed %}good{% else %}danger{% endif %}">
+                  {{ c.passed|yesno:"✓ PASS,✗ FAIL" }}
+                </span>
+                <b style="margin-left:6px;">{{ c.name }}</b>
+              </td>
+              <td style="padding:8px 0; color: var(--ink-mid);">
+                {{ c.message }}
+              </td>
+            </tr>
+          {% endfor %}
+        </table>
+      </div>
+      {% endif %}
+
+      {% if task.error_message %}
+      <div class="card">
+        <h3 style="margin:0 0 12px; font-size:16px; color: var(--danger);">错误信息</h3>
+        <pre>{{ task.error_message }}</pre>
+      </div>
+      {% endif %}
+
+      {% if task.stderr_tail %}
+      <div class="card">
+        <h3 style="margin:0 0 12px; font-size:16px;">stderr 末尾（最多 50 行）</h3>
+        <pre>{{ task.stderr_tail }}</pre>
+      </div>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <script>
+    (function () {
+      const wfId = {{ workflow.id }};
+      const csrftoken = '{{ csrf_token }}';
+
+      function getCookie(name) {
+        const m = document.cookie.match('(^|;)\\s*' + name + '=([^;]+)');
+        return m ? m.pop() : '';
+      }
+
+      async function poll() {
+        try {
+          const r = await fetch(`/gh_ost/status/${wfId}/`, {
+            credentials: 'same-origin',
+          });
+          if (!r.ok) return;
+          const d = await r.json();
+          if (!d.ok) return;
+          render(d);
+          if (["running", "cut_over", "queued"].includes(d.status)) {
+            setTimeout(poll, 3000);
+          }
+        } catch (e) {
+          console.error('poll failed', e);
+          setTimeout(poll, 5000);
+        }
+      }
+
+      function render(d) {
+        const pct = (d.progress && d.progress.pct) || 0;
+        document.getElementById('pct').textContent = pct + '%';
+        document.getElementById('bar').style.width = pct + '%';
+        const stage = document.getElementById('stage');
+        stage.textContent = ({
+          pending: '待预检', precheck_failed: '预检未通过', queued: '排队中',
+          running: '执行中', cut_over: '切表阶段', success: '成功',
+          failed: '失败', cancelled: '已取消',
+        })[d.status] || d.status;
+        stage.className = 'progress-stage ' + d.status;
+        const bar = document.getElementById('bar');
+        bar.className = 'progress-bar-fill ' + d.status;
+
+        document.getElementById('currentStage').textContent =
+          (d.progress && d.progress.message) || d.current_stage || '—';
+        if (d.progress) {
+          const rc = d.progress.rows_copied || '—';
+          const rt = d.progress.rows_total || '—';
+          document.getElementById('rows').innerHTML =
+            rc + ' <span class="unit">/ ' + rt + '</span>';
+          document.getElementById('speed').innerHTML =
+            (d.progress.speed || '—') + ' <span class="unit">行/s</span>';
+          document.getElementById('etaVal').innerHTML =
+            (d.progress.eta_seconds || '—') + '<span class="unit">s</span>';
+        }
+        // 终态时禁用按钮
+        const startBtn = document.getElementById('startBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        if (["success", "failed", "cancelled"].includes(d.status)) {
+          if (startBtn) startBtn.disabled = true;
+          if (cancelBtn) cancelBtn.disabled = true;
+        }
+      }
+
+      async function postAction(url) {
+        const r = await fetch(url, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {'X-CSRFToken': getCookie('csrftoken')},
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          alert('操作失败：' + t.slice(0, 300));
+          return;
+        }
+        poll();
+      }
+
+      const startBtn = document.getElementById('startBtn');
+      if (startBtn) startBtn.onclick = () => postAction(`/gh_ost/start/${wfId}/`);
+      const cancelBtn = document.getElementById('cancelBtn');
+      if (cancelBtn) cancelBtn.onclick = () => {
+        if (confirm('确认取消 gh-ost 迁移？')) {
+          postAction(`/gh_ost/cancel/${wfId}/`);
+        }
+      };
+
+      // 启动轮询（仅 task 存在且非终态）
+      {% if task and not task.is_terminal %}
+        setTimeout(poll, 1000);
+      {% endif %}
+    })();
+  </script>
+</body>
+</html>

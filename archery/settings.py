@@ -395,6 +395,24 @@ if CUSTOM_DINGTALK_OA_ENABLED:
     ## CUSTOM-MODIFIED: 钉钉 OA 启用时切换 auditor 为 ConfigurableAuditor @ 2026-07-20 @ coder-agent
     CURRENT_AUDITOR = CUSTOM_DINGTALK_OA_AUDITOR
 
+## CUSTOM-MODIFIED: gh-ost 无锁 DDL 二次开发 —— v0.3.0-alpha 灰度开关 @ 2026-08-05 @ mavis
+## 关联设计: docs/designs/2026-08-05_gh-ost-product-design.html
+## alpha 阶段默认 False；DBA 在 admin 灰度名单内后才允许启用 gh-ost
+CUSTOM_GH_OST_ENABLED = env("CUSTOM_GH_OST_ENABLED", default=False)
+## gh-ost 二进制绝对路径（systemd-run scope 内执行）
+CUSTOM_GH_OST_BIN = env("CUSTOM_GH_OST_BIN", default="/usr/local/bin/gh-ost")
+## 默认切表策略（immediate / low_traffic_window / manual）
+CUSTOM_GH_OST_CUT_OVER_STRATEGY = env(
+    "CUSTOM_GH_OST_CUT_OVER_STRATEGY", default="immediate",
+)
+## gh-ost 进度 stdout 日志保留路径（systemd-run journal 可读，但单独留一份方便排错）
+CUSTOM_GH_OST_LOG_DIR = env(
+    "CUSTOM_GH_OST_LOG_DIR", default="/var/log/archery/gh_ost",
+)
+
+if CUSTOM_GH_OST_ENABLED:
+    INSTALLED_APPS += ("sql.extensions.ddl_gh_ost.apps.DdlGhOstConfig",)
+
 # LDAP
 ENABLE_LDAP = env("ENABLE_LDAP", False)
 if ENABLE_LDAP:

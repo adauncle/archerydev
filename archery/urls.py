@@ -39,6 +39,14 @@ if getattr(settings, "CUSTOM_DINGTALK_OA_ENABLED", False):  # pragma: no cover
         path("dingtalk/oa/", include(("sql.extensions.dingtalk_oa.urls", "dingtalk_oa"), namespace="dingtalk_oa")),
     ]
 
+## CUSTOM-MODIFIED: gh-ost 无锁 DDL 二次开发 —— 接入 URL 路由 @ 2026-08-05 @ mavis
+## 关联设计: docs/designs/2026-08-05_gh-ost-product-design.html
+## alpha 阶段不接前端 Vue，进度面板用 Django template（admin 内部可访问）
+if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):  # pragma: no cover
+    urlpatterns += [
+        path("gh_ost/", include(("sql.extensions.ddl_gh_ost.urls", "ddl_gh_ost"), namespace="ddl_gh_ost")),
+    ]
+
 handler400 = views.bad_request
 handler403 = views.permission_denied
 handler404 = views.page_not_found
