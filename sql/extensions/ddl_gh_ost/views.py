@@ -758,3 +758,61 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
         "pid": pid,
         "target_table": task.target_table,
     })
+
+
+# ===========================================================================
+# CUSTOM-MODIFIED: v0.4.5-alpha 视图 —— rebuild 进度面板 + 状态查询 @ 2026-08-06 @ mavis
+# ===========================================================================
+
+@login_required
+@require_GET
+def rebuild_progress_page(request: HttpRequest, task_id: int) -> HttpResponse:
+    """渲染 rebuild 进度面板（admin 内部可访问）。
+
+    模板路径：``sql/extensions/ddl_gh_ost/templates/ddl_gh_ost/progress_rebuild.html``
+    """
+    task = get_object_or_404(DdlGhostTask, pk=task_id, task_type="rebuild")
+    return render(request, "ddl_gh_ost/progress_rebuild.html", {
+        "task": task,
+    })
+
+
+@login_required
+@require_GET
+def rebuild_status(request: HttpRequest, task_id: int) -> JsonResponse:
+    """rebuild 任务进度查询（前端 polling 3s 一次，复用 ghost status 字段）。
+
+    入参:
+        GET /gh_ost/rebuild/status/<task_id>/
+
+    返回:
+        与 ghost status 端点相同字段（pct / rows / speed / eta / threads_running / message 等）
+    """
+    task = DdlGhostTask.objects.filter(pk=task_id, task_type="rebuild").first()
+    if not task:
+        return JsonResponse({"ok": False, "error": "rebuild task 不存在"}, status=404)
+    return JsonResponse({
+        "ok": True,
+        "task_id": task.id,
+        "task_type": task.task_type,
+        "target_table": task.target_table,
+        "status": task.status,
+        "current_stage": task.current_stage,
+        "progress": {
+            "pct": task.progress_pct,
+            "rows_copied": task.progress_rows_copied,
+            "rows_total": task.progress_rows_total,
+            "speed": task.progress_speed_rows_per_sec,
+            "eta_seconds": task.progress_eta_seconds,
+            "threads_running": task.progress_threads_running,
+            "message": task.progress_message,
+        },
+        "last_heartbeat_at": (
+            task.last_heartbeat_at.isoformat() if task.last_heartbeat_at else None
+        ),
+        "started_at": task.started_at.isoformat() if task.started_at else None,
+        "finished_at": task.finished_at.isoformat() if task.finished_at else None,
+        "duration_seconds": task.duration_seconds,
+        "stderr_tail": task.stderr_tail[-2000:],
+        "error_message": task.error_message,
+    })

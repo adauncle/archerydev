@@ -19,8 +19,10 @@
     GET  /gh_ost/progress/<id>/         进度面板页（Django template）
 
 v0.4.5-alpha 新增（碎片回收）：
-    GET  /gh_ost/rebuild/list/          列可重建表（DBA 选表用）
-    POST /gh_ost/rebuild/start/         触发 rebuild task
+    GET  /gh_ost/rebuild/list/                       列可重建表（DBA 选表用）
+    POST /gh_ost/rebuild/start/                      触发 rebuild task
+    GET  /gh_ost/rebuild/status/<task_id>/           rebuild 进度查询
+    GET  /gh_ost/rebuild/progress/<task_id>/         rebuild 进度面板（Django template）
 """
 
 from django.urls import path
@@ -41,4 +43,6 @@ urlpatterns = [
     # v0.4.5-alpha rebuild 端点
     path("rebuild/list/", views.rebuild_list, name="rebuild_list"),
     path("rebuild/start/", views.rebuild_start, name="rebuild_start"),
+    path("rebuild/status/<int:task_id>/", views.rebuild_status, name="rebuild_status"),
+    path("rebuild/progress/<int:task_id>/", views.rebuild_progress_page, name="rebuild_progress"),
 ]
