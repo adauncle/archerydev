@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Archery 二次开发 · 版本路线图与状态报告 · 2026-08-06</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --line: #e9e3d6;
+    --line-soft: #f0ebde;
+    --ink: #14171e;
+    --ink-mid: #3a4256;
+    --ink-soft: #7c7a72;
+    --primary: #2f6f5e;       /* 深绿 */
+    --primary-soft: #2f6f5e1a;
+    --primary-fade: #2f6f5e0d;
+    --warn: #c97b3f;
+    --warn-soft: #c97b3f1a;
+    --danger: #b06367;
+    --danger-soft: #b063671a;
+    --info: #4a6b8a;
+    --info-soft: #4a6b8a1a;
+    --good: #2f6f5e;
+    --gold: #b8923f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--ink); }
+  body {
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    font-size: 14.5px; line-height: 1.6;
+    background:
+      radial-gradient(circle at 0% 0%, #2f6f5e0a 0%, transparent 40%),
+      radial-gradient(circle at 100% 100%, #c97b3f08 0%, transparent 40%),
+      var(--bg);
+    min-height: 100dvh;
+  }
+  .container { max-width: 1120px; margin: 0 auto; padding: 56px 32px 80px; }
+
+  /* Hero */
+  .hero { padding-bottom: 48px; border-bottom: 1px solid var(--line); margin-bottom: 56px; }
+  .hero-meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--ink-soft); margin-bottom: 16px; letter-spacing: 0.05em; text-transform: uppercase; }
+  .hero-meta .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+  h1 {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 40px; font-weight: 400; line-height: 1.15; letter-spacing: -0.01em;
+    color: var(--ink); margin-bottom: 16px;
+  }
+  .hero-sub {
+    font-size: 16px; color: var(--ink-mid); max-width: 720px; line-height: 1.55;
+  }
+  .hero-sub b { color: var(--primary); font-weight: 600; }
+
+  /* Section */
+  section { margin-bottom: 56px; }
+  .section-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); }
+  .section-num { font-family: 'DM Serif Display', Georgia, serif; font-size: 24px; color: var(--primary); }
+  h2 {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 24px; font-weight: 400; letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .section-en { font-size: 12px; color: var(--ink-soft); letter-spacing: 0.05em; text-transform: uppercase; margin-left: auto; }
+
+  /* Metrics */
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .metric { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .metric-label { font-size: 11px; color: var(--ink-soft); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 10px; }
+  .metric-value { font-family: 'DM Serif Display', Georgia, serif; font-size: 34px; color: var(--ink); line-height: 1; }
+  .metric-unit { font-size: 14px; color: var(--ink-soft); margin-left: 4px; font-family: 'Outfit', sans-serif; }
+  .metric-note { font-size: 12px; color: var(--ink-soft); margin-top: 8px; }
+
+  /* Two-column */
+  .two-col { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+  .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+  /* Card */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card-title { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card-title svg { color: var(--primary); flex-shrink: 0; }
+
+  /* Architecture diagram */
+  .arch-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+  .arch-box { background: var(--primary-fade); border: 1px solid var(--primary); border-radius: 8px; padding: 8px 14px; font-size: 13px; color: var(--ink); min-width: 100px; text-align: center; }
+  .arch-box.alt { background: var(--warn-soft); border-color: var(--warn); }
+  .arch-box.alt2 { background: var(--info-soft); border-color: var(--info); }
+  .arch-arrow { color: var(--ink-soft); flex-shrink: 0; }
+
+  /* Timeline */
+  .timeline { list-style: none; padding: 0; margin: 0; position: relative; }
+  .timeline::before { content: ""; position: absolute; left: 8px; top: 6px; bottom: 6px; width: 2px; background: var(--primary); opacity: 0.3; }
+  .timeline li { position: relative; padding: 0 0 20px 32px; }
+  .timeline li:last-child { padding-bottom: 0; }
+  .timeline li::before { content: ""; position: absolute; left: 2px; top: 4px; width: 14px; height: 14px; border-radius: 50%; background: var(--card); border: 2px solid var(--primary); }
+  .tl-date { font-size: 11px; color: var(--ink-soft); font-family: 'JetBrains Mono', monospace; letter-spacing: 0.05em; margin-bottom: 2px; }
+  .tl-title { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+  .tl-title .ver { font-family: 'JetBrains Mono', monospace; color: var(--primary); font-size: 13px; }
+  .tl-desc { font-size: 13px; color: var(--ink-mid); line-height: 1.55; }
+  .tl-desc code { background: var(--line-soft); padding: 1px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; }
+
+  /* Version block */
+  .version { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; margin-bottom: 16px; }
+  .version-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .version-tag { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; color: var(--primary); background: var(--primary-soft); padding: 4px 10px; border-radius: 6px; }
+  .version-tag.alpha { color: var(--gold); background: #b8923f1a; }
+  .version-tag.beta { color: var(--warn); background: var(--warn-soft); }
+  .version-tag.dev { color: var(--info); background: var(--info-soft); }
+  .version-date { font-size: 12px; color: var(--ink-soft); font-family: 'JetBrains Mono', monospace; }
+  .version-commit { font-size: 12px; color: var(--ink-soft); font-family: 'JetBrains Mono', monospace; margin-left: auto; }
+  .version-commit code { background: var(--line-soft); padding: 1px 6px; border-radius: 4px; }
+  .version-summary { font-size: 14px; color: var(--ink-mid); line-height: 1.6; margin-bottom: 14px; }
+  .version-feat { list-style: none; padding: 0; margin: 0; }
+  .version-feat li { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--ink-mid); padding: 5px 0; line-height: 1.55; }
+  .version-feat li::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--primary); flex-shrink: 0; margin-top: 8px; }
+  .version-feat b { color: var(--ink); font-weight: 600; }
+
+  /* Status badge */
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+  .badge.good { background: var(--primary-soft); color: var(--primary); }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); }
+  .badge.danger { background: var(--danger-soft); color: var(--danger); }
+  .badge.info { background: var(--info-soft); color: var(--info); }
+  .badge.gray { background: var(--line-soft); color: var(--ink-soft); }
+  .badge-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+  /* Table */
+  .table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .table th { text-align: left; font-size: 11px; font-weight: 600; color: var(--ink-soft); letter-spacing: 0.05em; text-transform: uppercase; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--line-soft); }
+  .table th:first-child { border-top-left-radius: 8px; }
+  .table th:last-child { border-top-right-radius: 8px; }
+  .table td { padding: 12px; border-bottom: 1px solid var(--line-soft); color: var(--ink-mid); vertical-align: top; }
+  .table tr:last-child td { border-bottom: none; }
+  .table .col-id { font-family: 'JetBrains Mono', monospace; color: var(--ink-soft); font-size: 12px; }
+  .table .col-name { color: var(--ink); font-weight: 500; }
+  .table .col-block { font-size: 12.5px; color: var(--ink-soft); }
+
+  /* Ext table list */
+  .ext-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
+  .ext-pill { display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 6px 10px; background: var(--line-soft); border-radius: 6px; color: var(--ink); }
+  .ext-pill .prefix { color: var(--ink-soft); }
+  .ext-pill .name { color: var(--primary); font-weight: 500; }
+
+  /* Risk list */
+  .risk-item { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px dashed var(--line); }
+  .risk-item:last-child { border-bottom: none; }
+  .risk-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .risk-icon.warn { background: var(--warn-soft); color: var(--warn); }
+  .risk-icon.danger { background: var(--danger-soft); color: var(--danger); }
+  .risk-content { flex: 1; }
+  .risk-title { font-size: 13.5px; font-weight: 600; color: var(--ink); margin-bottom: 2px; }
+  .risk-desc { font-size: 13px; color: var(--ink-mid); line-height: 1.55; }
+
+  /* Footer */
+  footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--ink-soft); }
+
+  @media (max-width: 768px) {
+    .container { padding: 32px 20px 48px; }
+    h1 { font-size: 28px; }
+    .metrics { grid-template-columns: repeat(2, 1fr); }
+    .two-col, .three-col { grid-template-columns: 1fr; }
+    .ext-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Hero -->
+  <header class="hero">
+    <div class="hero-meta">
+      <span class="dot"></span>
+      <span>Archery 二次开发 · 内部 DBA 团队 SQL 审核平台</span>
+    </div>
+    <h1>版本路线图与状态报告</h1>
+    <p class="hero-sub">
+      基于上游 <b>Archery v1.14.0</b>，面向公司内部 DBA 团队，遵循"避免 Docker / 走裸机 systemd"的部署偏好。
+      截至 2026-08-06 已完成 <b>v0.1.0 至 v0.3.0-beta 共 8 个版本</b>，
+      110 PROD 当前为 v0.2.0（OA 框架已发布、未启用），134 DEV 完成 gh-ost 5 次真表演练。
+    </p>
+  </header>
+
+  <!-- Metrics -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">01</span>
+      <h2>关键指标</h2>
+      <span class="section-en">Key Metrics</span>
+    </div>
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-label">已发布版本</div>
+        <div class="metric-value">8</div>
+        <div class="metric-note">v0.1.0 → v0.3.0-beta</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">累计 commit</div>
+        <div class="metric-value">18<span class="metric-unit">+</span></div>
+        <div class="metric-note">github.com/adauncle/archerydev</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">134 dev 演练</div>
+        <div class="metric-value">5</div>
+        <div class="metric-note">gh-ost 真表切表成功</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">110 PROD</div>
+        <div class="metric-value" style="color: var(--primary);">v0.2.0</div>
+        <div class="metric-note">OA 框架已发布、未启用</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Architecture -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">02</span>
+      <h2>当前部署拓扑</h2>
+      <span class="section-en">Deployment Topology</span>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          环境分层
+        </div>
+        <div class="arch-row">
+          <div class="arch-box">172.20.2.134<br><span style="font-size:11px; color:var(--ink-soft);">DEV</span></div>
+          <span class="arch-arrow">→</span>
+          <div style="flex:1; font-size:12.5px; color:var(--ink-mid);">开发 + 版本发布验证，所有 v0.x.x 在此跑通。gh-ost 演练环境。</div>
+        </div>
+        <div class="arch-row">
+          <div class="arch-box alt">172.20.2.110<br><span style="font-size:11px; color:var(--ink-soft);">PROD</span></div>
+          <span class="arch-arrow">→</span>
+          <div style="flex:1; font-size:12.5px; color:var(--ink-mid);">只接受 134 验证过的版本。当前 v0.2.0 + OA 框架 published-not-enabled。</div>
+        </div>
+        <div style="margin-top:14px; padding-top:14px; border-top: 1px dashed var(--line); font-size:12.5px; color:var(--ink-soft);">
+          部署偏好：<b style="color:var(--ink);">裸机 systemd + supervisor + nginx</b>，不用 Docker。
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          Archery 元库 + 业务库
+        </div>
+        <div style="font-size:13px; color:var(--ink-mid); line-height:1.7;">
+          <div><b>134 dev</b>：MySQL 8.0.22（本地）</div>
+          <div><b>110 prod</b>：MySQL 5.7.44 + Django features.py patch（5,7）</div>
+          <div><b>Redis</b>：134 systemd 裸机 / 110 容器</div>
+          <div><b>Goinception</b>：134 裸机 systemd / 110 容器</div>
+          <div><b>端口</b>：9003（dev）/ 9123（prod）</div>
+        </div>
+        <div style="margin-top:14px; padding:10px 12px; background: var(--warn-soft); border-radius: 8px; font-size:12.5px; color: var(--warn);">
+          ⚠ 110 prod MySQL 5.7 → 8.0 升级需独立项目（<b>MR 5</b>）
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Ext tables -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">03</span>
+      <h2>核心扩展表（9 个 ext_）</h2>
+      <span class="section-en">Extension Schema</span>
+    </div>
+    <div class="card">
+      <div style="font-size:13px; color:var(--ink-mid); margin-bottom:12px;">
+        两个内部定制 app 共用 <code style="background:var(--line-soft); padding:1px 6px; border-radius:4px; font-family:'JetBrains Mono', monospace; font-size:12px;">sql.extensions.*</code> 命名空间，所有自定义表以 <code style="background:var(--line-soft); padding:1px 6px; border-radius:4px; font-family:'JetBrains Mono', monospace; font-size:12px;">ext_</code> 前缀隔离。
+      </div>
+      <div class="ext-grid">
+        <div class="ext-pill"><span class="prefix">ext_</span><span class="name">approval_flow</span><span style="color:var(--ink-soft); font-size:11px; margin-left:auto;">钉钉 OA 流程</span></div>
+        <div class="ext-pill"><span class="prefix">ext_</span><span class="name">approval_policy</span><span style="color:var(--ink-soft); font-size:11px; margin-left:auto;">钉钉 OA 策略</span></div>
+        <div class="ext-pill"><span class="prefix">ext_</span><span class="name">approval_policy_sql_types</span><span style="color:var(--ink-soft); font-size:11px; margin-left:auto;">关联表</span></div>
+        <div class="ext-pill"><span class="prefix">ext_</span><span class="name">core_business_table</span><span style="color:var(--ink-soft); font-size:11px; margin-left:auto;">核心业务表 L1/L2/L3</span></div>
+        <div class="ext-pill"><span class="prefix">ext_</span><span class="name">dingtalk_oa_event_log</span><span style="color:var(--ink-soft); font-size:11px; margin-left:auto;">事件流水</span></div>
+        <div class="ext-pill"><span class="prefix">ext_</span><span class="name">group_dingtalk_auditor</span><span style="color:var(--ink-soft); font-size:11px; margin-left:auto;">组 ↔ 钉钉人</span></div>
+        <div class="ext-pill"><span class="prefix">ext_</span><span class="name">sql_type_registry</span><span style="color:var(--ink-soft); font-size:11px; margin-left:auto;">SQL 类型注册</span></div>
+        <div class="ext-pill"><span class="prefix">ext_</span><span class="name">workflow_audit_external</span><span style="color:var(--ink-soft); font-size:11px; margin-left:auto;">工单外部关联</span></div>
+        <div class="ext-pill"><span class="prefix">ext_</span><span class="name">ddl_ghost_task</span><span style="color:var(--ink-soft); font-size:11px; margin-left:auto;">gh-ost 任务</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Timeline -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">04</span>
+      <h2>时间线</h2>
+      <span class="section-en">Timeline</span>
+    </div>
+    <div class="card">
+      <ol class="timeline">
+        <li>
+          <div class="tl-date">2026-07-21</div>
+          <div class="tl-title"><span class="ver">v0.1.0</span> · 基线发布，7 个 MR patch 合并上游 v1.14.0</div>
+          <div class="tl-desc">项目脚手架、134 dev / 110 prod 双环境初始化、staging 全功能验证、15 个主页面 200。</div>
+        </li>
+        <li>
+          <div class="tl-date">2026-07-22 ~ 07-30</div>
+          <div class="tl-title"><span class="ver">v0.1.1 → v0.1.9</span> · dev 部署迭代 8 个版本</div>
+          <div class="tl-desc">systemd 化、qcluster 配置、OA 通知 INFO 化、白屏/性能问题逐版本修复。</div>
+        </li>
+        <li>
+          <div class="tl-date">2026-08-03</div>
+          <div class="tl-title">环境拓扑原则确定</div>
+          <div class="tl-desc">134 = DEV（开发 + 版本发布验证） / 110 = PROD（只接受 134 验证过的版本）。修正了 7/20 旧记忆里"134=生产"的错误。</div>
+        </li>
+        <li>
+          <div class="tl-date">2026-08-04</div>
+          <div class="tl-title"><span class="ver">v0.2.0</span> · 钉钉 OA 审批框架</div>
+          <div class="tl-desc">驱动可插拔架构（<code>audit_driver ∈ {archery, dingtalk_oa}</code>） + 3D policy matching + handle_oa_callback 核心 + 1对1 通知端到端跑通。推到 110 prod，OA 框架 published-not-enabled。</div>
+        </li>
+        <li>
+          <div class="tl-date">2026-08-05</div>
+          <div class="tl-title">gh-ost 立项</div>
+          <div class="tl-desc">gh-ost v1.1.10 二进制装到 134 dev。设计文档（12 章节）+ 4 件事拍板（先后顺序、演练表、UI、排期）。演练大表 <code>accesscard_black_detail</code> 迁到 134 dev archery_dev 库。</div>
+        </li>
+        <li>
+          <div class="tl-date">2026-08-06 上午</div>
+          <div class="tl-title"><span class="ver">v0.3.0-alpha</span> · gh-ost 骨架</div>
+          <div class="tl-desc"><code>ext_ddl_ghost_task</code> 表 + 5 道预检（binlog/disk/privs/sql/table_type）+ 6 个 endpoint + Django template 进度面板。修 4 个端到端 bug（<code>SqlWorkflowContent</code> OneToOne、<code>PARTITION_NAME</code> 列、ENGINE 大小写、<code>.env</code> 兜底直连）。</div>
+        </li>
+        <li>
+          <div class="tl-date">2026-08-06 下午</div>
+          <div class="tl-title"><span class="ver">v0.3.0-beta</span> · gh-ost 真跑 8 件交付</div>
+          <div class="tl-desc">真启 gh-ost 子进程 + stdout 解析器 + 状态机 + admin 3 action + 钉钉通知 + 暂停阈值 + 影子表 cron。134 dev 真实演练 5 次（<code>accesscard_black_detail</code> 加 3 列 + <code>accesscard_account</code> 加 2 列）全部 cut-over 成功。</div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Version detail -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">05</span>
+      <h2>版本详情</h2>
+      <span class="section-en">Version Details</span>
+    </div>
+
+    <div class="version">
+      <div class="version-head">
+        <span class="version-tag">v0.1.0</span>
+        <span class="version-date">2026-07-21</span>
+        <span class="version-commit">commit <code>2ddd91a</code></span>
+        <span class="badge good"><span class="badge-dot"></span>已发布</span>
+      </div>
+      <div class="version-summary">基线版本。7 个上游 MR patch 合并到 v1.14.0，建立 134 dev / 110 prod / staging 三套环境，staging 全功能验证后杀掉，进入正式二次开发阶段。</div>
+      <ul class="version-feat">
+        <li><b>MR1–MR7</b>：sql_workflow 等基础表 patch + 系统稳定性修复</li>
+        <li><b>环境拓扑</b>：134 dev (9003 端口) / 110 prod (9123 端口) / staging</li>
+        <li><b>Staging 验证</b>：15 个主页面返回 200 / qcluster / 通知链路</li>
+        <li><b>DevOps CI/CD</b>：GitHub Actions 骨架 + 01_init_server.sh</li>
+      </ul>
+    </div>
+
+    <div class="version">
+      <div class="version-head">
+        <span class="version-tag dev">v0.1.x</span>
+        <span class="version-date">2026-07-22 ~ 07-30</span>
+        <span class="version-commit">8 个 commit</span>
+        <span class="badge good"><span class="badge-dot"></span>已发布</span>
+      </div>
+      <div class="version-summary">dev 环境部署迭代期。包含 v0.1.1–v0.1.9 共 8 个版本，主要工作是修复 dev 环境的稳定性、配置和性能问题。</div>
+      <ul class="version-feat">
+        <li><b>systemd 化</b>：gunicorn + qcluster 改 systemd 启动，配置 5s Restart 循环</li>
+        <li><b>日志降噪</b>：<code>ARCHERY_LOG_LEVEL</code> env 控制，默认 WARNING</li>
+        <li><b>配置修正</b>：redis 密码、DATABASE_URL、ALLOWED_HOSTS 统一环境变量</li>
+        <li><b>白屏修复</b>：Django logging 目录权限、collectstatic 路径</li>
+      </ul>
+    </div>
+
+    <div class="version">
+      <div class="version-head">
+        <span class="version-tag">v0.2.0</span>
+        <span class="version-date">2026-08-04</span>
+        <span class="version-commit">commit <code>abe7f66</code> → <code>c9236a0</code></span>
+        <span class="badge good"><span class="badge-dot"></span>已发布（110 prod）</span>
+      </div>
+      <div class="version-summary">钉钉 OA 审批框架核心。驱动可插拔架构 + 3D policy matching + handle_oa_callback + 1对1 通知端到端跑通。推到 110 prod 后 OA 框架 published-not-enabled，配置已就绪但未启用。</div>
+      <ul class="version-feat">
+        <li><b>驱动可插拔</b>：<code>ApprovalFlow.audit_driver ∈ {archery, dingtalk_oa}</code>，DRIVER_REGISTRY 可扩展</li>
+        <li><b>3D 策略匹配</b>：SQL 类型（13 seeded）∧ 核心业务表（L1/L2/L3）∧ 行数范围</li>
+        <li><b>handle_oa_callback</b>：select_for_update + 状态校验 + 幂等去重</li>
+        <li><b>1对1 通知</b>：workflow_id=4 / audit_id=4612 端到端跑通</li>
+        <li><b>7 个 ext_ 表</b>：完整审批配置 + 事件流水 + 关联表</li>
+        <li><b>推到 110 prod</b>：<code>/dbdata/archery_v114_c9236a0/</code>，gunicorn pid 102228 + 4 workers</li>
+        <li><b>OA 框架启用</b>：<code>CUSTOM_DINGTALK_OA_ENABLED=True</code> + migrate 8 张表 + ConfigurableAuditor 路由</li>
+        <li><b>Promote 脚本</b>：<code>promote_110.sh</code>（5 phase）支持后续版本一键发布</li>
+      </ul>
+    </div>
+
+    <div class="version">
+      <div class="version-head">
+        <span class="version-tag alpha">v0.3.0-alpha</span>
+        <span class="version-date">2026-08-06 上午</span>
+        <span class="version-commit">commit <code>4f34a81</code> → <code>c0f42b3</code></span>
+        <span class="badge good"><span class="badge-dot"></span>已发布（134 dev）</span>
+      </div>
+      <div class="version-summary">gh-ost 骨架阶段。模型 + 5 道预检 + 6 个 endpoint + Django template 进度面板。alpha 不真跑 gh-ost 子进程，端到端 precheck 5/5 PASS、UI 渲染通过。</div>
+      <ul class="version-feat">
+        <li><b>ext_ddl_ghost_task 表</b>：状态机（pending → queued → running → success/failed/cancelled）+ 进度快照 + 进程信息</li>
+        <li><b>预检 5 道</b>：binlog_format=ROW / 磁盘 ≥ 1.2× 表大小 / REPLICATION 权限 / ALTER 合法 / 非分区表</li>
+        <li><b>6 个 endpoint</b>：<code>/gh_ost/{precheck,enable,start,cancel,status,progress}/&lt;wf_id&gt;/</code></li>
+        <li><b>Django template 进度面板</b>：3s polling（beta 接前端 Vue）</li>
+        <li><b>灰度开关</b>：<code>CUSTOM_GH_OST_ENABLED=False</code> 默认关</li>
+        <li><b>设计文档</b>：<code>docs/designs/2026-08-05_gh-ost-product-design.html</code>（12 章节）</li>
+      </ul>
+    </div>
+
+    <div class="version">
+      <div class="version-head">
+        <span class="version-tag beta">v0.3.0-beta</span>
+        <span class="version-date">2026-08-06 下午</span>
+        <span class="version-commit">commit <code>2c5a0b7</code></span>
+        <span class="badge good"><span class="badge-dot"></span>已发布（134 dev）</span>
+      </div>
+      <div class="version-summary">gh-ost 真跑阶段。完整 8 件交付，134 dev 真实演练 5 次全部 cut-over 成功。最关键的能力：业务表加列不再锁表。</div>
+      <ul class="version-feat">
+        <li><b>真启 gh-ost 子进程</b>：<code>runner.start_ghost_process</code> Popen + nohup + systemd-run 临时 unit</li>
+        <li><b>stdout 解析器</b>：<code>parser.parse_ghost_log</code> 兼容 gh-ost 1.1.10 输出（<code>Time: 11s(total)</code> / <code>Done migrating</code>）</li>
+        <li><b>状态机自动推进</b>：3s 轮询 + 外层 try/except 兜底（避免 daemon thread 异常静默死掉）</li>
+        <li><b>admin 三个 action</b>：cancel / retry / rollback（含 <code>rolled_back</code> 终态）</li>
+        <li><b>钉钉群通知</b>：<code>notify_terminal</code> 终态发 webhook（best-effort，<code>DINGTALK_NOTIFY_WEBHOOK</code> 未配时自动 skip）</li>
+        <li><b>暂停阈值</b>：<code>_maybe_pause_resume</code> 查 MySQL <code>Threads_running</code>，超阈值 SIGSTOP</li>
+        <li><b>影子表 7 天 cron</b>：<code>python manage.py cleanup_ghost_tables [--days N] [--dry-run]</code></li>
+        <li><b>演练结果</b>：<code>accesscard_black_detail</code> 加 beta_v2/v3_col + <code>accesscard_account</code> 加 beta_v4/v5_col，5 次 cut-over 全部成功，影子表无残留</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Pending -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">06</span>
+      <h2>待办与计划</h2>
+      <span class="section-en">Pending</span>
+    </div>
+    <div class="card" style="padding: 0; overflow: hidden;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width: 130px;">优先级</th>
+            <th>任务</th>
+            <th>关键依赖</th>
+            <th style="width: 130px;">ETA</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge danger"><span class="badge-dot"></span>P0</span></td>
+            <td class="col-name">v0.2.1 钉钉 OA 模板</td>
+            <td class="col-block">用户在 oa.dingtalk.com 建"SQL 上线申请"模板，拿到 process_code</td>
+            <td><span class="badge gray">用户动作</span></td>
+          </tr>
+          <tr>
+            <td><span class="badge danger"><span class="badge-dot"></span>P0</span></td>
+            <td class="col-name">v0.2.2 Tunnel + 回调</td>
+            <td class="col-block">配 DINGTALK_OA_CALLBACK_TOKEN/AES_KEY/RECEIVEID + cloudflared</td>
+            <td><span class="badge gray">用户动作</span></td>
+          </tr>
+          <tr>
+            <td><span class="badge warn"><span class="badge-dot"></span>P1</span></td>
+            <td class="col-name">v0.2.3 对账 cron + runbook</td>
+            <td class="col-block">依赖 v0.2.1 模板 + v0.2.2 回调加密</td>
+            <td>v0.2.2 完成后</td>
+          </tr>
+          <tr>
+            <td><span class="badge warn"><span class="badge-dot"></span>P1</span></td>
+            <td class="col-name">v0.3.0 推 110 prod</td>
+            <td class="col-block">配 DINGTALK_NOTIFY_WEBHOOK + DBA 重新保存 instance user/password（解 mirage 密文）</td>
+            <td>用户决定</td>
+          </tr>
+          <tr>
+            <td><span class="badge info"><span class="badge-dot"></span>P2</span></td>
+            <td class="col-name">D+7 清理 110 旧版</td>
+            <td class="col-block"><code>/dbdata/archery_v114/</code> 保留 7 天后清掉，<code>archery-prod-gunicorn.service</code> 备份也在</td>
+            <td>2026-08-12 后</td>
+          </tr>
+          <tr>
+            <td><span class="badge gray"><span class="badge-dot"></span>P3</span></td>
+            <td class="col-name">MR 5 MySQL 5.7 → 8.0 升级</td>
+            <td class="col-block">独立项目。110 prod 5.7.44 + Django features.py patch 需独立评估和测试</td>
+            <td>TBD</td>
+          </tr>
+          <tr>
+            <td><span class="badge gray"><span class="badge-dot"></span>P3</span></td>
+            <td class="col-name">提 MR6 给上游 hhyo/Archery</td>
+            <td class="col-block">5 行 diff，影响所有 1.14.0 用户</td>
+            <td>可选</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Risk -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">07</span>
+      <h2>风险与阻塞</h2>
+      <span class="section-en">Risks &amp; Blockers</span>
+    </div>
+    <div class="card">
+      <div class="risk-item">
+        <div class="risk-icon warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="risk-content">
+          <div class="risk-title">110 PROD MySQL 5.7.44 升级 8.0</div>
+          <div class="risk-desc">当前 110 prod 用 5.7.44 + Django features.py patch (5, 7) 临时兼容。5.7 已 EOL，升级需独立项目评估（语法兼容性、字符集、复制拓扑等），不能跟在 v0.3.0 一起做。</div>
+        </div>
+      </div>
+      <div class="risk-item">
+        <div class="risk-icon warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="risk-content">
+          <div class="risk-title">134 dev archery instance user/password 是历史 mirage 加密密文</div>
+          <div class="risk-desc">数据库里存的 user 是 <code>'pn-OvgZNQs-v8A0VEmL_AA=='</code> 这种 base64 密文，加密时的 K1 跟当前 <code>SECRET_KEY</code> K2 不匹配 → <code>instance.get_username_password()</code> 返回密文本身。临时方案：<code>CUSTOM_GH_OST_PRECHECK_*</code> 4 个 env 变量走 dbops 凭据直连。生产端需 DBA 重新保存 instance 触发 mirage 重新加密。</div>
+        </div>
+      </div>
+      <div class="risk-item">
+        <div class="risk-icon danger">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div class="risk-content">
+          <div class="risk-title">钉钉 OA 完整链路卡在用户操作上</div>
+          <div class="risk-desc">v0.2.1（OA 模板）→ v0.2.2（隧道 + 回调加密）→ v0.2.3（对账）三步全部需要用户去钉钉开放平台操作。我这边技术实现已就绪（callback handler + 幂等 + 重试），但需要用户提供 process_code 和回调密钥才能继续推进。</div>
+        </div>
+      </div>
+      <div class="risk-item">
+        <div class="risk-icon warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
+        </div>
+        <div class="risk-content">
+          <div class="risk-title">110 PROD 钉钉通知 webhook 未配</div>
+          <div class="risk-desc">gh-ost 真跑成功后 110 prod 应该发钉钉群通知，但 <code>DINGTALK_NOTIFY_WEBHOOK</code> 还没配。通知代码已写好（best-effort），等 webhook URL 后自动生效。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div>Archery 二次开发 · 内部 DBA 团队</div>
+    <div>2026-08-06 · mavis</div>
+  </footer>
+
+</div>
+</body>
+</html>
