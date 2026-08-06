@@ -13,6 +13,7 @@ import subprocess
 from typing import List, Optional
 
 from django.conf import settings
+from django.utils import timezone
 
 from .db import _get_creds
 
@@ -31,27 +32,39 @@ def _ensure_log_dir() -> str:
     return log_dir
 
 
-def build_ghost_command(task, instance=None) -> List[str]:
+def build_ghost_command(task, instance=None, rebuild_mode: bool = False) -> List[str]:
     """根据 task 构建 gh-ost 命令行参数列表（subprocess 用）。
+
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 加 rebuild_mode 参数 @ 2026-08-06 @ mavis
+    关联设计: docs/designs/2026-08-05_gh-ost-product-design.html v0.4.5 §4
 
     Args:
         task: DdlGhostTask 实例
         instance: SqlWorkflow 对应的 Instance（optional, fallback 用 task.workflow.instance）
+        rebuild_mode: True = rebuild 场景，alter 改为空 COMMENT 触发表重建；
+                      rebuild 时 task.workflow=NULL，instance 必传。
 
     Returns:
         list[str] 命令行参数
     """
-    inst = instance or (task.workflow.instance if task.workflow_id else None)
-    if inst is None:
-        raise ValueError("no instance available for gh-ost")
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 区分 ghost / rebuild 取 instance 路径
+    if rebuild_mode:
+        # rebuild 任务 workflow=NULL，instance 必须从入参拿
+        if instance is None:
+            raise ValueError("rebuild 模式必须传 instance（task.workflow=NULL）")
+        inst = instance
+        alter_arg = _make_rebuild_alter(task)
+    else:
+        inst = instance or (task.workflow.instance if task.workflow_id else None)
+        if inst is None:
+            raise ValueError("no instance available for gh-ost")
+        # 提取 ALTER（去掉 "ALTER TABLE x " 前缀，gh-ost 接收 SQL 片段）
+        alter = task.alter_statement or ""
+        # gh-ost --alter 接受完整 SQL 或裸子句；我们传完整 SQL 让它自己解析
+        alter_arg = alter if alter.strip().upper().startswith("ALTER") else f"ALTER TABLE {alter}"
 
     user, password, (host, port) = _get_creds(inst)
     bin_path = getattr(settings, "CUSTOM_GH_OST_BIN", "/usr/local/bin/gh-ost")
-
-    # 提取 ALTER（去掉 "ALTER TABLE x " 前缀，gh-ost 接收 SQL 片段）
-    alter = task.alter_statement or ""
-    # gh-ost --alter 接受完整 SQL 或裸子句；我们传完整 SQL 让它自己解析
-    alter_arg = alter if alter.strip().upper().startswith("ALTER") else f"ALTER TABLE {alter}"
 
     cmd = [
         bin_path,
@@ -87,6 +100,30 @@ def build_ghost_command(task, instance=None) -> List[str]:
         "--default-retries=120",
     ]
     return cmd
+
+
+## CUSTOM-MODIFIED: v0.4.5-alpha 新增 rebuild 场景空 alter 生成 @ 2026-08-06 @ mavis
+def _make_rebuild_alter(task) -> str:
+    """rebuild 场景的空 alter SQL —— 只改 COMMENT 触发表重建，不改变列结构。
+
+    为什么不直接 OPTIMIZE TABLE：
+    - MySQL 5.7.44 走 ALGORITHM=COPY 锁表，碎片大时长时间阻塞
+    - 134 dev 8.0 走 ALGORITHM=INPLACE 但还要 LOCK=NONE 才不阻塞写
+    - 110 prod 5.7.44 走 COPY 锁表 → 不能用
+
+    用 gh-ost 触发空 alter：
+    - ghost 表结构跟原表完全一致（不带 COMMENT）
+    - cut-over 时 swap，原表换成空 COMMENT 的新表，结构不变
+    - 几秒切表，业务短暂不可写（cut-over=atomic 锁表几秒）
+    - 触发表重建（InnoDB 重组 page，回收碎片）
+
+    业务无感：COMMENT 是元数据，应用程序不读 COMMENT 字符串。
+    """
+    today = timezone.now().strftime("%Y%m%d")
+    return (
+        f"ALTER TABLE `{task.db_name}`.`{task.table_name}` "
+        f"COMMENT 'archery-auto-rebuild-{today}'"
+    )
 
 
 def start_ghost_process(task, instance=None) -> int:
