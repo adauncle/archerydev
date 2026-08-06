@@ -1,5 +1,8 @@
 """gh-ost 二次开发 — Django 视图。
 
+## CUSTOM-MODIFIED: v0.4.5-alpha 加 rebuild 端点 @ 2026-08-06 @ mavis
+关联设计: docs/designs/2026-08-05_gh-ost-product-design.html v0.4.5 §5
+
 alpha 阶段暴露：
     - ``/gh_ost/precheck/<workflow_id>/`` POST  跑预检（仅 admin/staff 可见）
     - ``/gh_ost/enable/<workflow_id>/``  POST  启用 gh-ost + 写 task
@@ -7,6 +10,10 @@ alpha 阶段暴露：
     - ``/gh_ost/cancel/<workflow_id>/``  POST  取消
     - ``/gh_ost/status/<workflow_id>/``  GET   进度查询（前端 polling）
     - ``/gh_ost/progress/<workflow_id>/`` GET  渲染进度面板（Django template + JS polling）
+
+v0.4.5-alpha 新增（碎片回收）：
+    - ``/gh_ost/rebuild/list/?instance_id=N`` GET   列 instance 下可重建表（DBA 选表用）
+    - ``/gh_ost/rebuild/start/``             POST  触发 rebuild task（写 task + 启 gh-ost + poller）
 
 设计参考：docs/designs/2026-08-05_gh-ost-product-design.html §6/§10
 """
@@ -16,18 +23,20 @@ import logging
 import re
 from typing import Optional
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from sql.models import SqlWorkflow, SqlWorkflowContent
+from sql.models import Instance, SqlWorkflow, SqlWorkflowContent
 
 from .models import DdlGhostTask
 from .services.db import _get_creds
 from .services.poller import start_poller
 from .services.precheck import run_all_prechecks
+from .services.rebuild import start_rebuild_process
 from .services.runner import start_ghost_process, stop_ghost_process
 
 logger = logging.getLogger("default")
@@ -516,4 +525,236 @@ def progress_page(request: HttpRequest, workflow_id: int) -> HttpResponse:
     return render(request, "ddl_gh_ost/progress.html", {
         "workflow": workflow,
         "task": task,
+    })
+
+
+# ===========================================================================
+# CUSTOM-MODIFIED: v0.4.5-alpha 视图 —— 碎片回收 @ 2026-08-06 @ mavis
+# 关联设计: docs/designs/2026-08-05_gh-ost-product-design.html v0.4.5 §5
+# ===========================================================================
+
+@login_required
+@require_GET
+def rebuild_list(request: HttpRequest) -> JsonResponse:
+    """返回 instance 下可重建的表列表（DBA 选表用）。
+
+    查 INFORMATION_SCHEMA.TABLES，列 InnoDB 表 + DATA_FREE > 0 的表，按碎片率倒序。
+
+    入参:
+        GET ?instance_id=N  必填，archery Instance.id
+
+    返回:
+        {
+            "ok": true,
+            "instance_id": N,
+            "instance_name": "...",
+            "tables": [
+                {"db": "archery_dev", "table": "accesscard_black_detail",
+                 "data_free_mb": 1024, "size_mb": 4096, "data_free_pct": 25.0},
+                ...
+            ]
+        }
+
+    错误:
+        404: instance 不存在
+        500: 连 MySQL 失败（dev 134 instance 历史密文需 .env 兜底）
+    """
+    instance_id = request.GET.get("instance_id")
+    if not instance_id:
+        return JsonResponse({"ok": False, "error": "instance_id 必填"}, status=400)
+    try:
+        instance = Instance.objects.get(pk=int(instance_id))
+    except (Instance.DoesNotExist, ValueError):
+        return JsonResponse({"ok": False, "error": f"instance #{instance_id} 不存在"}, status=404)
+
+    # 走 precheck 那套凭据（db.py 内部有 .env 兜底逻辑）
+    try:
+        user, password, (host, port) = _get_creds(instance)
+    except Exception as exc:  # noqa: BLE001
+        return JsonResponse({
+            "ok": False,
+            "error": f"取凭据失败：{exc}",
+            "hint": "dev 134 instance 是历史 mirage 密文，配置 CUSTOM_GH_OST_PRECHECK_* 兜底",
+        }, status=500)
+
+    # 直连 MySQL 查 INFORMATION_SCHEMA（不走 Django ORM）
+    import pymysql
+    try:
+        conn = pymysql.connect(
+            host=host, port=port, user=user, password=password,
+            connect_timeout=5, autocommit=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return JsonResponse({
+            "ok": False,
+            "error": f"连 MySQL 失败：{exc}",
+            "host": host, "port": port,
+        }, status=500)
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT TABLE_SCHEMA, TABLE_NAME,
+                       DATA_FREE, DATA_LENGTH, INDEX_LENGTH
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE ENGINE = 'InnoDB'
+                  AND TABLE_SCHEMA NOT IN ('mysql', 'information_schema',
+                                           'performance_schema', 'sys')
+                  AND TABLE_TYPE = 'BASE TABLE'
+                ORDER BY DATA_FREE DESC
+                LIMIT 200
+            """)
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    tables = []
+    for schema, name, data_free, data_len, idx_len in rows:
+        data_free = data_free or 0
+        data_len = data_len or 0
+        idx_len = idx_len or 0
+        total_mb = (data_len + idx_len) / 1024 / 1024
+        free_mb = data_free / 1024 / 1024
+        pct = (data_free / (data_len + 1)) * 100
+        tables.append({
+            "db": schema,
+            "table": name,
+            "data_free_mb": round(free_mb, 1),
+            "size_mb": round(total_mb, 1),
+            "data_free_pct": round(pct, 1),
+        })
+
+    return JsonResponse({
+        "ok": True,
+        "instance_id": instance.id,
+        "instance_name": instance.instance_name,
+        "tables": tables,
+    })
+
+
+@login_required
+@require_POST
+def rebuild_start(request: HttpRequest) -> JsonResponse:
+    """DBA 选表触发 rebuild task。
+
+    入参（JSON body 或 form-encoded）:
+        instance_id: int, 必填
+        db: str, 必填
+        table: str, 必填
+
+    流程:
+        1. 灰度开关校验（CUSTOM_GH_OST_REBUILD_ENABLED）
+        2. 入参校验
+        3. 同表冲突检查（已有 running/queued 则拒绝）
+        4. 写 task（task_type=rebuild, workflow=NULL, target_table=db.table）
+        5. start_rebuild_process Popen gh-ost
+        6. 写 PID + started_at + status=running
+        7. 启动 poller 3s 轮询
+
+    返回:
+        {"ok": true, "task_id": N, "status": "running", "pid": P, "target_table": "db.table"}
+    """
+    # 1. 灰度开关
+    if not getattr(settings, "CUSTOM_GH_OST_REBUILD_ENABLED", True):
+        return JsonResponse({
+            "ok": False,
+            "error": "rebuild 功能未启用（设 CUSTOM_GH_OST_REBUILD_ENABLED=True 开启）",
+        }, status=403)
+
+    # 2. 入参（兼容 form-encoded + JSON body）
+    if request.content_type == "application/json":
+        try:
+            payload = json.loads(request.body or b"{}")
+        except json.JSONDecodeError:
+            return JsonResponse({"ok": False, "error": "JSON body 解析失败"}, status=400)
+        instance_id = payload.get("instance_id")
+        db = payload.get("db")
+        table = payload.get("table")
+    else:
+        instance_id = request.POST.get("instance_id")
+        db = request.POST.get("db")
+        table = request.POST.get("table")
+
+    if not all([instance_id, db, table]):
+        return JsonResponse({
+            "ok": False,
+            "error": "instance_id / db / table 必填",
+        }, status=400)
+    try:
+        instance = Instance.objects.get(pk=int(instance_id))
+    except (Instance.DoesNotExist, ValueError):
+        return JsonResponse({"ok": False, "error": f"instance #{instance_id} 不存在"}, status=404)
+
+    # 3. 同表冲突检查 —— 已有 running/queued/cut_over 拒绝
+    # 完整排队逻辑见 services/queue.py（commit 5）；alpha 阶段先拒绝
+    conflicting = DdlGhostTask.objects.filter(
+        task_type="rebuild", db_name=db, table_name=table,
+        status__in=["queued", "running", "cut_over"],
+    ).first()
+    if conflicting:
+        return JsonResponse({
+            "ok": False,
+            "error": f"该表已有 rebuild task 在执行（task #{conflicting.id}, status={conflicting.status}）",
+            "task_id": conflicting.id,
+        }, status=409)
+
+    # 4. 写 task
+    task = DdlGhostTask.objects.create(
+        workflow=None,           # rebuild 不挂工单
+        task_type="rebuild",
+        db_name=db,
+        table_name=table,
+        target_table=f"{db}.{table}",
+        enabled=True,
+        status="queued",
+        created_by=request.user.username,
+        max_load_threads_running=30,
+        timeout_seconds=7200,
+    )
+    logger.info(
+        "rebuild task created: task_id=%s db=%s table=%s user=%s",
+        task.id, db, table, request.user.username,
+    )
+
+    # 5. 启动 gh-ost（rebuild 模式）
+    try:
+        pid = start_rebuild_process(task, instance)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("start_rebuild_process failed: task=%s", task.id)
+        task.status = "failed"
+        task.error_message = f"启动 rebuild 失败：{exc}"
+        task.finished_at = timezone.now()
+        task.save()
+        return JsonResponse({
+            "ok": False, "error": str(exc), "task_id": task.id,
+        }, status=500)
+
+    # 6. 写 PID + started_at
+    task.ghost_pid = pid
+    task.status = "running"
+    task.started_at = timezone.now()
+    task.current_stage = "connecting"
+    task.progress_pct = 0
+    task.progress_message = "rebuild gh-ost 已启动，等待连接"
+    task.last_heartbeat_at = timezone.now()
+    task.save()
+
+    # 7. 启动 poller（沿用 ghost 共享设施）
+    try:
+        start_poller(task.id)
+    except Exception:  # noqa: BLE001
+        logger.exception("start_poller failed for rebuild task %s", task.id)
+        task.error_message = "poller 启失败 — gh-ost 在跑但没人在轮询，请 DBA 介入"
+        task.save()
+
+    logger.info(
+        "rebuild task started: task_id=%s pid=%s target=%s user=%s",
+        task.id, pid, task.target_table, request.user.username,
+    )
+    return JsonResponse({
+        "ok": True,
+        "task_id": task.id,
+        "status": task.status,
+        "pid": pid,
+        "target_table": task.target_table,
     })

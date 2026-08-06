@@ -1,5 +1,8 @@
 """gh-ost 集成 — URLConf。
 
+## CUSTOM-MODIFIED: v0.4.5-alpha 加 rebuild 路由 @ 2026-08-06 @ mavis
+关联设计: docs/designs/2026-08-05_gh-ost-product-design.html v0.4.5 §5
+
 在 ``archery/urls.py`` 中按需 include：
 
     if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):
@@ -14,6 +17,10 @@
     POST /gh_ost/cancel/<id>/           取消
     GET  /gh_ost/status/<id>/           进度查询
     GET  /gh_ost/progress/<id>/         进度面板页（Django template）
+
+v0.4.5-alpha 新增（碎片回收）：
+    GET  /gh_ost/rebuild/list/          列可重建表（DBA 选表用）
+    POST /gh_ost/rebuild/start/         触发 rebuild task
 """
 
 from django.urls import path
@@ -31,4 +38,7 @@ urlpatterns = [
     path("rollback/<int:workflow_id>/", views.rollback, name="rollback"),
     path("status/<int:workflow_id>/", views.status, name="status"),
     path("progress/<int:workflow_id>/", views.progress_page, name="progress"),
+    # v0.4.5-alpha rebuild 端点
+    path("rebuild/list/", views.rebuild_list, name="rebuild_list"),
+    path("rebuild/start/", views.rebuild_start, name="rebuild_start"),
 ]
