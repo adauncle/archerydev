@@ -421,6 +421,21 @@ if CUSTOM_GH_OST_ENABLED:
     CUSTOM_GH_OST_PRECHECK_PORT = env("CUSTOM_GH_OST_PRECHECK_PORT", default=3306)
     CUSTOM_GH_OST_PRECHECK_USER = env("CUSTOM_GH_OST_PRECHECK_USER", default="")
     CUSTOM_GH_OST_PRECHECK_PASSWORD = env("CUSTOM_GH_OST_PRECHECK_PASSWORD", default="")
+    ## CUSTOM-MODIFIED: gh-ost v0.4.5-alpha 碎片回收灰度开关 @ 2026-08-06 @ mavis
+    ## 关联设计: docs/designs/2026-08-05_gh-ost-product-design.html v0.4.5 §2
+    ## DBA 手动 + 一键批量触发 rebuild 的总开关。
+    ## 走 admin "批量重建" action 时必读此开关；False 时禁用。
+    CUSTOM_GH_OST_REBUILD_ENABLED = env("CUSTOM_GH_OST_REBUILD_ENABLED", default=True)
+    ## 归档完成后自动触发碎片回收（v0.4.2 联动）。默认关 —— 安全优先，
+    ## DBA 想开启需在每条 ArchiveConfig 上显式勾 auto_rebuild_after_archive 字段。
+    CUSTOM_GH_OST_REBUILD_AUTO_LINK_ARCHIVE = env(
+        "CUSTOM_GH_OST_REBUILD_AUTO_LINK_ARCHIVE", default=False,
+    )
+    ## cron 自动调度碎片回收（v0.4.4 接入）。默认关 —— 演练期不开。
+    ## 开启后按每周日凌晨 3 点扫描大表碎片率 > 30% 触发 rebuild。
+    CUSTOM_GH_OST_REBUILD_CRON_ENABLED = env(
+        "CUSTOM_GH_OST_REBUILD_CRON_ENABLED", default=False,
+    )
 
 # LDAP
 ENABLE_LDAP = env("ENABLE_LDAP", False)

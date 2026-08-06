@@ -12,16 +12,26 @@ from django.utils.translation import gettext_lazy as _
 
 
 class DdlGhostTask(models.Model):
-    """gh-ost 任务表 —— 记录每个 SQL 工单是否启用 gh-ost + 进度快照。
+    """gh-ost 任务表 —— 记录每个 gh-ost 任务的进度快照 + 控制参数。
 
-    一个工单最多一条 task（OneToOne 约束）。
-    设计要点：
-        - ``status`` 状态机：pending → queued → running → (success|failed|cancelled)
-        - ``precheck_*`` 5 道预检查的快照（提交时跑一次，结果固化到 task）
-        - ``progress_*`` 进度快照：gh-ost 进程 stdout 解析后每 3s 更新一次
-        - ``cut_over_*``：cut-over 时机控制（alpha 只存，beta 实现）
-        - ``shadow_table_*``：影子表保留策略（alpha 只存，beta 实现）
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 拆 OneToOne 为 ForeignKey @ 2026-08-06 @ mavis
+    关联设计: docs/designs/2026-08-05_gh-ost-product-design.html v0.4.5 §3
+
+    - ghost 场景：每个 SQL 工单一条 task（task_type=ghost, workflow=工单）
+    - rebuild 场景：每个数据库表一条 task（task_type=rebuild, workflow=NULL,
+                  target_table=db.table）
+    - Meta.unique_together = (task_type, workflow) 约束：同类型同工单唯一
+
+    v0.3.0 旧设计：OneToOneField（每个工单最多一条）。
+    v0.4.5 改造：ForeignKey(null=True) 允许 rebuild 不挂工单；
+                唯一性改由 unique_together 保障。
     """
+
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 加 task_type 二选一 @ 2026-08-06 @ mavis
+    TASK_TYPE_CHOICES = (
+        ("ghost", "gh-ost DDL（v0.3.0 改造，SQL 工单触发）"),
+        ("rebuild", "碎片回收（v0.4.5 改造，DBA 手动选表触发）"),
+    )
 
     STATUS_CHOICES = (
         ("pending", _("待预检")),       # 刚勾选 gh-ost，预检未跑
@@ -47,10 +57,30 @@ class DdlGhostTask(models.Model):
 
     # ===== 主键 / 关联 =====
     id = models.BigAutoField(primary_key=True)
-    workflow = models.OneToOneField(
+    ## CUSTOM-MODIFIED: v0.4.5-alpha OneToOne → ForeignKey(null=True) @ 2026-08-06 @ mavis
+    ## ghost 场景挂 SqlWorkflow（一对一语义由 unique_together 保障）；
+    ## rebuild 场景 workflow=NULL，靠 target_table 定位表。
+    workflow = models.ForeignKey(
         "sql.SqlWorkflow", on_delete=models.CASCADE,
         related_name="ghost_task",
-        verbose_name="SQL 工单",
+        null=True, blank=True,
+        verbose_name="SQL 工单（rebuild 场景为 NULL）",
+    )
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 加 task_type @ 2026-08-06 @ mavis
+    task_type = models.CharField(
+        "任务类型", max_length=16, choices=TASK_TYPE_CHOICES,
+        default="ghost", db_index=True,
+        help_text="ghost=gh-ost DDL 工单；rebuild=碎片回收（表级）",
+    )
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 加 target_table @ 2026-08-06 @ mavis
+    target_table = models.CharField(
+        "目标表（rebuild 用）", max_length=128, blank=True, db_index=True,
+        help_text="rebuild 场景存 db.table（如 archery_dev.accesscard_black_detail）；ghost 场景为空",
+    )
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 加 related_task_id @ 2026-08-06 @ mavis
+    related_task_id = models.BigIntegerField(
+        "关联 task id", null=True, blank=True,
+        help_text="归档联动时存 ArchiveConfig.id；rebuild 内部队列存前序 task id",
     )
     audit = models.ForeignKey(
         "sql.WorkflowAudit", on_delete=models.SET_NULL,
@@ -177,6 +207,14 @@ class DdlGhostTask(models.Model):
         indexes = [
             models.Index(fields=["status"]),
             models.Index(fields=["created_at"]),
+        ]
+        ## CUSTOM-MODIFIED: v0.4.5-alpha 加 unique_together @ 2026-08-06 @ mavis
+        ## 同 task_type + 同 workflow 唯一（rebuild 场景 workflow=NULL，允许多条）
+        constraints = [
+            models.UniqueConstraint(
+                fields=["task_type", "workflow"],
+                name="uniq_task_type_workflow",
+            ),
         ]
 
     def __str__(self):
