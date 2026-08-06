@@ -685,20 +685,9 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
     except (Instance.DoesNotExist, ValueError):
         return JsonResponse({"ok": False, "error": f"instance #{instance_id} 不存在"}, status=404)
 
-    # 3. 同表冲突检查 —— 已有 running/queued/cut_over 拒绝
-    # 完整排队逻辑见 services/queue.py（commit 5）；alpha 阶段先拒绝
-    conflicting = DdlGhostTask.objects.filter(
-        task_type="rebuild", db_name=db, table_name=table,
-        status__in=["queued", "running", "cut_over"],
-    ).first()
-    if conflicting:
-        return JsonResponse({
-            "ok": False,
-            "error": f"该表已有 rebuild task 在执行（task #{conflicting.id}, status={conflicting.status}）",
-            "task_id": conflicting.id,
-        }, status=409)
-
-    # 4. 写 task
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 改 409 拒绝为排队入队 @ 2026-08-06 @ mavis
+    # 3. 写 task（直接入队，queue 自动推进）
+    # 同表已有 running/cut_over 任务时，本 task 进入 queued 状态等前序完成
     task = DdlGhostTask.objects.create(
         workflow=None,           # rebuild 不挂工单
         task_type="rebuild",
@@ -716,46 +705,37 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
         task.id, db, table, request.user.username,
     )
 
-    # 5. 启动 gh-ost（rebuild 模式）
-    try:
-        pid = start_rebuild_process(task, instance)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("start_rebuild_process failed: task=%s", task.id)
-        task.status = "failed"
-        task.error_message = f"启动 rebuild 失败：{exc}"
-        task.finished_at = timezone.now()
-        task.save()
+    # 4. 调 queue 推进 —— 如果同表无 running 任务，本 task 立即启动；否则排队等
+    from .services.queue import get_queue_position, try_advance_queue
+    queue_pos_before = get_queue_position(task)
+    advanced = try_advance_queue(db, table)
+    # 重新读 task 拿最新 status（queue 推进会改 status / ghost_pid / started_at）
+    task.refresh_from_db()
+    if advanced is None:
+        # queue 空，理论上不可能（本 task 刚 create），但兜底
+        return JsonResponse({"ok": False, "error": "queue 推进异常，请联系 DBA"}, status=500)
+    if task.id != advanced.id:
+        # 推进的是别人（前面有任务），本 task 排队
         return JsonResponse({
-            "ok": False, "error": str(exc), "task_id": task.id,
-        }, status=500)
+            "ok": True,
+            "task_id": task.id,
+            "status": task.status,
+            "queue_position": queue_pos_before,
+            "target_table": task.target_table,
+            "advanced_task_id": advanced.id,
+            "msg": f"已入队，前面 task #{advanced.id} 在执行",
+        })
 
-    # 6. 写 PID + started_at
-    task.ghost_pid = pid
-    task.status = "running"
-    task.started_at = timezone.now()
-    task.current_stage = "connecting"
-    task.progress_pct = 0
-    task.progress_message = "rebuild gh-ost 已启动，等待连接"
-    task.last_heartbeat_at = timezone.now()
-    task.save()
-
-    # 7. 启动 poller（沿用 ghost 共享设施）
-    try:
-        start_poller(task.id)
-    except Exception:  # noqa: BLE001
-        logger.exception("start_poller failed for rebuild task %s", task.id)
-        task.error_message = "poller 启失败 — gh-ost 在跑但没人在轮询，请 DBA 介入"
-        task.save()
-
+    # 5. 本 task 已被 queue 推进，PID 写好，poller 启了
     logger.info(
         "rebuild task started: task_id=%s pid=%s target=%s user=%s",
-        task.id, pid, task.target_table, request.user.username,
+        task.id, task.ghost_pid, task.target_table, request.user.username,
     )
     return JsonResponse({
         "ok": True,
         "task_id": task.id,
         "status": task.status,
-        "pid": pid,
+        "pid": task.ghost_pid,
         "target_table": task.target_table,
     })
 

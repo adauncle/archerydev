@@ -90,7 +90,7 @@ def _maybe_pause_resume(task, instance):
 
 
 def _finalize_task(task, new_status: str, error_message: str = ""):
-    """终态收尾：写状态、停止进程、通知。"""
+    """终态收尾：写状态、停止进程、通知、推进同表 rebuild 队列。"""
     task.status = new_status
     task.finished_at = timezone.now()
     if error_message:
@@ -106,6 +106,17 @@ def _finalize_task(task, new_status: str, error_message: str = ""):
         notify_terminal(task)
     except Exception:  # noqa: BLE001
         logger.exception("notify_terminal failed: task=%s", task.id)
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 终态后推进同表 rebuild 队列 @ 2026-08-06 @ mavis
+    if task.task_type == "rebuild":
+        # 延迟 import 防循环
+        from .queue import try_advance_queue
+        try:
+            try_advance_queue(task.db_name, task.table_name)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "try_advance_queue failed after task #%s finalize",
+                task.id,
+            )
 
 
 def poll_loop(task_id: int):
