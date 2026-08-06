@@ -32,6 +32,7 @@ class DdlGhostTask(models.Model):
         ("success", _("成功")),
         ("failed", _("失败")),
         ("cancelled", _("已取消")),
+        ("rolled_back", _("已回滚")),  # beta：DBA 手动 drop 影子表 + 标 rolled_back
     )
 
     STAGE_CHOICES = (
@@ -183,8 +184,8 @@ class DdlGhostTask(models.Model):
 
     @property
     def is_terminal(self) -> bool:
-        """是否终态（成功/失败/取消）。"""
-        return self.status in ("success", "failed", "cancelled")
+        """是否终态（成功/失败/取消/回滚）。"""
+        return self.status in ("success", "failed", "cancelled", "rolled_back")
 
     @property
     def duration_seconds(self) -> int:

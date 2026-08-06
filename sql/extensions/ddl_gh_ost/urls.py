@@ -27,6 +27,8 @@ urlpatterns = [
     path("enable/<int:workflow_id>/", views.enable, name="enable"),
     path("start/<int:workflow_id>/", views.start, name="start"),
     path("cancel/<int:workflow_id>/", views.cancel, name="cancel"),
+    path("retry/<int:workflow_id>/", views.retry, name="retry"),
+    path("rollback/<int:workflow_id>/", views.rollback, name="rollback"),
     path("status/<int:workflow_id>/", views.status, name="status"),
     path("progress/<int:workflow_id>/", views.progress_page, name="progress"),
 ]

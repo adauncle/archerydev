@@ -1,0 +1,206 @@
+"""
+gh-ost 子进程启停 + 命令行构建。
+
+不走 systemd-run（systemd 219 在 134 dev 上没 --scope 选项），
+直接 subprocess.Popen + nohup + 日志到 /var/log/archery/gh_ost/。
+"""
+
+import logging
+import os
+import shlex
+import signal
+import subprocess
+from typing import List, Optional
+
+from django.conf import settings
+
+from .db import _get_creds
+
+logger = logging.getLogger("default")
+
+
+def _ensure_log_dir() -> str:
+    """确保 log 目录存在，归 archery 用户所有。"""
+    log_dir = getattr(settings, "CUSTOM_GH_OST_LOG_DIR", "/var/log/archery/gh_ost")
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        # 不强制 chown，让 archery 进程自己写（如果 root 启失败就静默）
+    except PermissionError:
+        # log 目录归 archery 用户，root 写不了，但 archery 进程能写
+        pass
+    return log_dir
+
+
+def build_ghost_command(task, instance=None) -> List[str]:
+    """根据 task 构建 gh-ost 命令行参数列表（subprocess 用）。
+
+    Args:
+        task: DdlGhostTask 实例
+        instance: SqlWorkflow 对应的 Instance（optional, fallback 用 task.workflow.instance）
+
+    Returns:
+        list[str] 命令行参数
+    """
+    inst = instance or (task.workflow.instance if task.workflow_id else None)
+    if inst is None:
+        raise ValueError("no instance available for gh-ost")
+
+    user, password, (host, port) = _get_creds(inst)
+    bin_path = getattr(settings, "CUSTOM_GH_OST_BIN", "/usr/local/bin/gh-ost")
+
+    # 提取 ALTER（去掉 "ALTER TABLE x " 前缀，gh-ost 接收 SQL 片段）
+    alter = task.alter_statement or ""
+    # gh-ost --alter 接受完整 SQL 或裸子句；我们传完整 SQL 让它自己解析
+    alter_arg = alter if alter.strip().upper().startswith("ALTER") else f"ALTER TABLE {alter}"
+
+    cmd = [
+        bin_path,
+        f"--host={host}",
+        f"--port={port}",
+        f"--user={user}",
+        f"--password={password}",
+        f"--database={task.db_name}",
+        f"--table={task.table_name}",
+        f"--alter={alter_arg}",
+        # 134 dev 已知 RBR，避免 gh-ost 主动探测
+        "--assume-rbr",
+        # 单机 dev，无 replica
+        "--allow-on-master",
+        # 真跑
+        "--execute",
+        # 行数统计
+        "--exact-rowcount",
+        "--concurrent-rowcount",
+        # 负载阈值（暂停阈值由 poller 主动 SIGSTOP 控制，这里只是 panic 退出）
+        f"--max-load=Threads_running={task.max_load_threads_running}",
+        # 不抢 CPU
+        "--nice-ratio=0",
+        # cut-over
+        "--cut-over=atomic",
+        # 自动清理
+        "--initially-drop-ghost-table",
+        "--initially-drop-old-table",
+        "--ok-to-drop-table",
+        # 详细日志
+        "--verbose",
+        # 重试
+        "--default-retries=120",
+    ]
+    return cmd
+
+
+def start_ghost_process(task, instance=None) -> int:
+    """启动 gh-ost 子进程（Popen + nohup）。
+
+    Returns:
+        gh-ost PID（成功）
+
+    Raises:
+        RuntimeError 启失败
+    """
+    log_dir = _ensure_log_dir()
+    log_path = os.path.join(log_dir, f"ghost-{task.id}.log")
+
+    cmd = build_ghost_command(task, instance)
+
+    logger.info("gh-ost start: task_id=%s cmd=%s", task.id, " ".join(shlex.quote(c) for c in cmd))
+
+    # 把 log 文件 chown 到 archery:archery（gunicorn 跑在 archery 用户下）
+    # root 跑时这里会报错，archery 跑时直接 OK
+    try:
+        if os.path.exists(log_path):
+            os.remove(log_path)
+        # 先 touch 一下
+        with open(log_path, "w") as f:
+            f.write("")
+        try:
+            import pwd
+            archery_pwd = pwd.getpwnam("archery")
+            os.chown(log_path, archery_pwd.pw_uid, archery_pwd.pw_gid)
+        except (KeyError, PermissionError, OSError):
+            pass
+    except PermissionError as exc:
+        logger.warning("can't touch log file %s: %s", log_path, exc)
+
+    # nohup gh-ost ... > log 2>&1 &  — Popen 模式
+    with open(log_path, "ab", buffering=0) as logf:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=logf,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,  # 等价 nohup
+            cwd="/tmp",
+        )
+
+    if proc.poll() is not None:
+        # 进程秒退，看日志
+        try:
+            with open(log_path, "r", errors="replace") as f:
+                err_tail = f.read()[-2000:]
+        except Exception:
+            err_tail = "(can't read log)"
+        raise RuntimeError(
+            f"gh-ost 进程秒退 (rc={proc.returncode})。log tail: {err_tail}"
+        )
+
+    logger.info("gh-ost started: task_id=%s pid=%s log=%s", task.id, proc.pid, log_path)
+    return proc.pid
+
+
+def stop_ghost_process(pid: int, timeout: int = 10) -> bool:
+    """停止 gh-ost 子进程。先 SIGTERM，超时 SIGKILL。
+
+    Returns:
+        True 成功停止
+    """
+    if pid is None or pid <= 0:
+        return False
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return True  # 进程已经不在了
+    except PermissionError:
+        logger.error("no permission to SIGTERM pid=%s", pid)
+        return False
+
+    # 等几秒
+    import time
+    for _ in range(timeout * 2):
+        try:
+            os.kill(pid, 0)  # probe
+        except ProcessLookupError:
+            return True
+        time.sleep(0.5)
+
+    # 还没死，SIGKILL
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return True
+
+
+def is_alive(pid: int) -> bool:
+    """进程是否还活着。"""
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
+def read_log_tail(log_path: str, max_bytes: int = 65536) -> str:
+    """读 log 末尾 max_bytes。"""
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - max_bytes))
+            return f.read().decode("utf-8", errors="replace")
+    except (FileNotFoundError, PermissionError):
+        return ""

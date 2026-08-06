@@ -25,7 +25,10 @@ from django.views.decorators.http import require_GET, require_POST
 from sql.models import SqlWorkflow, SqlWorkflowContent
 
 from .models import DdlGhostTask
+from .services.db import _get_creds
+from .services.poller import start_poller
 from .services.precheck import run_all_prechecks
+from .services.runner import start_ghost_process, stop_ghost_process
 
 logger = logging.getLogger("default")
 
@@ -229,8 +232,14 @@ def _upsert_task(workflow, parsed, db_name, table_name,
 @login_required
 @require_POST
 def start(request: HttpRequest, workflow_id: int) -> JsonResponse:
-    """alpha 阶段：把 task 状态从 queued 切到 running + 写一行审计日志。
-    beta 阶段：真启 ``systemd-run --scope=ghost-<task_id> gh-ost ...``。
+    """beta 阶段：真启 gh-ost 子进程 + 启动后台 poller。
+
+    流程：
+        1. 拿 task，状态校验
+        2. ``runner.start_ghost_process`` Popen gh-ost
+        3. 写 PID + started_at
+        4. 启动 ``poller.start_poller`` daemon thread（3s 轮询）
+        5. 返回 ok
     """
     task = get_object_or_404(DdlGhostTask, workflow_id=workflow_id)
     if task.status != "queued":
@@ -244,19 +253,182 @@ def start(request: HttpRequest, workflow_id: int) -> JsonResponse:
             "error": "预检未通过，不能启动",
         }, status=409)
 
+    instance = task.workflow.instance if task.workflow_id else None
+    if instance is None:
+        return JsonResponse({
+            "ok": False,
+            "error": "工单没有关联实例，无法启动 gh-ost",
+        }, status=400)
+
+    # 真启 gh-ost
+    try:
+        pid = start_ghost_process(task, instance=instance)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("start_ghost_process failed: task=%s", task.id)
+        task.status = "failed"
+        task.error_message = f"启动 gh-ost 失败：{exc}"
+        task.finished_at = timezone.now()
+        task.save()
+        return JsonResponse({
+            "ok": False,
+            "error": f"启动 gh-ost 失败：{exc}",
+        }, status=500)
+
+    task.ghost_pid = pid
     task.status = "running"
     task.started_at = timezone.now()
     task.current_stage = "connecting"
     task.progress_pct = 0
-    task.progress_message = "[alpha] 模拟启动 — beta 阶段会真启 gh-ost 子进程"
+    task.progress_message = "gh-ost 已启动，等待连接"
     task.last_heartbeat_at = timezone.now()
     task.save()
 
+    # 启动后台 poller
+    try:
+        start_poller(task.id)
+    except Exception:  # noqa: BLE001
+        logger.exception("start_poller failed: task=%s", task.id)
+        # poller 启失败不回滚 gh-ost 进程，让它继续；poller 死了 task 永远 running
+        # 给 task 加 error_message 提示 DBA 手动处理
+        task.error_message = "poller 启失败 — gh-ost 在跑但没人在轮询，请 DBA 介入"
+        task.save()
+
     logger.info(
-        "gh-ost [alpha stub] start task_id=%s workflow=%s user=%s",
-        task.id, workflow_id, request.user.username,
+        "gh-ost started: task_id=%s pid=%s workflow=%s user=%s",
+        task.id, pid, workflow_id, request.user.username,
     )
-    return JsonResponse({"ok": True, "status": task.status, "task_id": task.id})
+    return JsonResponse({
+        "ok": True, "status": task.status, "task_id": task.id, "pid": pid,
+    })
+
+
+# ===========================================================================
+# 视图：重试
+# ===========================================================================
+@login_required
+@require_POST
+def retry(request: HttpRequest, workflow_id: int) -> JsonResponse:
+    """重试 task：仅当 status in (failed, cancelled) 才能 retry。重新走 start 路径。"""
+    task = DdlGhostTask.objects.filter(workflow_id=workflow_id).first()
+    if not task:
+        return JsonResponse({"ok": False, "error": "task 不存在"}, status=404)
+    if task.status not in ("failed", "cancelled"):
+        return JsonResponse({
+            "ok": False,
+            "error": f"当前状态 {task.status}，只能重试 failed/cancelled",
+        }, status=409)
+    if not task.precheck_passed:
+        return JsonResponse({
+            "ok": False,
+            "error": "预检未通过，不能重试（请重新 enable）",
+        }, status=409)
+
+    # 重置 task
+    task.status = "queued"
+    task.started_at = None
+    task.finished_at = None
+    task.ghost_pid = None
+    task.current_stage = ""
+    task.progress_pct = 0
+    task.progress_rows_copied = None
+    task.progress_rows_total = None
+    task.progress_eta_seconds = None
+    task.progress_speed_rows_per_sec = None
+    task.progress_message = "重试中"
+    task.stderr_tail = ""
+    task.error_message = ""
+    task.last_heartbeat_at = None
+    task.save()
+
+    # 复用 start 逻辑
+    instance = task.workflow.instance if task.workflow_id else None
+    if instance is None:
+        return JsonResponse({"ok": False, "error": "工单无关联实例"}, status=400)
+
+    try:
+        pid = start_ghost_process(task, instance=instance)
+    except Exception as exc:  # noqa: BLE001
+        task.status = "failed"
+        task.error_message = f"重试启动失败：{exc}"
+        task.finished_at = timezone.now()
+        task.save()
+        return JsonResponse({"ok": False, "error": str(exc)}, status=500)
+
+    task.ghost_pid = pid
+    task.status = "running"
+    task.started_at = timezone.now()
+    task.last_heartbeat_at = timezone.now()
+    task.save()
+
+    try:
+        start_poller(task.id)
+    except Exception:  # noqa: BLE001
+        logger.exception("start_poller failed on retry: task=%s", task.id)
+
+    return JsonResponse({"ok": True, "status": task.status, "task_id": task.id, "pid": pid})
+
+
+# ===========================================================================
+# 视图：回滚（drop 影子表 + 标 rolled_back）
+# ===========================================================================
+@login_required
+@require_POST
+def rollback(request: HttpRequest, workflow_id: int) -> JsonResponse:
+    """DBA 手动回滚：drop 影子表 + 标 rolled_back。
+
+    注意：cut-over 成功（status=success）后影子表是 _<table>_gho，
+    实际表已经 rename 过了，回滚意味着 drop 影子表 + 改 status=rolled_back。
+    但 cut-over 成功后影子表其实已经不在了，需要 drop 旧表（如果存在）。
+    """
+    task = DdlGhostTask.objects.filter(workflow_id=workflow_id).first()
+    if not task:
+        return JsonResponse({"ok": False, "error": "task 不存在"}, status=404)
+    if task.status not in ("success", "failed", "cancelled"):
+        return JsonResponse({
+            "ok": False,
+            "error": f"当前状态 {task.status}，只能在终态后回滚",
+        }, status=409)
+
+    # drop 影子表（如果存在）
+    instance = task.workflow.instance if task.workflow_id else None
+    dropped = []
+    errors = []
+    if instance:
+        try:
+            from .db import _get_creds
+            import pymysql
+            user, password, (host, port) = _get_creds(instance)
+            conn = pymysql.connect(
+                host=host, port=port, user=user, password=password,
+                database=task.db_name, connect_timeout=5, autocommit=True,
+            )
+            try:
+                with conn.cursor() as cur:
+                    for tbl in [task.ghost_table_name, f"_{task.table_name}_del"]:
+                        if not tbl:
+                            continue
+                        try:
+                            cur.execute(f"DROP TABLE IF EXISTS `{task.db_name}`.`{tbl}`")
+                            dropped.append(tbl)
+                        except Exception as exc:  # noqa: BLE001
+                            errors.append(f"{tbl}: {exc}")
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"connect: {exc}")
+
+    task.status = "rolled_back"
+    task.finished_at = timezone.now()
+    task.error_message = (task.error_message or "") + f"\n[rollback] dropped={dropped} errors={errors}"
+    task.save()
+
+    logger.info("gh-ost rolled back: task=%s dropped=%s", task.id, dropped)
+    return JsonResponse({
+        "ok": True,
+        "status": task.status,
+        "dropped": dropped,
+        "errors": errors,
+    })
 
 
 # ===========================================================================
@@ -265,6 +437,7 @@ def start(request: HttpRequest, workflow_id: int) -> JsonResponse:
 @login_required
 @require_POST
 def cancel(request: HttpRequest, workflow_id: int) -> JsonResponse:
+    """取消 task：SIGTERM gh-ost 进程 + 标 cancelled。"""
     task = DdlGhostTask.objects.filter(workflow_id=workflow_id).first()
     if not task:
         return JsonResponse({"ok": False, "error": "task 不存在"}, status=404)
@@ -274,10 +447,21 @@ def cancel(request: HttpRequest, workflow_id: int) -> JsonResponse:
             "error": f"已终态（{task.status}），不能取消",
         }, status=409)
 
+    # 停 gh-ost 进程
+    if task.ghost_pid:
+        stop_ghost_process(task.ghost_pid, timeout=5)
+
     task.status = "cancelled"
     task.finished_at = timezone.now()
     task.error_message = "用户手动取消"
     task.save()
+
+    # 钉钉通知
+    try:
+        from .services.notify import notify_terminal
+        notify_terminal(task)
+    except Exception:  # noqa: BLE001
+        logger.exception("notify_terminal failed in cancel")
 
     logger.info("gh-ost cancelled task_id=%s user=%s", task.id, request.user.username)
     return JsonResponse({"ok": True, "status": task.status})
