@@ -22,12 +22,23 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from sql.models import SqlWorkflow
+from sql.models import SqlWorkflow, SqlWorkflowContent
 
 from .models import DdlGhostTask
 from .services.precheck import run_all_prechecks
 
 logger = logging.getLogger("default")
+
+
+# ===========================================================================
+# 工具：取工单 SQL 文本（走 OneToOne）
+# ===========================================================================
+def _workflow_sql_text(workflow: SqlWorkflow) -> str:
+    """取工单的 SQL 文本。SqlWorkflowContent 走 OneToOne 反向默认名 ``sqlworkflowcontent``。"""
+    try:
+        return SqlWorkflowContent.objects.get(workflow=workflow).sql_content or ""
+    except SqlWorkflowContent.DoesNotExist:
+        return ""
 
 
 # ===========================================================================
@@ -80,7 +91,7 @@ def _parse_first_alter(sql_content: str) -> Optional[dict]:
 def precheck(request: HttpRequest, workflow_id: int) -> JsonResponse:
     """跑预检 5 道关，返回 JSON 报告。**不写 task**（仅展示）。"""
     workflow = get_object_or_404(SqlWorkflow, pk=workflow_id)
-    parsed = _parse_first_alter(workflow.sql_content)
+    parsed = _parse_first_alter(_workflow_sql_text(workflow))
     if not parsed:
         return JsonResponse({
             "ok": False,
@@ -120,6 +131,11 @@ def precheck(request: HttpRequest, workflow_id: int) -> JsonResponse:
 
 
 # ===========================================================================
+# 视图：进度查询（前端 polling，3s 一次）
+# ===========================================================================
+
+
+# ===========================================================================
 # 视图：启用 gh-ost + 写 task
 # ===========================================================================
 @login_required
@@ -128,7 +144,7 @@ def enable(request: HttpRequest, workflow_id: int) -> JsonResponse:
     """启用 gh-ost：预检通过后写 DdlGhostTask（alpha 不启进程）。"""
     workflow = get_object_or_404(SqlWorkflow, pk=workflow_id)
 
-    parsed = _parse_first_alter(workflow.sql_content)
+    parsed = _parse_first_alter(_workflow_sql_text(workflow))
     if not parsed:
         return JsonResponse({"ok": False, "error": "未找到 ALTER TABLE 语句"}, status=400)
 

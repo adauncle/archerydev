@@ -412,6 +412,15 @@ CUSTOM_GH_OST_LOG_DIR = env(
 
 if CUSTOM_GH_OST_ENABLED:
     INSTALLED_APPS += ("sql.extensions.ddl_gh_ost.apps.DdlGhOstConfig",)
+    ## CUSTOM-MODIFIED: gh-ost dev-only 凭据 fallback @ 2026-08-06 @ mavis
+    ## 134 dev 上 archery instance 的 user/password 字段是历史 mirage 加密密文，
+    ## 当前 SECRET_KEY 解不出明文 → instance.get_username_password() 返回密文本身，
+    ## MySQL 报 1045。配这 4 个变量后会用这套直连，跳过 instance 解密。
+    ## **仅 dev/演练用**；prod 应保持空，让 precheck 走 instance 标准路径。
+    CUSTOM_GH_OST_PRECHECK_HOST = env("CUSTOM_GH_OST_PRECHECK_HOST", default="")
+    CUSTOM_GH_OST_PRECHECK_PORT = env("CUSTOM_GH_OST_PRECHECK_PORT", default=3306)
+    CUSTOM_GH_OST_PRECHECK_USER = env("CUSTOM_GH_OST_PRECHECK_USER", default="")
+    CUSTOM_GH_OST_PRECHECK_PASSWORD = env("CUSTOM_GH_OST_PRECHECK_PASSWORD", default="")
 
 # LDAP
 ENABLE_LDAP = env("ENABLE_LDAP", False)

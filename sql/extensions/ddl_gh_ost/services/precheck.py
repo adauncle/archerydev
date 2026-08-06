@@ -276,7 +276,7 @@ def check_table_type(instance, db_name: str, table_name: str) -> Dict:
         with instance_cursor(instance, db_name) as cur:
             row = fetch_one(
                 cur,
-                "SELECT ENGINE, TABLE_COLLATION, CREATE_OPTIONS, IFNULL(PARTITION_NAME, '') AS PARTITION_NAME "
+                "SELECT ENGINE, CREATE_OPTIONS "
                 "FROM INFORMATION_SCHEMA.TABLES "
                 "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s",
                 (db_name, table_name),
@@ -286,23 +286,28 @@ def check_table_type(instance, db_name: str, table_name: str) -> Dict:
                     name, f"表 {db_name}.{table_name} 不存在", {},
                 )
 
-            # 标准化列名
+            # 标准化列名（MySQL 8.0 列名大写）
             engine = ""
+            create_options = ""
             for k, v in row.items():
-                kk = k.lower()
+                kk = (k or "").lower()
                 if kk == "engine":
                     engine = (v or "").upper()
-                elif kk == "create_options" and v and "partitioned" in v.lower():
-                    return _fail(
-                        name,
-                        f"表是分区表，gh-ost 不支持",
-                        {"create_options": v, "row": row},
-                    )
+                elif kk == "create_options":
+                    create_options = (v or "")
+
+            # 分区表判定：CREATE_OPTIONS 含 "partitioned"（MySQL 5.7+）
+            if "partitioned" in create_options.lower():
+                return _fail(
+                    name,
+                    "表是分区表，gh-ost 不支持",
+                    {"create_options": create_options, "row": row},
+                )
 
             if not engine:
                 return _fail(name, "无法读取表的 ENGINE", {"row": row})
 
-            if engine not in SUPPORTED_ENGINES:
+            if engine.upper() not in {e.upper() for e in SUPPORTED_ENGINES}:
                 return _fail(
                     name,
                     f"表 ENGINE={engine}，gh-ost 仅支持 InnoDB（MyISAM 转 InnoDB 不推荐）",
