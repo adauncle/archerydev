@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>大表无锁变更（gh-ost）详细设计 · Archery v0.3.0</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --card: #ffffff;
+      --line: #e9e3d6;
+      --line-soft: #f0eadf;
+      --ink: #14171e;
+      --ink-mid: #3a4256;
+      --ink-soft: #7c7a72;
+      --primary: #2f6f5e;
+      --primary-soft: rgba(47,111,94,.08);
+      --warn: #c97b3f;
+      --warn-soft: rgba(201,123,63,.08);
+      --danger: #b06367;
+      --danger-soft: rgba(176,99,103,.08);
+      --good: #2f6f5e;
+      --good-soft: rgba(47,111,94,.1);
+      --blue: #3b4b6b;
+      --blue-soft: rgba(59,75,107,.06);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,.04);
+      --shadow-md: 0 4px 16px -2px rgba(0,0,0,.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: "";
+      position: fixed; inset: 0;
+      background: radial-gradient(circle at 0% 0%, rgba(47,111,94,.05), transparent 40%),
+                  radial-gradient(circle at 100% 100%, rgba(201,123,63,.05), transparent 40%);
+      pointer-events: none; z-index: -1;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 56px 32px 80px; }
+    .doc-head { padding-bottom: 24px; border-bottom: 1px solid var(--line); margin-bottom: 48px; }
+    .doc-eyebrow { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 12px; font-weight: 500; }
+    h1 { font-family: 'DM Serif Display', serif; font-size: 38px; font-weight: 400; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.01em; }
+    h1 .v { color: var(--primary); font-style: italic; }
+    .doc-sub { color: var(--ink-soft); font-size: 14px; }
+    .doc-meta { display: flex; gap: 20px; margin-top: 14px; font-size: 12px; color: var(--ink-soft); flex-wrap: wrap; }
+    .doc-meta b { color: var(--ink); font-weight: 500; }
+
+    .toc { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 26px; margin-bottom: 56px; }
+    .toc h3 { margin: 0 0 12px; font-size: 13px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+    .toc ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; }
+    .toc li { font-size: 14px; }
+    .toc a { color: var(--ink); text-decoration: none; }
+    .toc a:hover { color: var(--primary); }
+    .toc .num { color: var(--primary); font-weight: 600; margin-right: 8px; font-variant-numeric: tabular-nums; }
+
+    h2 { font-family: 'DM Serif Display', serif; font-size: 26px; font-weight: 400; margin: 64px 0 20px; letter-spacing: -0.005em; padding-top: 16px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+    h2 .h2-num { font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 600; color: var(--primary); background: var(--primary-soft); padding: 4px 10px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+    h3 { font-size: 18px; font-weight: 600; margin: 32px 0 12px; color: var(--ink); }
+    h4 { font-size: 14px; font-weight: 600; margin: 18px 0 8px; color: var(--ink); }
+
+    p { margin: 0 0 14px; color: var(--ink-mid); }
+    p.lead { font-size: 16px; color: var(--ink); }
+    strong { color: var(--ink); font-weight: 600; }
+    code { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: var(--line-soft); padding: 1px 6px; border-radius: 4px; color: var(--ink); }
+
+    .callout { padding: 18px 22px; border-radius: 12px; margin: 18px 0; display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--line); }
+    .callout .icon { flex-shrink: 0; margin-top: 2px; }
+    .callout p { margin: 0; }
+    .callout.warn { background: var(--warn-soft); border-color: rgba(201,123,63,.2); }
+    .callout.danger { background: var(--danger-soft); border-color: rgba(176,99,103,.2); }
+    .callout.good { background: var(--good-soft); border-color: rgba(47,111,94,.2); }
+    .callout.info { background: var(--blue-soft); border-color: rgba(59,75,107,.18); }
+
+    .flow { display: grid; gap: 0; margin: 28px 0; align-items: stretch; }
+    .flow-5 { grid-template-columns: repeat(5, 1fr); }
+    .flow-7 { grid-template-columns: repeat(7, 1fr); }
+    .flow-step { background: var(--card); border: 1px solid var(--line); padding: 20px 14px; text-align: center; position: relative; }
+    .flow-step:first-child { border-radius: 12px 0 0 12px; }
+    .flow-step:last-child { border-radius: 0 12px 12px 0; }
+    .flow-step .step-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-soft); font-weight: 500; margin-bottom: 8px; }
+    .flow-step .step-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .flow-step .step-detail { font-size: 12px; color: var(--ink-soft); margin-top: 6px; line-height: 1.4; }
+    .flow-step.active { background: var(--primary-soft); border-color: var(--primary); z-index: 2; }
+    .flow-step.active .step-name { color: var(--primary); }
+
+    .ui-mock { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin: 24px 0; box-shadow: var(--shadow-sm); }
+    .ui-mock-head { background: #fafaf7; border-bottom: 1px solid var(--line); padding: 12px 18px; display: flex; align-items: center; gap: 8px; }
+    .ui-mock-dot { width: 10px; height: 10px; border-radius: 50%; background: #ddd; }
+    .ui-mock-dot.r { background: #ed6a5e; }
+    .ui-mock-dot.y { background: #f5bf4f; }
+    .ui-mock-dot.g { background: #62c554; }
+    .ui-mock-url { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-soft); margin-left: 12px; }
+    .ui-mock-body { padding: 20px 24px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.7; }
+    .ui-mock-body .l { color: var(--ink-soft); }
+    .ui-mock-body .k { color: var(--primary); font-weight: 600; }
+    .ui-mock-body .s { color: #2f6f5e; }
+    .ui-mock-body .badge { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; }
+    .ui-mock-body .badge-blue { background: rgba(59,75,107,.12); color: var(--blue); }
+    .ui-mock-body .row { display: flex; gap: 16px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+    .ui-mock-body .row:last-child { border-bottom: 0; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); margin: 20px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+    th { background: #fafaf7; font-weight: 600; color: var(--ink); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    tr:last-child td { border-bottom: 0; }
+    tr:hover td { background: var(--primary-soft); }
+    td.mono { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+
+    .tag { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; }
+    .tag-green { background: var(--good-soft); color: var(--good); }
+    .tag-warn { background: var(--warn-soft); color: var(--warn); }
+    .tag-red { background: var(--danger-soft); color: var(--danger); }
+    .tag-blue { background: var(--blue-soft); color: var(--blue); }
+    .tag-gray { background: var(--line-soft); color: var(--ink-soft); }
+
+    pre.code { background: #14171e; color: #e9e3d6; padding: 18px 22px; border-radius: 12px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.65; overflow-x: auto; margin: 16px 0; }
+    pre.code .k { color: #c97b3f; }
+    pre.code .s { color: #8aaa85; }
+    pre.code .c { color: #6a6a5e; font-style: italic; }
+    pre.code .n { color: #b4a583; }
+    pre.code .p { color: #c8a4a4; }
+
+    .er-diagram { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px 28px; margin: 24px 0; }
+    .er-title { font-size: 13px; color: var(--ink-soft); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .er-table { display: inline-block; background: #fafaf7; border: 2px solid var(--primary); border-radius: 8px; padding: 10px 14px; margin: 4px; vertical-align: top; min-width: 200px; }
+    .er-table h5 { margin: 0 0 6px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--primary); }
+    .er-table .field { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--ink-mid); padding: 1px 0; }
+    .er-table .pk { color: var(--primary); font-weight: 600; }
+    .er-table .fk { color: var(--blue); }
+    .er-rel { display: flex; align-items: center; justify-content: center; padding: 8px 0; font-size: 12px; color: var(--ink-soft); }
+    .er-rel-line { flex: 1; height: 2px; background: var(--line); position: relative; }
+    .er-rel-line::before, .er-rel-line::after { content: ""; position: absolute; top: -3px; width: 0; height: 0; border-style: solid; }
+    .er-rel-line::before { right: 0; border-width: 3px 0 3px 6px; border-color: transparent transparent transparent var(--primary); }
+    .er-rel-line .label { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); background: var(--card); padding: 0 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--primary); white-space: nowrap; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+    .footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); text-align: center; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="doc-head">
+    <div class="doc-eyebrow">Archery 二次开发 · v0.3.0 详细设计稿</div>
+    <h1>大表无锁变更（gh-ost）<span class="v">详细设计</span></h1>
+    <p class="doc-sub">把概要设计里的模块拆解到可以直接动手写代码的粒度——函数签名 / 类结构 / 字段 / 逻辑分支 / 异常 / 算法 全列。</p>
+    <div class="doc-meta">
+      <span><b>范围</b> v0.3.0-alpha → v0.3.0</span>
+      <span><b>粒度</b> 函数 + 类 + 字段 + 异常 + 算法</span>
+      <span><b>面向</b> 实现开发者（直接读设计稿写代码）</span>
+      <span><b>配套</b> <a href="2026-08-05_gh-ost-product-design.html">产品稿</a>（用户视角）</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <h3>目录</h3>
+    <ol>
+      <li><a href="#principle"><span class="num">01</span>设计原则</a></li>
+      <li><a href="#model"><span class="num">02</span>数据模型（DdlGhostTask + 状态机）</a></li>
+      <li><a href="#precheck"><span class="num">03</span>precheck 5 道（binlog/disk/privs/sql/table）</a></li>
+      <li><a href="#creds"><span class="num">04</span>凭据获取（db.py）</a></li>
+      <li><a href="#runner"><span class="num">05</span>runner：build_ghost_command + start/stop</a></li>
+      <li><a href="#parser"><span class="num">06</span>parser：gh-ost stdout 解析</a></li>
+      <li><a href="#poller"><span class="num">07</span>poller：3s 轮询 + 暂停阈值</a></li>
+      <li><a href="#notify"><span class="num">08</span>notify：钉钉群终态通知</a></li>
+      <li><a href="#views"><span class="num">09</span>视图：6 端点</a></li>
+      <li><a href="#admin"><span class="num">10</span>admin：列表 + 3 action</a></li>
+      <li><a href="#template"><span class="num">11</span>进度面板模板</a></li>
+      <li><a href="#exception"><span class="num">12</span>异常处理总表</a></li>
+      <li><a href="#flags"><span class="num">13</span>灰度开关汇总</a></li>
+    </ol>
+  </div>
+
+  <!-- 01 -->
+  <h2 id="principle"><span class="h2-num">01</span>设计原则</h2>
+  <div class="grid-2">
+    <div class="callout info">
+      <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      <p><strong>走 gh-ost 不用触发器</strong>：基于 binlog stream 同步数据，避免触发器性能开销和锁争抢</p>
+    </div>
+    <div class="callout info">
+      <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      <p><strong>subprocess.Popen + nohup</strong>：不走 systemd-run（systemd 219 缺 --scope），直接 Popen 跑后台</p>
+    </div>
+    <div class="callout warn">
+      <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <p><strong>poller 外层 try/except 兜底</strong>：daemon thread 任何未捕获异常都写 task.error_message + 切 failed，DBA 可见</p>
+    </div>
+    <div class="callout good">
+      <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      <p><strong>进度面板 3s polling</strong>：不引 WebSocket/SSE，保持架构简单</p>
+    </div>
+  </div>
+
+  <!-- 02 -->
+  <h2 id="model"><span class="h2-num">02</span>数据模型（DdlGhostTask + 状态机）</h2>
+
+  <h3>2.1 ER 关系</h3>
+  <div class="er-diagram">
+    <div class="er-title">DdlGhostTask 关联图</div>
+    <div style="display: flex; gap: 30px; flex-wrap: wrap; align-items: center;">
+      <div class="er-table">
+        <h5>sql_workflow</h5>
+        <div class="field pk">id (PK)</div>
+        <div class="field">workflow_name</div>
+        <div class="field">sql_content</div>
+        <div class="field">db_name</div>
+      </div>
+      <div class="er-rel">
+        <div class="er-rel-line">
+          <span class="label">1:1</span>
+        </div>
+      </div>
+      <div class="er-table">
+        <h5>ext_ddl_ghost_task</h5>
+        <div class="field pk">id (PK)</div>
+        <div class="field fk">workflow_id (FK)</div>
+        <div class="field fk">audit_id (FK)</div>
+        <div class="field">status / progress_*</div>
+        <div class="field">ghost_pid / stderr_tail</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>2.2 DdlGhostTask 字段定义</h3>
+<pre class="code"><span class="c"># sql/extensions/ddl_gh_ost/models.py</span>
+<span class="k">class</span> DdlGhostTask(models.Model):
+    <span class="s">"""gh-ost 任务表 —— 记录每个 SQL 工单是否启用 gh-ost + 进度快照。"""</span>
+
+    STATUS_CHOICES = (
+        (<span class="s">"pending"</span>,         <span class="s">"待预检"</span>),       <span class="c"># 刚勾选 gh-ost，预检未跑</span>
+        (<span class="s">"precheck_failed"</span>, <span class="s">"预检未通过"</span>),
+        (<span class="s">"queued"</span>,          <span class="s">"排队中"</span>),       <span class="c"># 预检通过，等待执行</span>
+        (<span class="s">"running"</span>,        <span class="s">"执行中"</span>),
+        (<span class="s">"cut_over"</span>,       <span class="s">"切表阶段"</span>),
+        (<span class="s">"success"</span>,        <span class="s">"成功"</span>),
+        (<span class="s">"failed"</span>,         <span class="s">"失败"</span>),
+        (<span class="s">"cancelled"</span>,      <span class="s">"已取消"</span>),
+        (<span class="s">"rolled_back"</span>,    <span class="s">"已回滚"</span>),       <span class="c"># DBA 手动 drop 影子表 + 标 rolled_back</span>
+    )
+
+    STAGE_CHOICES = (
+        (<span class="s">"connecting"</span>,         <span class="s">"connecting"</span>),
+        (<span class="s">"copying"</span>,            <span class="s">"Copying rows"</span>),
+        (<span class="s">"waiting_cut_over"</span>,   <span class="s">"waiting for cut-over"</span>),
+        (<span class="s">"cut_over"</span>,           <span class="s">"cut-over"</span>),
+        (<span class="s">"swapped"</span>,            <span class="s">"swapped"</span>),
+        (<span class="s">"done"</span>,               <span class="s">"done"</span>),
+    )
+
+    <span class="c"># ===== 主键 / 关联 =====</span>
+    id = models.BigAutoField(primary_key=<span class="k">True</span>)
+    workflow = models.OneToOneField(
+        <span class="s">"sql.SqlWorkflow"</span>, on_delete=models.CASCADE,
+        related_name=<span class="s">"ghost_task"</span>,
+    )
+    audit = models.ForeignKey(
+        <span class="s">"sql.WorkflowAudit"</span>, on_delete=models.SET_NULL,
+        null=<span class="k">True</span>, blank=<span class="k">True</span>, related_name=<span class="s">"ghost_tasks"</span>,
+    )
+
+    <span class="c"># ===== 用户选择 =====</span>
+    enabled = models.BooleanField(default=<span class="k">True</span>)
+    cut_over_strategy = models.CharField(
+        max_length=<span class="n">32</span>, default=<span class="s">"immediate"</span>,
+        choices=((<span class="s">"immediate"</span>, <span class="s">"立即切（默认，alpha 阶段）"</span>),
+                 (<span class="s">"low_traffic_window"</span>, <span class="s">"业务低峰期切（02:00-04:00）"</span>),
+                 (<span class="s">"manual"</span>, <span class="s">"DBA 手动触发"</span>)),
+    )
+    max_load_threads_running = models.IntegerField(
+        default=<span class="n">30</span>, help_text=<span class="s">"超过此值自动暂停 gh-ost 复制（生产保护）"</span>)
+    timeout_seconds = models.IntegerField(default=<span class="n">7200</span>, help_text=<span class="s">"超时熔断（秒）"</span>)
+
+    <span class="c"># ===== 预检查 5 道关（提交时固化）=====</span>
+    precheck_passed = models.BooleanField(default=<span class="k">False</span>)
+    precheck_report = models.JSONField(default=<span class="k">dict</span>, blank=<span class="k">True</span>,
+        help_text=<span class="s">"5 道检查每道的 status/evidence/message"</span>)
+    precheck_at = models.DateTimeField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+
+    <span class="c"># ===== 提取的 ALTER 语句 =====</span>
+    alter_statement = models.TextField(help_text=<span class="s">"从 sql_content 提取的第一条 ALTER TABLE 语句"</span>)
+    db_name = models.CharField(max_length=<span class="n">64</span>, blank=<span class="k">True</span>)
+    table_name = models.CharField(max_length=<span class="n">128</span>, blank=<span class="k">True</span>)
+    ghost_table_name = models.CharField(max_length=<span class="n">128</span>, blank=<span class="k">True</span>)
+    original_table_size_bytes = models.BigIntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    disk_free_bytes = models.BigIntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+
+    <span class="c"># ===== 状态机 =====</span>
+    status = models.CharField(max_length=<span class="n">20</span>, choices=STATUS_CHOICES,
+        default=<span class="s">"pending"</span>, db_index=<span class="k">True</span>)
+    current_stage = models.CharField(max_length=<span class="n">32</span>, choices=STAGE_CHOICES, blank=<span class="k">True</span>)
+
+    <span class="c"># ===== 进程信息 =====</span>
+    ghost_pid = models.IntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    systemd_scope_unit = models.CharField(max_length=<span class="n">128</span>, blank=<span class="k">True</span>)
+
+    <span class="c"># ===== 进度快照（每 3s 由后台 poller 更新）=====</span>
+    progress_pct = models.IntegerField(default=<span class="n">0</span>)
+    progress_rows_copied = models.BigIntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    progress_rows_total = models.BigIntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    progress_speed_rows_per_sec = models.IntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    progress_eta_seconds = models.IntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    progress_threads_running = models.IntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    progress_message = models.CharField(max_length=<span class="n">500</span>, blank=<span class="k">True</span>)
+    last_heartbeat_at = models.DateTimeField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+
+    <span class="c"># ===== 错误 / 日志 =====</span>
+    stderr_tail = models.TextField(blank=<span class="k">True</span>)
+    error_message = models.TextField(blank=<span class="k">True</span>)
+
+    <span class="c"># ===== 时间戳 =====</span>
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>)
+    updated_at = models.DateTimeField(auto_now=<span class="k">True</span>)
+    started_at = models.DateTimeField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    finished_at = models.DateTimeField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    created_by = models.CharField(max_length=<span class="n">50</span>, blank=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_ddl_ghost_task"</span>
+        indexes = [
+            models.Index(fields=[<span class="s">"status"</span>]),
+            models.Index(fields=[<span class="s">"created_at"</span>]),
+        ]
+
+    <span class="k">def</span> __str__(self):
+        <span class="k">return</span> <span class="s">f"gh-ost #{self.id} for workflow={self.workflow_id} [{self.status}]"</span>
+
+    <span class="c"># ===== 计算属性 =====</span>
+    <span class="k">@property</span>
+    <span class="k">def</span> is_terminal(self) -> <span class="n">bool</span>:
+        <span class="s">"""是否终态（成功/失败/取消/回滚）。"""</span>
+        <span class="k">return</span> self.status <span class="k">in</span> (<span class="s">"success"</span>, <span class="s">"failed"</span>, <span class="s">"cancelled"</span>, <span class="s">"rolled_back"</span>)
+
+    <span class="k">@property</span>
+    <span class="k">def</span> duration_seconds(self) -> <span class="n">int</span>:
+        <span class="s">"""运行耗时（秒）。未启动或未结束返回 0。"""</span>
+        <span class="k">if not</span> self.started_at:
+            <span class="k">return</span> <span class="n">0</span>
+        end = self.finished_at <span class="k">or</span> self.updated_at
+        <span class="k">return</span> <span class="n">max</span>(<span class="n">0</span>, <span class="n">int</span>((end - self.started_at).total_seconds()))</pre>
+
+  <h3>2.3 状态机</h3>
+  <div class="flow flow-7">
+    <div class="flow-step"><div class="step-num">pending</div><div class="step-name">待预检</div><div class="step-detail">刚勾选 gh-ost</div></div>
+    <div class="flow-step"><div class="step-num">↓</div><div class="step-name">5 道关</div><div class="step-detail">precheck_passed=True</div></div>
+    <div class="flow-step"><div class="step-num">queued</div><div class="step-name">排队</div><div class="step-detail">等 DBA 启动</div></div>
+    <div class="flow-step"><div class="step-num">↓</div><div class="step-name">Popen</div><div class="step-detail">gh-ost 子进程</div></div>
+    <div class="flow-step active"><div class="step-num">running</div><div class="step-name">执行中</div><div class="step-detail">copy rows</div></div>
+    <div class="flow-step"><div class="step-num">cut_over</div><div class="step-name">切表</div><div class="step-detail">rename 1-2s</div></div>
+    <div class="flow-step"><div class="step-num">success</div><div class="step-name">成功</div><div class="step-detail">终态</div></div>
+  </div>
+
+  <div class="callout warn">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+    <p><strong>失败支线</strong>：precheck 失败 → <code>precheck_failed</code>；启动 gh-ost 失败 → <code>failed</code>；DBA 取消 → <code>cancelled</code>；DBA 手动 drop 影子表 → <code>rolled_back</code>。都进 <code>is_terminal=True</code> 集合。</p>
+  </div>
+
+  <!-- 03 -->
+  <h2 id="precheck"><span class="h2-num">03</span>precheck 5 道（binlog / disk / privs / sql / table）</h2>
+  <p class="lead">提交工单时跑 5 道预检，结果固化到 <code>DdlGhostTask.precheck_report</code>。任一 FAIL → status=<code>precheck_failed</code>，不启动 gh-ost。</p>
+
+  <h3>3.1 主函数</h3>
+<pre class="code"><span class="c"># services/precheck.py</span>
+<span class="k">def</span> run_all_prechecks(
+    workflow, instance, db_name: <span class="n">str</span>, table_name: <span class="n">str</span>, alter_sql: <span class="n">str</span>
+) -> <span class="k">dict</span>:
+    <span class="s">"""跑 5 道预检 + 收集结果。
+
+Returns:
+    {
+        "passed": bool,  # 5 道全过
+        "summary": str,   # "5/5 PASS" 或 "3/5 PASS (失败: binlog, privs)"
+        "checks": [
+            {"name": "binlog_format", "passed": True/False, "evidence": ..., "message": ...},
+            ...
+        ],
+        "table_size_bytes": int,  # 用于后续 disk 校验
+    }
+"""</span>
+    checks = []
+    <span class="c"># 1. binlog_format = ROW（必需）</span>
+    checks.append(check_binlog_format(instance))
+    <span class="c"># 2. 磁盘空间 ≥ 1.2 × 表大小</span>
+    table_size = _get_table_size(instance, db_name, table_name)
+    checks.append(check_disk_space(instance, table_size))
+    <span class="c"># 3. REPLICATION SLAVE + CLIENT 权限</span>
+    checks.append(check_replication_privileges(instance))
+    <span class="c"># 4. ALTER SQL 合法性（不改主键/全文/外键）</span>
+    checks.append(check_alter_sql(alter_sql))
+    <span class="c"># 5. 表存在 + 是 InnoDB + 非分区</span>
+    checks.append(check_table_type(instance, db_name, table_name))
+
+    passed = <span class="n">all</span>(c[<span class="s">"passed"</span>] <span class="k">for</span> c <span class="k">in</span> checks)
+    failed = [c[<span class="s">"name"</span>] <span class="k">for</span> c <span class="k">in</span> checks <span class="k">if not</span> c[<span class="s">"passed"</span>]]
+    summary = <span class="s">f"{len(checks)-len(failed)}/{len(checks)} PASS"</span> + (
+        <span class="s">f" (失败: {', '.join(failed)})"</span> <span class="k">if</span> failed <span class="k">else</span> <span class="s">""</span>
+    )
+    <span class="k">return</span> {<span class="s">"passed"</span>: passed, <span class="s">"summary"</span>: summary, <span class="s">"checks"</span>: checks, <span class="s">"table_size_bytes"</span>: table_size}</pre>
+
+  <h3>3.2 5 道检查函数</h3>
+<pre class="code"><span class="k">def</span> check_binlog_format(instance) -> <span class="k">dict</span>:
+    <span class="s">"""binlog_format 必须 = ROW。
+
+gh-ost 基于 binlog stream 同步，STATEMENT/MIXED 不支持。
+"""</span>
+    <span class="k">try</span>:
+        user, password, (host, port) = _get_creds(instance)
+        conn = pymysql.connect(host=host, port=port, user=user, password=password, connect_timeout=<span class="n">5</span>)
+        <span class="k">try</span>:
+            <span class="k">with</span> conn.cursor() <span class="k">as</span> cur:
+                cur.execute(<span class="s">"SHOW VARIABLES LIKE 'binlog_format'"</span>)
+                row = cur.fetchone()
+                value = row[<span class="n">1</span>] <span class="k">if</span> row <span class="k">else</span> <span class="s">""</span>
+                <span class="k">if</span> value.upper() == <span class="s">"ROW"</span>:
+                    <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"binlog_format"</span>, <span class="s">"passed"</span>: <span class="k">True</span>,
+                            <span class="s">"evidence"</span>: <span class="s">"binlog_format=ROW"</span>, <span class="s">"message"</span>: <span class="s">"binlog 格式正确"</span>}
+                <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"binlog_format"</span>, <span class="s">"passed"</span>: <span class="k">False</span>,
+                        <span class="s">"evidence"</span>: <span class="s">f"binlog_format={value}"</span>,
+                        <span class="s">"message"</span>: <span class="s">f"binlog 格式必须是 ROW，当前是 {value}（gh-ost 不支持 STATEMENT/MIXED）"</span>}
+        <span class="k">finally</span>:
+            conn.close()
+    <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+        <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"binlog_format"</span>, <span class="s">"passed"</span>: <span class="k">False</span>,
+                <span class="s">"evidence"</span>: <span class="s">""</span>, <span class="s">"message"</span>: <span class="s">f"查询失败：{exc}"</span>}
+
+
+<span class="k">def</span> check_disk_space(instance, table_size_bytes: <span class="n">int</span>) -> <span class="k">dict</span>:
+    <span class="s">"""磁盘剩余 ≥ 1.2 × 表大小。
+
+gh-ost 创建 ghost table + changelog table + binlog 重放，需要 1.2x 空间。
+"""</span>
+    <span class="k">try</span>:
+        user, password, (host, port) = _get_creds(instance)
+        conn = pymysql.connect(host=host, port=port, user=user, password=password, connect_timeout=<span class="n">5</span>)
+        <span class="k">try</span>:
+            <span class="k">with</span> conn.cursor() <span class="k">as</span> cur:
+                cur.execute(<span class="s">"SHOW VARIABLES LIKE 'datadir'"</span>)
+                datadir = cur.fetchone()[<span class="n">1</span>]
+                <span class="c"># 用 shutil 查 disk_usage</span>
+                <span class="k">import</span> shutil
+                usage = shutil.disk_usage(datadir)
+                required = <span class="n">int</span>(table_size_bytes * <span class="n">1.2</span>)
+                <span class="k">if</span> usage.free >= required:
+                    <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"disk_space"</span>, <span class="s">"passed"</span>: <span class="k">True</span>,
+                            <span class="s">"evidence"</span>: <span class="s">f"free={usage.free//1024//1024}MB, need={required//1024//1024}MB"</span>,
+                            <span class="s">"message"</span>: <span class="s">"磁盘空间充足"</span>}
+                <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"disk_space"</span>, <span class="s">"passed"</span>: <span class="k">False</span>,
+                        <span class="s">"evidence"</span>: <span class="s">f"free={usage.free//1024//1024}MB, need={required//1024//1024}MB"</span>,
+                        <span class="s">"message"</span>: <span class="s">"磁盘空间不足（gh-ost 需要 1.2x 表大小）"</span>}
+        <span class="k">finally</span>:
+            conn.close()
+    <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+        <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"disk_space"</span>, <span class="s">"passed"</span>: <span class="k">False</span>, <span class="s">"message"</span>: <span class="s">f"检查失败：{exc}"</span>}
+
+
+<span class="k">def</span> check_replication_privileges(instance) -> <span class="k">dict</span>:
+    <span class="s">"""用户有 REPLICATION SLAVE + CLIENT 权限。
+
+gh-ost 伪装从库拉 binlog，需要这两权限。
+"""</span>
+    <span class="k">try</span>:
+        user, password, (host, port) = _get_creds(instance)
+        conn = pymysql.connect(host=host, port=port, user=user, password=password, connect_timeout=<span class="n">5</span>)
+        <span class="k">try</span>:
+            <span class="k">with</span> conn.cursor() <span class="k">as</span> cur:
+                cur.execute(<span class="s">f"SHOW GRANTS FOR '{user}'@'{host}'"</span>)
+                grants = <span class="s">"\n"</span>.join(row[<span class="n">0</span>] <span class="k">for</span> row <span class="n">in</span> cur.fetchall())
+                <span class="k">if</span> <span class="s">"REPLICATION SLAVE"</span> <span class="k">in</span> grants.upper() <span class="k">and</span> <span class="s">"REPLICATION CLIENT"</span> <span class="k">in</span> grants.upper():
+                    <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"replication_privileges"</span>, <span class="s">"passed"</span>: <span class="k">True</span>,
+                            <span class="s">"message"</span>: <span class="s">"REPLICATION SLAVE + CLIENT 权限齐备"</span>}
+                missing = []
+                <span class="k">if</span> <span class="s">"REPLICATION SLAVE"</span> <span class="k">not in</span> grants.upper():
+                    missing.append(<span class="s">"REPLICATION SLAVE"</span>)
+                <span class="k">if</span> <span class="s">"REPLICATION CLIENT"</span> <span class="k">not in</span> grants.upper():
+                    missing.append(<span class="s">"REPLICATION CLIENT"</span>)
+                <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"replication_privileges"</span>, <span class="s">"passed"</span>: <span class="k">False</span>,
+                        <span class="s">"message"</span>: <span class="s">f"缺少权限：{', '.join(missing)}"</span>}
+        <span class="k">finally</span>:
+            conn.close()
+    <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+        <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"replication_privileges"</span>, <span class="s">"passed"</span>: <span class="k">False</span>, <span class="s">"message"</span>: <span class="s">f"检查失败：{exc}"</span>}
+
+
+<span class="k">def</span> check_alter_sql(alter_sql: <span class="n">str</span>) -> <span class="k">dict</span>:
+    <span class="s">"""ALTER SQL 合法性 —— 不改主键/全文索引/外键。
+
+gh-ost 1.1.10 对这些操作有特殊语义，DBA 应直接走传统 ALTER。
+"""</span>
+    forbidden = [<span class="s">r"\bDROP\s+PRIMARY\s+KEY\b"</span>, <span class="s">r"\bDROP\s+FULLTEXT\b"</span>, <span class="s">r"\bADD\s+FOREIGN\s+KEY\b"</span>, <span class="s">r"\bDROP\s+FOREIGN\s+KEY\b"</span>]
+    sql_upper = alter_sql.upper()
+    <span class="k">for</span> pattern <span class="k">in</span> forbidden:
+        <span class="k">if</span> <span class="n">re</span>.search(pattern, sql_upper, <span class="n">re</span>.IGNORECASE):
+            <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"alter_sql"</span>, <span class="s">"passed"</span>: <span class="k">False</span>,
+                    <span class="s">"message"</span>: <span class="s">f"检测到 gh-ost 不支持的操作：{pattern}"</span>}
+    <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"alter_sql"</span>, <span class="s">"passed"</span>: <span class="k">True</span>, <span class="s">"message"</span>: <span class="s">"ALTER SQL 合法"</span>}
+
+
+<span class="k">def</span> check_table_type(instance, db_name: <span class="n">str</span>, table_name: <span class="n">str</span>) -> <span class="k">dict</span>:
+    <span class="s">"""表存在 + ENGINE=InnoDB + 非分区。
+
+gh-ost 不支持 MyISAM / MEMORY / 分区表。
+"""</span>
+    <span class="k">try</span>:
+        user, password, (host, port) = _get_creds(instance)
+        conn = pymysql.connect(host=host, port=port, user=user, password=password, connect_timeout=<span class="n">5</span>)
+        <span class="k">try</span>:
+            <span class="k">with</span> conn.cursor() <span class="k">as</span> cur:
+                cur.execute(<span class="s">"""
+                    SELECT ENGINE, CREATE_OPTIONS
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s
+                """</span>, (db_name, table_name))
+                row = cur.fetchone()
+                <span class="k">if not</span> row:
+                    <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"table_type"</span>, <span class="s">"passed"</span>: <span class="k">False</span>, <span class="s">"message"</span>: <span class="s">f"表 {db_name}.{table_name} 不存在"</span>}
+                engine, create_options = row
+                <span class="k">if</span> engine.upper() != <span class="s">"INNODB"</span>:
+                    <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"table_type"</span>, <span class="s">"passed"</span>: <span class="k">False</span>, <span class="s">"message"</span>: <span class="s">f"ENGINE={engine}（gh-ost 只支持 InnoDB）"</span>}
+                <span class="k">if</span> create_options <span class="k">and</span> <span class="s">"partitioned"</span> <span class="k">in</span> create_options.lower():
+                    <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"table_type"</span>, <span class="s">"passed"</span>: <span class="k">False</span>, <span class="s">"message"</span>: <span class="s">"gh-ost 不支持分区表"</span>}
+                <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"table_type"</span>, <span class="s">"passed"</span>: <span class="k">True</span>, <span class="s">"message"</span>: <span class="s">f"ENGINE=InnoDB 非分区"</span>}
+        <span class="k">finally</span>:
+            conn.close()
+    <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+        <span class="k">return</span> {<span class="s">"name"</span>: <span class="s">"table_type"</span>, <span class="s">"passed"</span>: <span class="k">False</span>, <span class="s">"message"</span>: <span class="s">f"检查失败：{exc}"</span>}</pre>
+
+  <h3>3.3 异常</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>异常</th><th>触发条件</th><th>处理</th></tr></thead>
+      <tbody>
+        <tr><td>pymysql.OperationalError</td><td>连不上 MySQL</td><td>返回 passed=False + message 含错误</td></tr>
+        <tr><td>权限不足查 SHOW GRANTS</td><td>user 不是 SUPER</td><td>返回 passed=False（缺权限列表）</td></tr>
+        <tr><td>shutil.disk_usage 异常</td><td>datadir 不存在（罕见）</td><td>返回 passed=False</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 04 -->
+  <h2 id="creds"><span class="h2-num">04</span>凭据获取（db.py）</h2>
+<pre class="code"><span class="c"># services/db.py</span>
+<span class="k">def</span> _get_creds(instance) -> <span class="n">Tuple</span>[<span class="n">str</span>, <span class="n">str</span>, <span class="n">Tuple</span>[<span class="n">str</span>, <span class="n">int</span>]]:
+    <span class="s">"""取 instance 的 MySQL 连接凭据（user, password, (host, port)）。
+
+优先级:
+    1. CUSTOM_GH_OST_PRECHECK_HOST/PORT/USER/PASSWORD（dev 134 历史 mirage 密文兜底）
+    2. instance.get_username_password()（prod 走 mirage 解密）
+
+Returns:
+    (user, password, (host, port))
+
+Raises:
+    ValueError: 凭据缺失
+"""</span>
+    <span class="k">if</span> <span class="n">getattr</span>(settings, <span class="s">"CUSTOM_GH_OST_PRECHECK_HOST"</span>, <span class="s">""</span>):
+        <span class="k">return</span> (
+            settings.CUSTOM_GH_OST_PRECHECK_USER,
+            settings.CUSTOM_GH_OST_PRECHECK_PASSWORD,
+            (settings.CUSTOM_GH_OST_PRECHECK_HOST, <span class="n">int</span>(settings.CUSTOM_GH_OST_PRECHECK_PORT)),
+        )
+    user, password = instance.get_username_password()
+    <span class="k">if not</span> user <span class="k">or not</span> password:
+        <span class="k">raise</span> ValueError(<span class="s">f"instance #{instance.id} 凭据缺失"</span>)
+    <span class="k">return</span> (user, password, (instance.host, instance.port))</pre>
+
+  <!-- 05 -->
+  <h2 id="runner"><span class="h2-num">05</span>runner：build_ghost_command + start / stop / is_alive</h2>
+
+  <h3>5.1 build_ghost_command</h3>
+<pre class="code"><span class="c"># services/runner.py</span>
+<span class="k">def</span> build_ghost_command(task, instance=<span class="k">None</span>) -> <span class="n">List</span>[<span class="n">str</span>]:
+    <span class="s">"""根据 task 构建 gh-ost 命令行参数列表（subprocess 用）。
+
+Args:
+    task: DdlGhostTask 实例
+    instance: SqlWorkflow 对应的 Instance（optional, fallback 用 task.workflow.instance）
+
+Returns:
+    list[str] 命令行参数
+
+Raises:
+    ValueError: instance 缺失
+"""</span>
+    inst = instance <span class="k">or</span> (task.workflow.instance <span class="k">if</span> task.workflow_id <span class="k">else</span> <span class="k">None</span>)
+    <span class="k">if</span> inst <span class="k">is</span> <span class="k">None</span>:
+        <span class="k">raise</span> ValueError(<span class="s">"no instance available for gh-ost"</span>)
+
+    user, password, (host, port) = _get_creds(inst)
+    bin_path = <span class="n">getattr</span>(settings, <span class="s">"CUSTOM_GH_OST_BIN"</span>, <span class="s">"/usr/local/bin/gh-ost"</span>)
+
+    <span class="c"># ALTER 提取</span>
+    alter = task.alter_statement <span class="k">or</span> <span class="s">""</span>
+    <span class="c"># gh-ost 接受完整 SQL 或裸子句</span>
+    alter_arg = alter <span class="k">if</span> alter.strip().upper().startswith(<span class="s">"ALTER"</span>) <span class="k">else</span> <span class="s">f"ALTER TABLE {alter}"</span>
+
+    <span class="k">return</span> [
+        bin_path,
+        <span class="s">f"--host={host}"</span>, <span class="s">f"--port={port}"</span>,
+        <span class="s">f"--user={user}"</span>, <span class="s">f"--password={password}"</span>,
+        <span class="s">f"--database={task.db_name}"</span>, <span class="s">f"--table={task.table_name}"</span>,
+        <span class="s">f"--alter={alter_arg}"</span>,
+        <span class="s">"--assume-rbr"</span>,              <span class="c"># 134 dev 已知 RBR</span>
+        <span class="s">"--allow-on-master"</span>,        <span class="c"># 单机 dev 无 replica</span>
+        <span class="s">"--execute"</span>,
+        <span class="s">"--exact-rowcount"</span>, <span class="s">"--concurrent-rowcount"</span>,
+        <span class="s">f"--max-load=Threads_running={task.max_load_threads_running}"</span>,
+        <span class="s">"--nice-ratio=0"</span>,
+        <span class="s">"--cut-over=atomic"</span>,
+        <span class="s">"--initially-drop-ghost-table"</span>, <span class="s">"--initially-drop-old-table"</span>, <span class="s">"--ok-to-drop-table"</span>,
+        <span class="s">"--verbose"</span>, <span class="s">"--default-retries=120"</span>,
+    ]</pre>
+
+  <h3>5.2 start_ghost_process</h3>
+<pre class="code"><span class="k">def</span> start_ghost_process(task, instance=<span class="k">None</span>) -> <span class="n">int</span>:
+    <span class="s">"""启动 gh-ost 子进程（Popen + nohup）。
+
+Returns:
+    gh-ost PID（成功）
+
+Raises:
+    RuntimeError: 启失败（进程秒退）
+"""</span>
+    log_dir = _ensure_log_dir()
+    log_path = <span class="n">os</span>.path.join(log_dir, <span class="s">f"ghost-{task.id}.log"</span>)
+
+    cmd = build_ghost_command(task, instance)
+    logger.info(<span class="s">"gh-ost start: task_id=%s cmd=%s"</span>, task.id, <span class="s">" "</span>.join(shlex.quote(c) <span class="k">for</span> c <span class="k">in</span> cmd))
+
+    <span class="c"># log 文件 chown 到 archery 用户（gunicorn 跑在 archery 用户下）</span>
+    <span class="k">try</span>:
+        <span class="k">if</span> <span class="n">os</span>.path.exists(log_path):
+            <span class="n">os</span>.remove(log_path)
+        <span class="k">with</span> <span class="n">open</span>(log_path, <span class="s">"w"</span>) <span class="k">as</span> f:
+            f.write(<span class="s">""</span>)
+        <span class="k">try</span>:
+            <span class="k">import</span> pwd
+            archery_pwd = pwd.getpwnam(<span class="s">"archery"</span>)
+            <span class="n">os</span>.chown(log_path, archery_pwd.pw_uid, archery_pwd.pw_gid)
+        <span class="k">except</span> (KeyError, PermissionError, OSError):
+            <span class="k">pass</span>
+    <span class="k">except</span> PermissionError <span class="k">as</span> exc:
+        logger.warning(<span class="s">"can't touch log file %s: %s"</span>, log_path, exc)
+
+    <span class="c"># Popen 后台跑（start_new_session=True 等价 nohup）</span>
+    <span class="k">with</span> <span class="n">open</span>(log_path, <span class="s">"ab"</span>, buffering=<span class="n">0</span>) <span class="k">as</span> logf:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=logf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+            start_new_session=<span class="k">True</span>,  <span class="c"># 等价 nohup</span>
+            cwd=<span class="s">"/tmp"</span>,
+        )
+
+    <span class="k">if</span> proc.poll() <span class="k">is not</span> <span class="k">None</span>:
+        <span class="c"># 进程秒退，看日志</span>
+        <span class="k">with</span> <span class="n">open</span>(log_path, <span class="s">"r"</span>, errors=<span class="s">"replace"</span>) <span class="k">as</span> f:
+            err_tail = f.read()[<span class="n">-2000</span>:]
+        <span class="k">raise</span> <span class="n">RuntimeError</span>(<span class="s">f"gh-ost 进程秒退 (rc={proc.returncode})。log tail: {err_tail}"</span>)
+
+    logger.info(<span class="s">"gh-ost started: task_id=%s pid=%s log=%s"</span>, task.id, proc.pid, log_path)
+    <span class="k">return</span> proc.pid
+
+
+<span class="k">def</span> stop_ghost_process(pid: <span class="n">int</span>, timeout: <span class="n">int</span> = <span class="n">10</span>) -> <span class="n">bool</span>:
+    <span class="s">"""停止 gh-ost 子进程。先 SIGTERM，超时 SIGKILL。
+
+Returns:
+    True 成功停止
+"""</span>
+    <span class="k">if</span> pid <span class="k">is</span> <span class="k">None</span> <span class="k">or</span> pid <= <span class="n">0</span>:
+        <span class="k">return</span> <span class="k">False</span>
+    <span class="k">try</span>:
+        <span class="n">os</span>.kill(pid, signal.SIGTERM)
+    <span class="k">except</span> ProcessLookupError:
+        <span class="k">return</span> <span class="k">True</span>  <span class="c"># 进程已经不在了</span>
+    <span class="k">except</span> PermissionError:
+        logger.error(<span class="s">"no permission to SIGTERM pid=%s"</span>, pid)
+        <span class="k">return</span> <span class="k">False</span>
+
+    <span class="k">import</span> time
+    <span class="k">for</span> _ <span class="k">in</span> <span class="n">range</span>(timeout * <span class="n">2</span>):
+        <span class="k">try</span>:
+            <span class="n">os</span>.kill(pid, <span class="n">0</span>)  <span class="c"># probe</span>
+        <span class="k">except</span> ProcessLookupError:
+            <span class="k">return</span> <span class="k">True</span>
+        time.sleep(<span class="n">0.5</span>)
+
+    <span class="k">try</span>:
+        <span class="n">os</span>.kill(pid, signal.SIGKILL)
+    <span class="k">except</span> ProcessLookupError:
+        <span class="k">return</span> <span class="k">True</span>
+    <span class="k">return</span> <span class="k">True</span>
+
+
+<span class="k">def</span> is_alive(pid: <span class="n">int</span>) -> <span class="n">bool</span>:
+    <span class="s">"""进程是否还活着。"""</span>
+    <span class="k">if not</span> pid:
+        <span class="k">return</span> <span class="k">False</span>
+    <span class="k">try</span>:
+        <span class="n">os</span>.kill(pid, <span class="n">0</span>)
+        <span class="k">return</span> <span class="k">True</span>
+    <span class="k">except</span> (ProcessLookupError, PermissionError):
+        <span class="k">return</span> <span class="k">False</span>
+
+
+<span class="k">def</span> read_log_tail(log_path: <span class="n">str</span>, max_bytes: <span class="n">int</span> = <span class="n">65536</span>) -> <span class="n">str</span>:
+    <span class="s">"""读 log 末尾 max_bytes。"""</span>
+    <span class="k">try</span>:
+        <span class="k">with</span> <span class="n">open</span>(log_path, <span class="s">"rb"</span>) <span class="k">as</span> f:
+            f.seek(<span class="n">0</span>, <span class="n">os</span>.SEEK_END)
+            size = f.tell()
+            f.seek(<span class="n">max</span>(<span class="n">0</span>, size - max_bytes))
+            <span class="k">return</span> f.read().decode(<span class="s">"utf-8"</span>, errors=<span class="s">"replace"</span>)
+    <span class="k">except</span> (FileNotFoundError, PermissionError):
+        <span class="k">return</span> <span class="s">""</span></pre>
+
+  <div class="callout danger">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+    <p><strong>不走 systemd-run</strong>：systemd 219 在 134 dev 上缺 <code>--scope</code> 选项。直接 Popen + <code>start_new_session=True</code> 等价 nohup。</p>
+  </div>
+
+  <!-- 06 -->
+  <h2 id="parser"><span class="h2-num">06</span>parser：gh-ost stdout 解析</h2>
+<pre class="code"><span class="c"># services/parser.py</span>
+<span class="k">import</span> re
+<span class="k">from</span> dataclasses <span class="k">import</span> dataclass
+
+<span class="k">@dataclass</span>
+<span class="k">class</span> GhostParseResult:
+    is_done: <span class="n">bool</span> = <span class="k">False</span>           <span class="c"># gh-ost 跑完（done 状态）</span>
+    is_failed: <span class="n">bool</span> = <span class="k">False</span>         <span class="c"># gh-ost 异常退出</span>
+    pct: <span class="n">int</span> = <span class="n">0</span>                   <span class="c"># 进度百分比</span>
+    rows_copied: <span class="n">int</span> = <span class="n">0</span>
+    rows_total: <span class="n">int</span> = <span class="n">0</span>
+    speed: <span class="n">int</span> = <span class="n">0</span>                 <span class="c"># 行/秒</span>
+    eta_seconds: <span class="n">int</span> = <span class="n">0</span>
+    stage: <span class="n">str</span> = <span class="s">""</span>
+    message: <span class="n">str</span> = <span class="s">""</span>
+    error_message: <span class="n">str</span> = <span class="s">""</span>
+
+<span class="c"># gh-ost 1.1.10 stdout 行格式正则</span>
+_RE_COPY = <span class="n">re</span>.compile(
+    <span class="s">r"Copy:\s*(?P<copied>\d+)/(?P<total>\d+)\s+(?P<pct>\d+)\.\d+%"</span>
+)
+_RE_DONE = <span class="n">re</span>.compile(<span class="s">r"Done migrating|Copy:\s*\d+/\d+\s+100\.\d+%"</span>)
+_RE_FAILED = <span class="n">re</span>.compile(<span class="s">r"FATAL|ERROR\s+unable\s+to\s+ALTER"</span>)
+
+<span class="k">def</span> parse_ghost_log(log_text: <span class="n">str</span>) -> GhostParseResult:
+    <span class="s">"""从 gh-ost 末尾 N 行日志解析进度。
+
+关键规则（gh-ost 1.1.10）:
+    - `Copy: 12345/67890 18.2%; ...` → 进度行
+    - `Time: 11s(total)` → 耗时（括号是字面量，不带空格）
+    - `Done migrating ...` → done 状态
+    - `FATAL` 行 → failed
+"""</span>
+    result = GhostParseResult()
+    lines = log_text.splitlines()
+
+    <span class="c"># 取最后一行 Copy: 进度</span>
+    <span class="k">for</span> line <span class="k">in</span> <span class="n">reversed</span>(lines):
+        m = _RE_COPY.search(line)
+        <span class="k">if</span> m:
+            result.rows_copied = <span class="n">int</span>(m.group(<span class="s">"copied"</span>))
+            result.rows_total = <span class="n">int</span>(m.group(<span class="s">"total"</span>))
+            result.pct = <span class="n">int</span>(m.group(<span class="s">"pct"</span>))
+            <span class="k">break</span>
+
+    <span class="c"># 检查 done / failed</span>
+    <span class="k">for</span> line <span class="k">in</span> <span class="n">reversed</span>(lines):
+        <span class="k">if</span> _RE_FAILED.search(line):
+            result.is_failed = <span class="k">True</span>
+            result.error_message = line.strip()
+            <span class="k">break</span>
+        <span class="k">if</span> _RE_DONE.search(line):
+            result.is_done = <span class="k">True</span>
+            <span class="k">break</span>
+
+    <span class="c"># 最后一行作为 message</span>
+    <span class="k">if</span> lines:
+        result.message = lines[<span class="n">-1</span>].strip()[:<span class="n">500</span>]
+
+    <span class="k">return</span> result</pre>
+
+  <div class="callout warn">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+    <p><strong>踩坑</strong>：gh-ost 1.1.10 <code>Time: 11s(total)</code> 括号是字面量，<strong>不是空格</strong>。正则必须 <code>Time:\s*(\d+)s</code> 单独匹配，不要写 <code>Time:\s*(\d+)\s*\(total\)</code>。</p>
+  </div>
+
+  <!-- 07 -->
+  <h2 id="poller"><span class="h2-num">07</span>poller：3s 轮询 + 暂停阈值</h2>
+
+  <h3>7.1 入口 + 主循环</h3>
+<pre class="code"><span class="c"># services/poller.py</span>
+<span class="k">import</span> threading
+
+POLL_INTERVAL = <span class="n">3</span>  <span class="c"># 秒</span>
+THREADS_RUNNING_QUERY_INTERVAL = <span class="n">10</span>  <span class="c"># 10s 查一次 Threads_running（不要每 3s 都查）</span>
+
+<span class="k">def</span> start_poller(task_id: <span class="n">int</span>) -> <span class="n">threading</span>.Thread:
+    <span class="s">"""启 daemon thread 跑 poll_loop。"""</span>
+    t = threading.Thread(target=poll_loop, args=(task_id,), daemon=<span class="k">True</span>)
+    t.start()
+    <span class="k">return</span> t
+
+
+<span class="k">def</span> poll_loop(task_id: <span class="n">int</span>):
+    <span class="s">"""主循环：每 3s 读 log + 解析 + 写 progress + 状态机。
+
+终态时自动 return。**外层 try/except 兜底**：任何未捕获异常都写到 task.error_message，
+并把 task 切到 failed 状态，让 DBA 能看到。
+"""</span>
+    <span class="k">try</span>:
+        task = DdlGhostTask.objects.get(pk=task_id)
+    <span class="k">except</span> DdlGhostTask.DoesNotExist:
+        logger.error(<span class="s">"poll_loop: task %s not found"</span>, task_id)
+        <span class="k">return</span>
+
+    log_dir = <span class="n">getattr</span>(settings, <span class="s">"CUSTOM_GH_OST_LOG_DIR"</span>, <span class="s">"/var/log/archery/gh_ost"</span>)
+    log_path = <span class="n">os</span>.path.join(log_dir, <span class="s">f"ghost-{task_id}.log"</span>)
+    <span class="k">try</span>:
+        instance = task.workflow.instance <span class="k">if</span> task.workflow_id <span class="k">else</span> <span class="k">None</span>
+    <span class="k">except</span> <span class="n">Exception</span>:
+        instance = <span class="k">None</span>
+    last_threads_check = <span class="n">0</span>
+
+    <span class="c"># 标记 running</span>
+    <span class="k">if</span> task.status == <span class="s">"queued"</span>:
+        task.status = <span class="s">"running"</span>
+        task.current_stage = <span class="s">"connecting"</span>
+        task.started_at = task.started_at <span class="k">or</span> timezone.now()
+        task.save()
+
+    <span class="k">try</span>:
+        <span class="k">while</span> <span class="k">True</span>:
+            <span class="c"># 进程死了？</span>
+            <span class="k">try</span>:
+                alive = is_alive(task.ghost_pid) <span class="k">if</span> task.ghost_pid <span class="k">else</span> <span class="k">False</span>
+            <span class="k">except</span> <span class="n">Exception</span>:
+                logger.exception(<span class="s">"is_alive failed"</span>)
+                alive = <span class="k">False</span>
+
+            <span class="k">if not</span> alive:
+                <span class="c"># 进程退出，parse log 看 done/failed</span>
+                <span class="k">try</span>:
+                    tail = read_log_tail(log_path, max_bytes=<span class="n">8192</span>)
+                    result = parse_ghost_log(tail)
+                <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+                    logger.exception(<span class="s">"read/parse log failed on dead process"</span>)
+                    _finalize_task(task, <span class="s">"failed"</span>, <span class="s">f"log 读取失败：{exc}"</span>)
+                    <span class="k">break</span>
+                <span class="k">if</span> result.is_failed:
+                    _finalize_task(task, <span class="s">"failed"</span>, result.error_message <span class="k">or</span> <span class="s">"gh-ost 进程异常退出"</span>)
+                <span class="k">elif</span> result.is_done:
+                    _finalize_task(task, <span class="s">"success"</span>, <span class="s">""</span>)
+                <span class="k">else</span>:
+                    _finalize_task(task, <span class="s">"failed"</span>, <span class="s">"gh-ost 进程退出但未标记成功"</span>)
+                <span class="k">break</span>
+
+            <span class="c"># 进程还活着：读 log + 解析</span>
+            <span class="k">try</span>:
+                tail = read_log_tail(log_path, max_bytes=<span class="n">16384</span>)
+                result = parse_ghost_log(tail)
+            <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+                logger.warning(<span class="s">"parse log failed: %s"</span>, exc)
+                time.sleep(POLL_INTERVAL)
+                <span class="k">continue</span>
+
+            <span class="c"># 写 progress 快照</span>
+            <span class="k">try</span>:
+                task.progress_pct = result.pct
+                task.progress_rows_copied = result.rows_copied
+                task.progress_rows_total = result.rows_total
+                task.progress_speed_rows_per_sec = result.speed
+                task.progress_eta_seconds = result.eta_seconds
+                task.progress_message = result.message
+                task.current_stage = result.stage
+                task.last_heartbeat_at = timezone.now()
+                task.save(update_fields=[
+                    <span class="s">"progress_pct"</span>, <span class="s">"progress_rows_copied"</span>, <span class="s">"progress_rows_total"</span>,
+                    <span class="s">"progress_speed_rows_per_sec"</span>, <span class="s">"progress_eta_seconds"</span>,
+                    <span class="s">"progress_message"</span>, <span class="s">"current_stage"</span>, <span class="s">"last_heartbeat_at"</span>,
+                ])
+            <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+                logger.warning(<span class="s">"task.save failed in poll_loop: %s"</span>, exc)
+
+            <span class="c"># 解析到 done / failed 立即结束</span>
+            <span class="k">if</span> result.is_done:
+                _finalize_task(task, <span class="s">"success"</span>, <span class="s">""</span>)
+                <span class="k">break</span>
+            <span class="k">if</span> result.is_failed:
+                _finalize_task(task, <span class="s">"failed"</span>, result.error_message <span class="k">or</span> <span class="s">""</span>)
+                <span class="k">break</span>
+
+            <span class="c"># 暂停阈值（Threads_running 超过 task.max_load_threads_running → SIGSTOP）</span>
+            <span class="k">if</span> instance <span class="k">and</span> time.time() - last_threads_check > THREADS_RUNNING_QUERY_INTERVAL:
+                _maybe_pause_resume(task, instance)
+                last_threads_check = time.time()
+
+            time.sleep(POLL_INTERVAL)
+    <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+        <span class="c"># 任何未捕获异常 — 写 task 错误 + 切 failed</span>
+        logger.exception(<span class="s">"poll_loop uncaught exception"</span>)
+        <span class="k">try</span>:
+            task.error_message = <span class="s">f"poller 异常：{exc}"</span>
+            task.status = <span class="s">"failed"</span>
+            task.finished_at = timezone.now()
+            task.save()
+        <span class="k">except</span> <span class="n">Exception</span>:
+            logger.exception(<span class="s">"task.save failed in fallback"</span>)</pre>
+
+  <h3>7.2 终态化 + 暂停阈值</h3>
+<pre class="code"><span class="k">def</span> _finalize_task(task, new_status: <span class="n">str</span>, error_message: <span class="n">str</span> = <span class="s">""</span>):
+    <span class="s">"""终态收尾：写状态、停止进程、钉钉通知。"""</span>
+    task.status = new_status
+    task.finished_at = timezone.now()
+    <span class="k">if</span> error_message:
+        task.error_message = (task.error_message <span class="k">or</span> <span class="s">""</span>) + <span class="s">"\n"</span> + error_message
+    <span class="k">if</span> task.ghost_pid:
+        <span class="k">try</span>:
+            <span class="n">os</span>.kill(task.ghost_pid, signal.SIGTERM)
+        <span class="k">except</span> (ProcessLookupError, PermissionError):
+            <span class="k">pass</span>
+    task.save()
+    <span class="c"># 钉钉通知（best-effort）</span>
+    <span class="k">try</span>:
+        notify_terminal(task)
+    <span class="k">except</span> <span class="n">Exception</span>:
+        logger.exception(<span class="s">"notify_terminal failed: task=%s"</span>, task.id)
+
+
+<span class="k">def</span> _query_threads_running(instance) -> <span class="n">Optional</span>[<span class="n">int</span>]:
+    <span class="s">"""查 MySQL Threads_running 状态值。"""</span>
+    <span class="k">try</span>:
+        user, password, (host, port) = _get_creds(instance)
+        conn = pymysql.connect(host=host, port=port, user=user, password=password, connect_timeout=<span class="n">5</span>)
+        <span class="k">try</span>:
+            <span class="k">with</span> conn.cursor() <span class="k">as</span> cur:
+                cur.execute(<span class="s">"SHOW GLOBAL STATUS LIKE 'Threads_running'"</span>)
+                row = cur.fetchone()
+                <span class="k">return</span> <span class="n">int</span>(row[<span class="n">1</span>]) <span class="k">if</span> row <span class="k">else</span> <span class="k">None</span>
+        <span class="k">finally</span>:
+            conn.close()
+    <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+        logger.debug(<span class="s">"query Threads_running failed: %s"</span>, exc)
+        <span class="k">return</span> <span class="k">None</span>
+
+
+<span class="k">def</span> _maybe_pause_resume(task, instance):
+    <span class="s">"""根据 Threads_running 决定 SIGSTOP / SIGCONT gh-ost 进程。"""</span>
+    <span class="k">if not</span> task.ghost_pid <span class="k">or not</span> is_alive(task.ghost_pid):
+        <span class="k">return</span>
+    threads = _query_threads_running(instance)
+    <span class="k">if</span> threads <span class="k">is</span> <span class="k">None</span>:
+        <span class="k">return</span>
+    <span class="k">if</span> threads > task.max_load_threads_running:
+        <span class="k">try</span>:
+            <span class="n">os</span>.kill(task.ghost_pid, signal.SIGSTOP)
+        <span class="k">except</span> (ProcessLookupError, PermissionError):
+            <span class="k">pass</span>
+    <span class="k">else</span>:
+        <span class="k">try</span>:
+            <span class="n">os</span>.kill(task.ghost_pid, signal.SIGCONT)
+        <span class="k">except</span> (ProcessLookupError, PermissionError):
+            <span class="k">pass</span></pre>
+
+  <div class="callout danger">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+    <p><strong>外层 try/except 兜底是必须的</strong>：daemon thread 任何未捕获异常会静默死掉，DBA 看不到。poller 失败要把 <code>task.error_message</code> 写好 + 切 <code>failed</code>。</p>
+  </div>
+
+  <!-- 08 -->
+  <h2 id="notify"><span class="h2-num">08</span>notify：钉钉群终态通知</h2>
+<pre class="code"><span class="c"># services/notify.py</span>
+<span class="k">import</span> requests
+<span class="k">from</span> django.conf <span class="k">import</span> settings
+
+<span class="k">def</span> notify_terminal(task) -> <span class="k">None</span>:
+    <span class="s">"""任务终态时发钉钉群通知（best-effort）。
+
+触发:
+    - 终态：success / failed / cancelled / rolled_back
+    - 灰度开关 DINGTALK_NOTIFY_WEBHOOK 非空
+    - best-effort：失败不抛错，只 logger.warning
+"""</span>
+    webhook = <span class="n">getattr</span>(settings, <span class="s">"DINGTALK_NOTIFY_WEBHOOK"</span>, <span class="s">""</span>)
+    <span class="k">if not</span> webhook:
+        logger.debug(<span class="s">"DINGTALK_NOTIFY_WEBHOOK 未配置，skip 钉钉通知"</span>)
+        <span class="k">return</span>
+
+    status_emoji = {
+        <span class="s">"success"</span>: <span class="s">"✅"</span>, <span class="s">"failed"</span>: <span class="s">"❌"</span>,
+        <span class="s">"cancelled"</span>: <span class="s">"⏹"</span>, <span class="s">"rolled_back"</span>: <span class="s">"↩️"</span>,
+    }.get(task.status, <span class="s">"❓"</span>)
+
+    duration = task.duration_seconds
+    <span class="k">if</span> task.workflow_id:
+        workflow_name = task.workflow.workflow_name
+        url = <span class="s">f"/gh_ost/progress/{task.workflow_id}/"</span>
+    <span class="k">else</span>:
+        workflow_name = task.target_table <span class="k">or</span> <span class="s">f"{task.db_name}.{task.table_name}"</span>
+        url = <span class="s">""</span>
+
+    msg = <span class="s">f"""## gh-ost 任务 {status_emoji} {task.get_status_display()}
+
+- 工单/目标: {workflow_name}
+- 实例: {task.workflow.instance.instance_name <span class="k">if</span> task.workflow_id <span class="k">else</span> <span class="s">""</span>}
+- 库: {task.db_name}
+- 发起人: {task.created_by}
+- 耗时: {duration}s"""</span>
+    <span class="k">if</span> task.error_message:
+        msg += <span class="s">f"\n- 错误: {task.error_message[:500]}"</span>
+
+    <span class="k">if</span> url:
+        msg += <span class="s">f"\n[查看进度]({url})"</span>
+
+    payload = {<span class="s">"msgtype"</span>: <span class="s">"markdown"</span>, <span class="s">"markdown"</span>: {<span class="s">"title"</span>: <span class="s">"gh-ost 任务完成"</span>, <span class="s">"text"</span>: msg}}
+    <span class="k">try</span>:
+        requests.post(webhook, json=payload, timeout=<span class="n">5</span>)
+    <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+        logger.warning(<span class="s">"dingtalk notify failed: %s"</span>, exc)</pre>
+
+  <!-- 09 -->
+  <h2 id="views"><span class="h2-num">09</span>视图：8 端点</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>URL</th><th>方法</th><th>视图</th><th>作用</th><th>写 task</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">/gh_ost/precheck/&lt;id&gt;/</td><td>POST</td><td>precheck</td><td>跑预检（仅展示）</td><td>否</td></tr>
+        <tr><td class="mono">/gh_ost/enable/&lt;id&gt;/</td><td>POST</td><td>enable</td><td>预检 + 写 task（status=queued）</td><td>✓</td></tr>
+        <tr><td class="mono">/gh_ost/start/&lt;id&gt;/</td><td>POST</td><td>start</td><td>启 gh-ost 进程 + 写 PID + 启 poller</td><td>✓</td></tr>
+        <tr><td class="mono">/gh_ost/cancel/&lt;id&gt;/</td><td>POST</td><td>cancel</td><td>SIGTERM gh-ost + 钉钉</td><td>✓</td></tr>
+        <tr><td class="mono">/gh_ost/retry/&lt;id&gt;/</td><td>POST</td><td>retry</td><td>重试（仅 failed/cancelled）</td><td>✓</td></tr>
+        <tr><td class="mono">/gh_ost/rollback/&lt;id&gt;/</td><td>POST</td><td>rollback</td><td>DBA 手动 drop 影子表 + 标 rolled_back</td><td>✓</td></tr>
+        <tr><td class="mono">/gh_ost/status/&lt;id&gt;/</td><td>GET</td><td>status</td><td>JSON 进度查询（前端 polling）</td><td>否</td></tr>
+        <tr><td class="mono">/gh_ost/progress/&lt;id&gt;/</td><td>GET</td><td>progress_page</td><td>渲染 progress.html 面板</td><td>否</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>9.1 enable 端点（核心）</h3>
+<pre class="code"><span class="c"># views.py</span>
+<span class="k">@login_required</span>
+<span class="k">@require_POST</span>
+<span class="k">def</span> enable(request: <span class="n">HttpRequest</span>, workflow_id: <span class="n">int</span>) -> JsonResponse:
+    <span class="s">"""启用 gh-ost：预检通过后写 DdlGhostTask（status=queued）。"""</span>
+    workflow = get_object_or_404(SqlWorkflow, pk=workflow_id)
+
+    parsed = _parse_first_alter(_workflow_sql_text(workflow))
+    <span class="k">if not</span> parsed:
+        <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">False</span>, <span class="s">"error"</span>: <span class="s">"未找到 ALTER TABLE 语句"</span>}, status=<span class="n">400</span>)
+
+    db_name = parsed[<span class="s">"db"</span>] <span class="k">or</span> workflow.db_name
+    table_name = parsed[<span class="s">"table"</span>]
+
+    <span class="c"># 已经存在 task？</span>
+    existing = DdlGhostTask.objects.<span class="n">filter</span>(workflow=workflow).first()
+    <span class="k">if</span> existing <span class="k">and</span> existing.status <span class="k">in</span> (<span class="s">"running"</span>, <span class="s">"cut_over"</span>, <span class="s">"queued"</span>):
+        <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">False</span>, <span class="s">"error"</span>: <span class="s">f"task 已在执行中（status={existing.status}）"</span>}, status=<span class="n">409</span>)
+
+    instance = workflow.instance
+    report = run_all_prechecks(workflow=workflow, instance=instance, db_name=db_name, table_name=table_name, alter_sql=parsed[<span class="s">"full"</span>])
+
+    <span class="k">if not</span> report[<span class="s">"passed"</span>]:
+        <span class="c"># 仍然写一条 task 记录（precheck_failed），便于审计</span>
+        task = _upsert_task(workflow, parsed, db_name, table_name, passed=<span class="k">False</span>, report=report, created_by=request.user.username)
+        <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">False</span>, <span class="s">"passed"</span>: <span class="k">False</span>, <span class="s">"summary"</span>: report[<span class="s">"summary"</span>], <span class="s">"checks"</span>: report[<span class="s">"checks"</span>], <span class="s">"task_id"</span>: task.id}, status=<span class="n">422</span>)
+
+    <span class="c"># 预检通过 → 写 task（status=queued）</span>
+    task = _upsert_task(workflow, parsed, db_name, table_name, passed=<span class="k">True</span>, report=report, created_by=request.user.username)
+    <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">True</span>, <span class="s">"passed"</span>: <span class="k">True</span>, <span class="s">"summary"</span>: report[<span class="s">"summary"</span>], <span class="s">"task_id"</span>: task.id, <span class="s">"status"</span>: task.status})</pre>
+
+  <h3>9.2 start 端点（启 gh-ost）</h3>
+<pre class="code"><span class="c"># views.py</span>
+<span class="k">@login_required</span>
+<span class="k">@require_POST</span>
+<span class="k">def</span> start(request: <span class="n">HttpRequest</span>, workflow_id: <span class="n">int</span>) -> JsonResponse:
+    <span class="s">"""启 gh-ost 子进程 + 启动后台 poller。
+
+流程:
+    1. 拿 task，状态校验
+    2. runner.start_ghost_process Popen gh-ost
+    3. 写 PID + started_at
+    4. 启动 poller.start_poller daemon thread（3s 轮询）
+"""</span>
+    task = get_object_or_404(DdlGhostTask, workflow_id=workflow_id)
+    <span class="k">if</span> task.status != <span class="s">"queued"</span>:
+        <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">False</span>, <span class="s">"error"</span>: <span class="s">f"当前状态 {task.status}，不能启动（需 queued）"</span>}, status=<span class="n">409</span>)
+    <span class="k">if not</span> task.precheck_passed:
+        <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">False</span>, <span class="s">"error"</span>: <span class="s">"预检未通过，不能启动"</span>}, status=<span class="n">409</span>)
+
+    instance = task.workflow.instance <span class="k">if</span> task.workflow_id <span class="k">else</span> <span class="k">None</span>
+    <span class="k">if</span> instance <span class="k">is</span> <span class="k">None</span>:
+        <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">False</span>, <span class="s">"error"</span>: <span class="s">"工单没有关联实例"</span>}, status=<span class="n">400</span>)
+
+    <span class="k">try</span>:
+        pid = start_ghost_process(task, instance=instance)
+    <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+        logger.exception(<span class="s">"start_ghost_process failed: task=%s"</span>, task.id)
+        task.status = <span class="s">"failed"</span>
+        task.error_message = <span class="s">f"启动 gh-ost 失败：{exc}"</span>
+        task.finished_at = timezone.now()
+        task.save()
+        <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">False</span>, <span class="s">"error"</span>: <span class="s">f"启动 gh-ost 失败：{exc}"</span>}, status=<span class="n">500</span>)
+
+    task.ghost_pid = pid
+    task.status = <span class="s">"running"</span>
+    task.started_at = timezone.now()
+    task.current_stage = <span class="s">"connecting"</span>
+    task.progress_pct = <span class="n">0</span>
+    task.progress_message = <span class="s">"gh-ost 已启动，等待连接"</span>
+    task.last_heartbeat_at = timezone.now()
+    task.save()
+
+    <span class="k">try</span>:
+        start_poller(task.id)
+    <span class="k">except</span> <span class="n">Exception</span>:
+        logger.exception(<span class="s">"start_poller failed for task %s"</span>, task.id)
+        task.error_message = <span class="s">"poller 启失败 — gh-ost 在跑但没人在轮询，请 DBA 介入"</span>
+        task.save()
+
+    <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">True</span>, <span class="s">"status"</span>: task.status, <span class="s">"task_id"</span>: task.id, <span class="s">"pid"</span>: pid})</pre>
+
+  <h3>9.3 rollback 端点（DBA 手动 drop 影子表）</h3>
+<pre class="code"><span class="c"># views.py</span>
+<span class="k">@login_required</span>
+<span class="k">@require_POST</span>
+<span class="k">def</span> rollback(request: <span class="n">HttpRequest</span>, workflow_id: <span class="n">int</span>) -> JsonResponse:
+    <span class="s">"""DBA 手动回滚：drop 影子表 + 标 rolled_back。
+
+注意：cut-over 成功后影子表 _<table>_gho 已 drop，rollback 仅能标 rolled_back。
+cut-over 失败/cancelled 状态可 drop _gho/_del 残留。
+"""</span>
+    task = DdlGhostTask.objects.<span class="n">filter</span>(workflow_id=workflow_id).first()
+    <span class="k">if not</span> task:
+        <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">False</span>, <span class="s">"error"</span>: <span class="s">"task 不存在"</span>}, status=<span class="n">404</span>)
+    <span class="k">if</span> task.status <span class="k">not in</span> (<span class="s">"success"</span>, <span class="s">"failed"</span>, <span class="s">"cancelled"</span>):
+        <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">False</span>, <span class="s">"error"</span>: <span class="s">f"当前状态 {task.status}，只能在终态后回滚"</span>}, status=<span class="n">409</span>)
+
+    instance = task.workflow.instance
+    dropped = []
+    errors = []
+    <span class="k">if</span> instance:
+        <span class="k">try</span>:
+            user, password, (host, port) = _get_creds(instance)
+            conn = pymysql.connect(host=host, port=port, user=user, password=password, database=task.db_name, connect_timeout=<span class="n">5</span>, autocommit=<span class="k">True</span>)
+            <span class="k">try</span>:
+                <span class="k">with</span> conn.cursor() <span class="k">as</span> cur:
+                    <span class="k">for</span> tbl <span class="k">in</span> [task.ghost_table_name, <span class="s">f"_{task.table_name}_del"</span>]:
+                        <span class="k">if</span> tbl:
+                            <span class="k">try</span>:
+                                cur.execute(<span class="s">f"DROP TABLE IF EXISTS `{task.db_name}`.`{tbl}`"</span>)
+                                dropped.append(tbl)
+                            <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+                                errors.append(<span class="s">f"{tbl}: {exc}"</span>)
+            <span class="k">finally</span>:
+                conn.close()
+        <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+            errors.append(<span class="s">f"connect: {exc}"</span>)
+
+    task.status = <span class="s">"rolled_back"</span>
+    task.finished_at = timezone.now()
+    task.error_message = (task.error_message <span class="k">or</span> <span class="s">""</span>) + <span class="s">f"\n[rollback] dropped={dropped} errors={errors}"</span>
+    task.save()
+    <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">True</span>, <span class="s">"status"</span>: task.status, <span class="s">"dropped"</span>: dropped, <span class="s">"errors"</span>: errors})</pre>
+
+  <h3>9.4 status 端点（polling）</h3>
+<pre class="code"><span class="c"># views.py</span>
+<span class="k">@login_required</span>
+<span class="k">@require_GET</span>
+<span class="k">def</span> status(request: <span class="n">HttpRequest</span>, workflow_id: <span class="n">int</span>) -> JsonResponse:
+    <span class="s">"""进度查询（前端 polling 3s 一次）。"""</span>
+    task = DdlGhostTask.objects.<span class="n">filter</span>(workflow_id=workflow_id).first()
+    <span class="k">if not</span> task:
+        <span class="k">return</span> JsonResponse({<span class="s">"ok"</span>: <span class="k">False</span>, <span class="s">"error"</span>: <span class="s">"task 不存在"</span>}, status=<span class="n">404
