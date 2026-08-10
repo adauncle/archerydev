@@ -228,11 +228,68 @@ def main():
     # Case 2: cancel → workflow_review_pass (不变)
     wf2, task2 = run_case_2(u.username, client)
 
+    # Case 3: zombie socket 自动清理 (模拟历史 cut-over 残留)
+    wf3, task3 = run_case_3_zombie_socket(u.username, client)
+
     print("\n" + "=" * 60)
     print("[drill] 全部 Case 通过 ✅")
-    print(f"  Case 1 (success→finish):  wf#{wf1} task#{task1}")
-    print(f"  Case 2 (cancel→不动 wf): wf#{wf2} task#{task2}")
+    print(f"  Case 1 (success→finish):         wf#{wf1} task#{task1}")
+    print(f"  Case 2 (cancel→不动 wf):        wf#{wf2} task#{task2}")
+    print(f"  Case 3 (zombie socket 自动清理): wf#{wf3} task#{task3}")
     print("=" * 60)
+
+
+def run_case_3_zombie_socket(engineer, client):
+    """Case 3: zombie socket 自动清理。
+
+    模拟: 上次 cut-over 成功后 gh-ost 进程死了, 但 socket 文件没清。
+    验证: start_ghost_process 启动前探测 sock 路径, 存在 + 进程死 → 自动 unlink, 启动成功
+    """
+    print("\n" + "=" * 60)
+    print("Case 3: zombie socket 自动清理")
+    print("=" * 60)
+
+    # 准备: 制造一个 zombie socket (无对应进程, 模拟历史残留)
+    sock_path = f"/tmp/gh-ost.{TEST_DB}.{TEST_TABLE}.sock"
+    if os.path.exists(sock_path):
+        os.unlink(sock_path)
+    import socket as _socket
+    s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    s.bind(sock_path)
+    s.listen(1)
+    s.close()  # listen fd 仍占路径, 模拟 zombie
+    print(f"[case3] 制造 zombie socket: {sock_path} (无对应进程)")
+
+    # 走完整流程: precheck + enable + start
+    sql = f"ALTER TABLE {TEST_TABLE} COMMENT 'drill-v030b-case3'"
+    wf = make_workflow(engineer, sql)
+
+    r = client.post(f"/gh_ost/precheck/{wf.id}/")
+    assert r.json().get("ok") and r.json().get("passed"), f"precheck fail: {r.json()}"
+    r = client.post(f"/gh_ost/enable/{wf.id}/")
+    j = r.json()
+    assert j.get("ok") and j.get("passed"), f"enable fail: {j}"
+    task_id = j["task_id"]
+    print(f"[case3] enable: task_id={task_id}")
+
+    # 关键: start 应该不报"端口被占" (因为 zombie 无进程 → 自动 unlink)
+    r = client.post(f"/gh_ost/start/{wf.id}/")
+    j = r.json()
+    print(f"[case3] start: ok={j.get('ok')} pid={j.get('pid')} error={j.get('error', '')}")
+    assert j.get("ok"), f"start fail (zombie 没清): {j}"
+
+    # 等 cut-over
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        task = DdlGhostTask.objects.get(pk=task_id)
+        if task.is_terminal:
+            break
+        time.sleep(2)
+    task = DdlGhostTask.objects.get(pk=task_id)
+    print(f"[case3] task#{task_id} final: status={task.status} dur={task.duration_seconds}s")
+    assert task.status == "success", f"task 没 success: {task.status}"
+
+    return wf.id, task_id
 
 
 if __name__ == "__main__":

@@ -1,11 +1,12 @@
 """
-v0.3.0-beta 状态机修复打包脚本
-============================
+v0.3.0-beta 状态机修复 + zombie socket 自动清理 打包脚本
+====================================================
 打包范围:
-  - sql/extensions/ddl_gh_ost/services/poller.py    (_sync_workflow_status 新增)
+  - sql/extensions/ddl_gh_ost/services/poller.py    (_sync_workflow_status + 终态删 sock)
+  - sql/extensions/ddl_gh_ost/services/runner.py    (start_ghost_process 启动前清 zombie sock)
   - sql/views.py                                    (has_ghost_task / ghost_task_is_terminal)
   - sql/templates/detail.html                       (active vs terminal UI 分支)
-  - docs/changelogs/2026-08-10_gh-ost-v030-beta-state-sync.md (写完后回填)
+  - docs/changelogs/2026-08-10_gh-ost-v030-beta-state-sync.md
 
 打包到 dist/v0.3.0-beta-state-sync_<时间戳>.tar.gz
 显式 arcname = "v0_3_0_beta_state_sync/<相对路径>"，保证解压到子目录。
@@ -25,6 +26,7 @@ DIST.mkdir(parents=True, exist_ok=True)
 # 要打包的文件 (相对 ROOT)
 FILES = [
     "sql/extensions/ddl_gh_ost/services/poller.py",
+    "sql/extensions/ddl_gh_ost/services/runner.py",
     "sql/views.py",
     "sql/templates/detail.html",
     "docs/changelogs/2026-08-10_gh-ost-v030-beta-state-sync.md",

@@ -135,6 +135,40 @@ def _make_rebuild_alter(task) -> str:
     return f"COMMENT 'archery-auto-rebuild-{today}'"
 
 
+def _cleanup_stale_socket(sock_path: str, task_id: int = None) -> None:
+    """CUSTOM: 启动 gh-ost 前清 zombie socket (CUSTOM-MODIFIED: v0.3.0-beta @ 2026-08-10 @ mavis)。
+
+    探测 sock 路径:
+      - 不存在 → 无事可做
+      - 存在 + 进程死了 (无法连上) → unlink 掉
+      - 存在 + 进程活着 → 抛 RuntimeError (拒绝启动, 防双跑)
+    """
+    if not os.path.exists(sock_path):
+        return
+    # 探测: 尝试 connect 一次, 失败说明僵尸 socket
+    import socket as _socket
+    is_alive = False
+    try:
+        s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        s.settimeout(1.0)
+        s.connect(sock_path)
+        s.close()
+        is_alive = True
+    except (ConnectionRefusedError, FileNotFoundError, OSError):
+        is_alive = False
+    if is_alive:
+        # 端口被占, 拒绝启动
+        raise RuntimeError(
+            f"gh-ost socket 端口被占 ({sock_path}) — 可能有同表任务在跑, "
+            f"或上次启动的 gh-ost 进程仍在。先检查并清理再重试。task_id={task_id}"
+        )
+    try:
+        os.unlink(sock_path)
+        logger.warning("清理 zombie gh-ost socket: %s (task_id=%s)", sock_path, task_id)
+    except OSError as exc:
+        logger.warning("清理 zombie gh-ost socket 失败 %s: %s", sock_path, exc)
+
+
 def start_ghost_process(task, instance=None) -> int:
     """启动 gh-ost 子进程（Popen + nohup）。
 
@@ -144,17 +178,31 @@ def start_ghost_process(task, instance=None) -> int:
     内部走 ghost 分支取 task.alter_statement，rebuild 任务 alter_statement 为空
     → alter_arg = "ALTER TABLE "（空表名）→ gh-ost 报 SQL syntax error 1064
 
+    ## CUSTOM-MODIFIED: v0.3.0-beta 启动前自动清 zombie socket @ 2026-08-10 @ mavis
+    bug 背景: 上次 cut-over 成功后 gh-ost 子进程被 SIGTERM 但 socket 文件残留，
+    新启动 gh-ost 撞同路径 socket → FATAL bind: address already in use。
+    修法: 启动前探测 socket 路径 (默认 /tmp/gh-ost.<db>.<table>.sock),
+          如果存在 + 对应进程死了 → unlink；存在 + 进程活着 → 报错拒绝启动 (防双跑)
+    关联设计: docs/designs/2026-08-10_gh-ost-detail-design.html §7.4
+
     Returns:
         gh-ost PID（成功）
 
     Raises:
-        RuntimeError 启失败
+        RuntimeError 启失败 (含 zombie socket 端口被占)
     """
     log_dir = _ensure_log_dir()
     log_path = os.path.join(log_dir, f"ghost-{task.id}.log")
 
     rebuild_mode = (getattr(task, "task_type", None) == "rebuild")
     cmd = build_ghost_command(task, instance, rebuild_mode=rebuild_mode)
+
+    # ===== 1) 自动清 zombie socket =====
+    db_name = getattr(task, "db_name", None) or (instance.db_name if instance else None)
+    table_name = getattr(task, "table_name", None)
+    if db_name and table_name:
+        sock_path = f"/tmp/gh-ost.{db_name}.{table_name}.sock"
+        _cleanup_stale_socket(sock_path, task_id=task.id)
 
     logger.info("gh-ost start: task_id=%s cmd=%s", task.id, " ".join(shlex.quote(c) for c in cmd))
 

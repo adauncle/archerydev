@@ -152,8 +152,9 @@ can_enable_ghost = (perms) and wf.status ok and not has_ghost_task  # 已有 tas
 
 | 文件 | 变更 |
 |------|------|
-| `sql/extensions/ddl_gh_ost/services/poller.py` | `_finalize_task` 加 `_sync_workflow_status` 调用 + 映射表 + 函数实现 |
-| `sql/views.py` | `has_ghost_task` 改为"有 task 就 True" + 新增 `ghost_task_is_terminal` context |
+| `sql/extensions/ddl_gh_ost/services/poller.py` | `_finalize_task` 加 `_sync_workflow_status` 调用 + 映射表 + 函数实现；终态 SIGTERM 后 SIGKILL 兜底 + 主动删 zombie socket |
+| `sql/extensions/ddl_gh_ost/services/runner.py` | `start_ghost_process` 启动前调 `_cleanup_stale_socket` 自动清 zombie socket（存在 + 进程死 → unlink；存在 + 进程活 → 抛错拒绝启动防双跑）|
+| `sql/views.py` | `has_ghost_task` 改为"有 task 就 True" + 新增 `ghost_task_is_terminal` context + gh-ost 变量初始化前移修 UnboundLocalError |
 | `sql/templates/detail.html` | 终态 vs active 两种 UI 分支 + 终态摘要表 |
 | `scripts/pack_v030b_state_sync.py` | 打包脚本（dist/ 输出） |
 
@@ -168,5 +169,17 @@ can_enable_ghost = (perms) and wf.status ok and not has_ghost_task  # 已有 tas
 
 ## 关联设计
 
-- `docs/designs/2026-08-10_gh-ost-detail-design.html` §7.3 状态机
+- `docs/designs/2026-08-10_gh-ost-detail-design.html` §7.3 状态机 §7.4 zombie socket 清理
 - `docs/designs/2026-08-05_gh-ost-product-design.html` §启用 gh-ost
+
+## 后续修复：zombie socket 自动清理（端到端验证发现）
+
+- **症状**: 8/10 晚 20:15 用户浏览器触发的 task#42 启动 3s 失败，log 末尾 `FATAL listen unix /tmp/gh-ost.archery_dev.accesscard_black_detail.sock: bind: address already in use` —— 8/10 20:11 上次 cut-over 成功留下的 zombie socket
+- **根因**:
+  1. `start_ghost_process` 不清理历史 socket，新启动直接撞端口
+  2. `poller._finalize_task` SIGTERM 后没等进程真死，没删 socket —— gh-ost 自己清不干净时
+- **修法（双层防御）**:
+  1. **`runner.py` 启动前清**: `_cleanup_stale_socket` 探测 sock 路径，存在 + 进程死 → unlink；存在 + 进程活 → 抛 `RuntimeError` 拒绝启动（防双跑）
+  2. **`poller.py` 终态清**: `_finalize_task` SIGTERM 后探测 2s，进程不死 SIGKILL 兜底；然后主动 unlink sock 路径
+- **效果**: 即使前一次 cut-over 异常退出 (断电 / kill -9 / 异常路径)，下次启动自动清理，不会再因为 zombie 端口失败
+- **commit**: 跟主修复同一提交 (`04ae0aa` 之前的准备 → 这次 push 提交单独)

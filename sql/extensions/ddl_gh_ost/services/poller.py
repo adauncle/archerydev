@@ -103,10 +103,34 @@ def _finalize_task(task, new_status: str, error_message: str = ""):
     if error_message:
         task.error_message = (task.error_message or "") + "\n" + error_message
     if task.ghost_pid:
+        # CUSTOM: SIGTERM 后 2s 兜底 SIGKILL, 避免 zombie 进程占 socket
         try:
             os.kill(task.ghost_pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             pass
+        # 给 gh-ost 2s 优雅退出, 然后强杀
+        import time as _time
+        for _ in range(20):
+            try:
+                os.kill(task.ghost_pid, 0)  # 不发信号, 仅探测
+            except ProcessLookupError:
+                break  # 已经死了
+            except PermissionError:
+                break
+            _time.sleep(0.1)  # 还活着, 等
+        try:
+            os.kill(task.ghost_pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        # 主动删 zombie socket (gh-ost 自己清不干净时, 下次启动会撞)
+        if task.db_name and task.table_name:
+            sock_path = f"/tmp/gh-ost.{task.db_name}.{task.table_name}.sock"
+            try:
+                if os.path.exists(sock_path):
+                    os.unlink(sock_path)
+                    logger.info("poller 终态删 zombie socket: %s (task_id=%s)", sock_path, task.id)
+            except OSError as exc:
+                logger.warning("poller 删 zombie socket 失败 %s: %s", sock_path, exc)
     task.save()
 
     # CUSTOM: 同步工单状态 (仅对挂载到 SqlWorkflow 的 task 生效；rebuild 无关联)
