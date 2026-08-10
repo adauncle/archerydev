@@ -222,10 +222,15 @@ def submit_sql(request):
         tag_code="can_write", defaults={"tag_name": "支持上线", "active": True}
     )
 
+    ## CUSTOM-MODIFIED: v0.3.0-beta 提交页 "启用 gh-ost" 勾选联动 —— 模板用 enable_ghost
+    ## @ 2026-08-10 @ mavis
+    enable_ghost = bool(getattr(settings, "CUSTOM_GH_OST_ENABLED", False))
+
     context = {
         "group_list": group_list,
         "enable_backup_switch": archer_config.get("enable_backup_switch"),
         "engines": engine_map,
+        "enable_ghost": enable_ghost,
     }
     return render(request, "sqlsubmit.html", context)
 

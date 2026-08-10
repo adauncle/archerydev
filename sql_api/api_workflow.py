@@ -4,6 +4,7 @@ import traceback
 
 from django.contrib.auth.decorators import permission_required
 from django.contrib.auth.models import Group
+from django.conf import settings
 from django.db import transaction
 from django.utils.decorators import method_decorator
 from django_q.tasks import async_task
@@ -159,6 +160,22 @@ class WorkflowList(generics.ListAPIView):
                 timeout=60,
                 task_name=f"sqlreview-submit-{workflow_content.workflow.id}",
             )
+        ## CUSTOM-MODIFIED: v0.3.0-beta 提交页"启用 gh-ost"勾选联动
+        ## 提交时如果 enable_ghost=True 且 CUSTOM_GH_OST_ENABLED=True，自动调 enable 逻辑写 DdlGhostTask
+        ## @ 2026-08-10 @ mavis
+        if request.data.get("enable_ghost") and getattr(settings, "CUSTOM_GH_OST_ENABLED", False):
+            try:
+                from sql.extensions.ddl_gh_ost.views import _enable_ghost_for_workflow
+                ghost_result = _enable_ghost_for_workflow(
+                    workflow_content.workflow,
+                    created_by=request.user.username,
+                )
+            except Exception as exc:  # noqa: BLE001
+                ghost_result = {"ok": False, "error": f"启用 gh-ost 异常: {exc}"}
+            # 不阻塞主流程，把结果塞进 response data 让前端展示
+            serializer_data = dict(serializer.data) if isinstance(serializer.data, dict) else {}
+            serializer_data["enable_ghost"] = ghost_result
+            return Response(serializer_data, status=status.HTTP_201_CREATED)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 

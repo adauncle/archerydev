@@ -156,10 +156,28 @@ def precheck(request: HttpRequest, workflow_id: int) -> JsonResponse:
 def enable(request: HttpRequest, workflow_id: int) -> JsonResponse:
     """启用 gh-ost：预检通过后写 DdlGhostTask（alpha 不启进程）。"""
     workflow = get_object_or_404(SqlWorkflow, pk=workflow_id)
+    result = _enable_ghost_for_workflow(workflow, created_by=request.user.username)
+    status_code = 200 if result["ok"] else (
+        400 if "error" in result else 422
+    )
+    return JsonResponse(result, status=status_code)
 
+
+## CUSTOM-MODIFIED: v0.3.0-beta 提交页集成 —— 抽 helper 函数让 WorkflowSubmit.post 复用
+## 核心逻辑：parse + precheck + 写 DdlGhostTask。返回 dict 给上层自行序列化。
+## @ 2026-08-10 @ mavis
+def _enable_ghost_for_workflow(workflow: SqlWorkflow, created_by: str) -> dict:
+    """对工单启用 gh-ost：parse + precheck + 写 DdlGhostTask。
+
+    Returns:
+        {"ok": True,  "passed": True,  "summary": ..., "task_id": ..., "status": "queued"}
+        {"ok": False, "passed": False, "summary": ..., "checks": [...], "task_id": ...} (precheck 未过)
+        {"ok": False, "error": "未找到 ALTER TABLE 语句"}
+        {"ok": False, "error": "task 已在执行中（status=...），不能重复启用"}
+    """
     parsed = _parse_first_alter(_workflow_sql_text(workflow))
     if not parsed:
-        return JsonResponse({"ok": False, "error": "未找到 ALTER TABLE 语句"}, status=400)
+        return {"ok": False, "error": "未找到 ALTER TABLE 语句"}
 
     db_name = parsed["db"] or workflow.db_name
     table_name = parsed["table"]
@@ -167,10 +185,10 @@ def enable(request: HttpRequest, workflow_id: int) -> JsonResponse:
     # 已经存在 task？
     existing = DdlGhostTask.objects.filter(workflow=workflow).first()
     if existing and existing.status in ("running", "cut_over", "queued"):
-        return JsonResponse({
+        return {
             "ok": False,
             "error": f"task 已在执行中（status={existing.status}），不能重复启用",
-        }, status=409)
+        }
 
     instance = workflow.instance
     report = run_all_prechecks(
@@ -184,28 +202,28 @@ def enable(request: HttpRequest, workflow_id: int) -> JsonResponse:
         # 仍然写一条 task 记录（precheck_failed），便于审计
         task = _upsert_task(
             workflow, parsed, db_name, table_name,
-            passed=False, report=report, created_by=request.user.username,
+            passed=False, report=report, created_by=created_by,
         )
-        return JsonResponse({
+        return {
             "ok": False,
             "passed": False,
             "summary": report["summary"],
             "checks": report["checks"],
             "task_id": task.id,
-        }, status=422)
+        }
 
     # 预检通过 → 写 task（status=queued，alpha 阶段不进 running）
     task = _upsert_task(
         workflow, parsed, db_name, table_name,
-        passed=True, report=report, created_by=request.user.username,
+        passed=True, report=report, created_by=created_by,
     )
-    return JsonResponse({
+    return {
         "ok": True,
         "passed": True,
         "summary": report["summary"],
         "task_id": task.id,
         "status": task.status,
-    })
+    }
 
 
 def _upsert_task(workflow, parsed, db_name, table_name,

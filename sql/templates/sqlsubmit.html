@@ -82,6 +82,23 @@
                                     </select>
                                 </div>
                             {% endif %}
+                            <!-- CUSTOM-MODIFIED: v0.3.0-beta 提交页"启用 gh-ost"勾选 —— 提交时自动 enable
+                                 关联设计: docs/designs/2026-08-05_gh-ost-product-design.html §启用 gh-ost
+                                 默认不勾（小表不需要），仅 ALTER TABLE 启用
+                                 @ 2026-08-10 @ mavis -->
+                            {% if enable_ghost %}
+                            <div id="div-enable-ghost" class="form-group" style="display: flex; align-items: center; gap: 8px; padding: 8px; background: #ecf5ff; border: 1px solid #b3d8ff; border-radius: 4px;">
+                                <label style="margin: 0; cursor: pointer; flex: 1;">
+                                    <input type="checkbox" id="enable_ghost" name="enable_ghost" value="true"
+                                           style="margin-right: 4px; vertical-align: middle;">
+                                    <i class="fa fa-rocket" style="color: #409EFF;"></i>
+                                    <strong>启用 gh-ost 无锁变更</strong>
+                                    <span style="color: #909399; font-size: 12px;">
+                                        · 大表 ALTER TABLE 不锁表，提交后自动跑 5 道预检
+                                    </span>
+                                </label>
+                            </div>
+                            {% endif %}
                             <!--可执行范围时间-->
                             <div class='form-group'>
                                 <input type="hidden" id="run_date_start" name="run_date_start">
@@ -671,7 +688,10 @@
                             run_date_end: formData.run_date_end,
                             is_offline_export: 0,
                         },
-                        sql_content: formData.sql_content
+                        sql_content: formData.sql_content,
+                        // CUSTOM-MODIFIED: v0.3.0-beta 提交页"启用 gh-ost"勾选联动
+                        // @ 2026-08-10 @ mavis
+                        enable_ghost: $("#enable_ghost").is(':checked') || false,
                     }
                 ),
                 beforeSend: function (xhr) {
@@ -681,6 +701,9 @@
                     $('#btn-submitsql').button('reset')
                 },
                 success: function (data) {
+                    // CUSTOM-MODIFIED: v0.3.0-beta 提交后跳详情页，详情页 has_ghost_task 自动渲染进度面板
+                    // 如果 enable_ghost 勾了 + 预检通过 -> 直接看到进度面板 iframe
+                    // @ 2026-08-10 @ mavis
                     window.location.href = "/detail/"+ data.workflow_id
                 },
                 error: function (XMLHttpRequest, textStatus, errorThrown) {
