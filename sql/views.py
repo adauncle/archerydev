@@ -296,6 +296,31 @@ def detail(request, workflow_id):
     # 获取是否开启手工执行确认
     manual = SysConfig().get("manual")
 
+    ## CUSTOM-MODIFIED: v0.3.0-beta 接前端 UI —— 详情页展示 gh-ost 启用按钮 / 进度面板
+    ## @ 2026-08-10 @ mavis
+    # 关联设计: docs/designs/2026-08-05_gh-ost-product-design.html §启用 gh-ost
+    has_ghost_task = False
+    can_enable_ghost = False
+    ghost_task = None
+    if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):
+        from sql.extensions.ddl_gh_ost.models import DdlGhostTask
+        try:
+            ghost_task = DdlGhostTask.objects.get(workflow=workflow_detail)
+            if not ghost_task.is_terminal:
+                has_ghost_task = True
+        except DdlGhostTask.DoesNotExist:
+            ghost_task = None
+        # 启用条件: superuser / DBA 组 / 工单 submitter
+        from django.contrib.auth.models import Group
+        user = request.user
+        is_submitter = (user.username == workflow_detail.engineer)
+        is_dba_group = user.groups.filter(name__in=["DBA", "DBA组长"]).exists()
+        can_enable_ghost = (
+            (user.is_superuser or is_dba_group or is_submitter)
+            and workflow_detail.status in ("workflow_manreviewing", "workflow_review_pass", "workflow_timingtask")
+            and not has_ghost_task
+        )
+
     context = {
         "workflow_detail": workflow_detail,
         "current_reviewers": current_reviewers,
@@ -308,6 +333,9 @@ def detail(request, workflow_id):
         "review_info": review_info,
         "manual": manual,
         "run_date": run_date,
+        "has_ghost_task": has_ghost_task,
+        "can_enable_ghost": can_enable_ghost,
+        "ghost_task": ghost_task,
     }
     return render(request, "detail.html", context)
 

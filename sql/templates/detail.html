@@ -118,6 +118,107 @@
     </table>
     <br>
 
+    <!-- CUSTOM-MODIFIED: v0.3.0-beta 接前端 UI —— 详情页 gh-ost 启用按钮 + 进度面板 iframe
+         关联设计: docs/designs/2026-08-05_gh-ost-product-design.html §启用 gh-ost
+         条件: has_ghost_task=True 显示进度面板 / can_enable_ghost=True 显示启用按钮
+         @ 2026-08-10 @ mavis -->
+    {% if has_ghost_task %}
+    <div class="panel panel-primary" id="gh-ost-panel">
+        <div class="panel-heading">
+            <i class="fa fa-rocket"></i> gh-ost 无锁变更进度
+            {% if ghost_task %}<span class="badge" style="margin-left:10px;">task #{{ ghost_task.id }}</span>{% endif %}
+        </div>
+        <div class="panel-body" style="padding:0;">
+            <iframe src="/gh_ost/progress/{{ workflow_detail.id }}/"
+                    style="width:100%;height:600px;border:0;background:transparent;"
+                    id="gh-ost-iframe"
+                    title="gh-ost 进度面板"></iframe>
+        </div>
+    </div>
+    {% elif can_enable_ghost %}
+    <div class="alert alert-info" id="gh-ost-enable-block" style="display:flex;align-items:center;gap:12px;">
+        <i class="fa fa-rocket" style="font-size:18px;color:#409EFF;"></i>
+        <div style="flex:1;">
+            <strong>启用 gh-ost 无锁变更</strong> · 大表 DDL 不锁表
+            <br><small style="color:#909399;">
+                启用后先跑 5 道预检（binlog / 磁盘 / 权限 / SQL / 表类型），
+                通过后才真启 gh-ost 子进程
+            </small>
+        </div>
+        <button id="btn-enable-ghost" class="btn btn-primary" type="button"
+                data-wf-id="{{ workflow_detail.id }}">
+            <i class="fa fa-rocket"></i> 启用 gh-ost
+        </button>
+    </div>
+    <script>
+    function getCookie(name) {
+        var cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            var cookies = document.cookie.split(';');
+            for (var i = 0; i < cookies.length; i++) {
+                var cookie = jQuery.trim(cookies[i]);
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    (function() {
+        var btn = document.getElementById('btn-enable-ghost');
+        if (!btn) return;
+        btn.addEventListener('click', function() {
+            var wfId = btn.getAttribute('data-wf-id');
+            if (!confirm('确认对工单 #' + wfId + ' 启用 gh-ost 无锁变更？\n\n将立即跑预检（~5s），通过后启动 gh-ost 子进程。')) return;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> 预检中...';
+            // 第一步：precheck
+            // CUSTOM-MODIFIED: 端点返回 {ok: true, passed: true, summary, checks}（没 status 字段）
+            // 判 !j.ok || !j.passed 才是失败。@ 2026-08-10 @ mavis
+            fetch('/gh_ost/precheck/' + wfId + '/', {
+                method: 'POST',
+                headers: {'X-CSRFToken': getCookie('csrftoken')},
+                credentials: 'same-origin',
+            })
+            .then(function(r){return r.json()})
+            .then(function(j) {
+                if (!j.ok || !j.passed) {
+                    alert('预检失败：' + (j.summary || j.error || JSON.stringify(j)));
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa fa-rocket"></i> 启用 gh-ost';
+                    return;
+                }
+                btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> 启用中...';
+                // 第二步：enable
+                return fetch('/gh_ost/enable/' + wfId + '/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCookie('csrftoken')},
+                    credentials: 'same-origin',
+                });
+            })
+            .then(function(r){return r ? r.json() : null})
+            .then(function(j) {
+                if (!j) return;
+                if (!j.ok) {
+                    alert('启用失败：' + (j.error || j.summary || JSON.stringify(j)));
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa fa-rocket"></i> 启用 gh-ost';
+                    return;
+                }
+                // 成功，刷新页面显示进度面板
+                location.reload();
+            })
+            .catch(function(err) {
+                alert('请求失败：' + err);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa fa-rocket"></i> 启用 gh-ost';
+            });
+        });
+    })();
+    </script>
+    {% endif %}
+
     <!-- Nav tabs -->
     <ul id="nav-tabs" class="nav nav-tabs" role="tablist">
         <li id="detail_tab" class="active">
