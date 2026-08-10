@@ -28,6 +28,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from sql.models import Instance, SqlWorkflow, SqlWorkflowContent
@@ -515,6 +516,10 @@ def status(request: HttpRequest, workflow_id: int) -> JsonResponse:
 # ===========================================================================
 @login_required
 @require_GET
+## CUSTOM-MODIFIED: v0.3.0-beta 前端 UI 集成 —— 允许 progress 页被 detail.html iframe 嵌入
+## Django 默认 XFrameOptionsMiddleware 设 X-Frame-Options: DENY，拒绝所有 iframe
+## @ 2026-08-10 @ mavis
+@xframe_options_exempt
 def progress_page(request: HttpRequest, workflow_id: int) -> HttpResponse:
     """渲染 gh-ost 进度面板（admin 内部可访问，前端集成留给 beta）。
 
@@ -748,6 +753,9 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
 
 @login_required
 @require_GET
+## CUSTOM-MODIFIED: v0.3.0-beta 前端 UI 集成 —— 允许 rebuild progress 页被 iframe 嵌入
+## @ 2026-08-10 @ mavis
+@xframe_options_exempt
 def rebuild_progress_page(request: HttpRequest, task_id: int) -> HttpResponse:
     """渲染 rebuild 进度面板（admin 内部可访问）。
 
