@@ -584,6 +584,11 @@ class AuditV2:
         如果总体为其他状态, 节点的属性都不设置, 均为默认值
         """
         self.get_audit_info()
+        ## CUSTOM-MODIFIED: 工单无审批流（演练 cancel / 历史数据 / admin 直接 cancel 等没建 WorkflowAudit）
+        ## 时返回空 ReviewInfo，避免 AttributeError: 'NoneType' object has no attribute 'current_audit'。
+        ## get_audit_info 返回 Optional[WorkflowAudit]，调用方需要兑底。@ 2026-08-10 @ mavis
+        if self.audit is None:
+            return ReviewInfo()
         review_nodes = []
         has_met_current_node = False
         current_node_group_id = int(self.audit.current_audit)
@@ -718,9 +723,14 @@ class Audit(object):
     # 判断用户当前是否是可审核
     @staticmethod
     def can_review(user, workflow_id, workflow_type):
-        audit_info = WorkflowAudit.objects.get(
-            workflow_id=workflow_id, workflow_type=workflow_type
-        )
+        ## CUSTOM-MODIFIED: 工单无审批流（演练 cancel / 历史数据）时返回 False，兑底 DoesNotExist。
+        ## @ 2026-08-10 @ mavis
+        try:
+            audit_info = WorkflowAudit.objects.get(
+                workflow_id=workflow_id, workflow_type=workflow_type
+            )
+        except WorkflowAudit.DoesNotExist:
+            return False
         group_id = audit_info.group_id
         result = False
 
