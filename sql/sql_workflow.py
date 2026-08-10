@@ -191,7 +191,13 @@ def detail_content(request):
     else:
         rows = content.review_content
 
-    result = {"rows": json.loads(rows)}
+    ## CUSTOM-MODIFIED: 兼容 review_content / execute_result 不是合法 list 的情况。
+    ## 老 review_content='{}' 走 json.loads 变成 {} (dict)，bootstrap-table 期待 iterable list
+    ## 否则 ajax success 里 for...of undefined 抛错。@ 2026-08-10 @ mavis
+    parsed = json.loads(rows)
+    if not isinstance(parsed, list):
+        parsed = []
+    result = {"rows": parsed}
     return HttpResponse(json.dumps(result), content_type="application/json")
 
 
