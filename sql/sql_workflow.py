@@ -140,10 +140,19 @@ def detail_content(request):
     workflow_detail = get_object_or_404(SqlWorkflow, pk=workflow_id)
     if not can_view(request.user, workflow_id):
         raise PermissionDenied
+
+    ## CUSTOM-MODIFIED: 历史工单（v0.1.x / 早期 v1.10.0 创建的）没有 SqlWorkflowContent 行
+    ## 时，detail_content 兜底返回空 rows 避免 500。@ 2026-08-10 @ mavis
+    content = getattr(workflow_detail, "sqlworkflowcontent", None)
+    if content is None:
+        result = {"rows": [], "_empty_content": True,
+                  "_empty_reason": f"工单 {workflow_id} 缺少 SqlWorkflowContent（历史数据）"}
+        return HttpResponse(json.dumps(result), content_type="application/json")
+
     if workflow_detail.status in ["workflow_finish", "workflow_exception"]:
-        rows = workflow_detail.sqlworkflowcontent.execute_result
+        rows = content.execute_result
     else:
-        rows = workflow_detail.sqlworkflowcontent.review_content
+        rows = content.review_content
 
     review_result = ReviewSet()
     if rows:
@@ -151,15 +160,18 @@ def detail_content(request):
             # 检验rows能不能正常解析
             loaded_rows = json.loads(rows)
             #  兼容旧数据'[[]]'格式，转换为新格式[{}]
-            if isinstance(loaded_rows[-1], list):
+            #  上游裸用 loaded_rows[-1] 在 loaded_rows='{}' (dict) 或 '[]' (空 list) 时会抛
+            #  KeyError: -1 / IndexError: list index out of range, 加 isinstance + 长度判断兑底
+            ## CUSTOM-MODIFIED: 加 isinstance(loaded_rows, list) + loaded_rows 兑底。@ 2026-08-10 @ mavis
+            if isinstance(loaded_rows, list) and loaded_rows and isinstance(loaded_rows[-1], list):
                 for r in loaded_rows:
                     review_result.rows += [ReviewResult(inception_result=r)]
                 rows = review_result.json()
-        except IndexError:
+        except (IndexError, KeyError, TypeError):
             review_result.rows += [
                 ReviewResult(
                     id=1,
-                    sql=workflow_detail.sqlworkflowcontent.sql_content,
+                    sql=content.sql_content,
                     errormessage="Json decode failed."
                     "执行结果Json解析失败, 请联系管理员",
                 )
@@ -169,7 +181,7 @@ def detail_content(request):
             review_result.rows += [
                 ReviewResult(
                     id=1,
-                    sql=workflow_detail.sqlworkflowcontent.sql_content,
+                    sql=content.sql_content,
                     # 迫于无法单元测试这里加上英文报错信息
                     errormessage="Json decode failed."
                     "执行结果Json解析失败, 请联系管理员",
@@ -177,7 +189,7 @@ def detail_content(request):
             ]
             rows = review_result.json()
     else:
-        rows = workflow_detail.sqlworkflowcontent.review_content
+        rows = content.review_content
 
     result = {"rows": json.loads(rows)}
     return HttpResponse(json.dumps(result), content_type="application/json")

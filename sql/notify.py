@@ -179,10 +179,15 @@ class LegacyRender(Notifier):
             workflow_detail = SqlWorkflow.objects.get(pk=workflow_id)
             instance = workflow_detail.instance.instance_name
             db_name = workflow_detail.db_name
+            ## CUSTOM-MODIFIED: 历史工单没 SqlWorkflowContent 时跳过 SQL 内容。@ 2026-08-10 @ mavis
+            _sql_content = ""
+            _wf_content = getattr(workflow_detail, "sqlworkflowcontent", None)
+            if _wf_content is not None:
+                _sql_content = (_wf_content.sql_content or "")[0:500].replace("\r", "")
             workflow_content = re.sub(
                 "[\r\n\f]{2,}",
                 "\n",
-                workflow_detail.sqlworkflowcontent.sql_content[0:500].replace("\r", ""),
+                _sql_content,
             )
         elif workflow_type == WorkflowType.ARCHIVE:
             workflow_type_display = WorkflowType.ARCHIVE.label
@@ -293,10 +298,13 @@ class LegacyRender(Notifier):
             f"[{WorkflowType.SQL_REVIEW.label}]工单"
             f"{self.workflow.get_status_display()}#{audit_id}"
         )
+        ## CUSTOM-MODIFIED: 历史工单没 SqlWorkflowContent 时跳过 SQL 内容。@ 2026-08-10 @ mavis
+        _self_content = getattr(self.workflow, "sqlworkflowcontent", None)
+        _self_sql = (_self_content.sql_content if _self_content else "") or ""
         preview = re.sub(
             "[\r\n\f]{2,}",
             "\n",
-            self.workflow.sqlworkflowcontent.sql_content[0:500].replace("\r", ""),
+            _self_sql[0:500].replace("\r", ""),
         )
         msg_content = f"""发起时间：{self.workflow.create_time.strftime("%Y-%m-%d %H:%M:%S")}
 发起人：{self.workflow.engineer_display}

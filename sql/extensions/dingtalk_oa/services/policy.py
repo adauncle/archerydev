@@ -32,7 +32,9 @@ def match_policy(
     Returns:
         命中的 ``ApprovalPolicy``；未命中返回 ``None``。
     """
-    sql_content = workflow.sqlworkflowcontent.sql_content or ""
+    ## CUSTOM-MODIFIED: 历史工单没 SqlWorkflowContent 时兜底返回空串。@ 2026-08-10 @ mavis
+    _content = getattr(workflow, "sqlworkflowcontent", None)
+    sql_content = (_content.sql_content if _content else "") or ""
     sql_types = extract_sql_types(sql_content)
     if affected_tables is None:
         affected_tables = extract_affected_tables(workflow)
