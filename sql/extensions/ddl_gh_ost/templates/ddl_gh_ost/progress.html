@@ -161,7 +161,10 @@
           {% if task.status in "running,cut_over,queued" %}
             <button class="btn btn-danger" id="cancelBtn">取消迁移</button>
           {% endif %}
-          <a class="btn btn-default" href="/admin/sql/extensions%20ddl_gh_ost/ddlghosttask/{{ task.id }}/change/">
+          <!-- CUSTOM-MODIFIED: v0.3.0-beta 修 admin URL (app_label=ddl_gh_ost) + target=_blank 绕过 X-Frame-Options
+               @ 2026-08-10 @ mavis -->
+          <a class="btn btn-default" href="/admin/ddl_gh_ost/ddlghosttask/{{ task.id }}/change/"
+             target="_blank" rel="noopener">
             查看 admin 详情
           </a>
         </div>
