@@ -120,19 +120,69 @@
 
     <!-- CUSTOM-MODIFIED: v0.3.0-beta 接前端 UI —— 详情页 gh-ost 启用按钮 + 进度面板 iframe
          关联设计: docs/designs/2026-08-05_gh-ost-product-design.html §启用 gh-ost
-         条件: has_ghost_task=True 显示进度面板 / can_enable_ghost=True 显示启用按钮
+         条件: has_ghost_task=True 显示进度面板 (active) / 终态摘要 (terminal)
+              / can_enable_ghost=True 显示启用按钮 (之前无 task)
          @ 2026-08-10 @ mavis -->
     {% if has_ghost_task %}
     <div class="panel panel-primary" id="gh-ost-panel">
         <div class="panel-heading">
-            <i class="fa fa-rocket"></i> gh-ost 无锁变更进度
+            <i class="fa fa-rocket"></i> gh-ost 无锁变更
             {% if ghost_task %}<span class="badge" style="margin-left:10px;">task #{{ ghost_task.id }}</span>{% endif %}
+            <span class="badge" style="margin-left:6px;background:{% if ghost_task_is_terminal %}#909399{% else %}#67C23A{% endif %};">
+                {{ ghost_task.get_status_display }}
+            </span>
         </div>
         <div class="panel-body" style="padding:0;">
+            {% if ghost_task_is_terminal %}
+            <!-- 终态：显示结果摘要，不再轮询 -->
+            <div style="padding:20px 24px;">
+                <table class="table table-condensed" style="margin-bottom:8px;">
+                    <tbody>
+                        <tr>
+                            <th style="width:140px;">最终状态</th>
+                            <td>
+                                {% if ghost_task.status == "success" %}
+                                    <font color="green"><i class="fa fa-check-circle"></i> cut-over 成功</font>
+                                {% elif ghost_task.status == "failed" %}
+                                    <font color="red"><i class="fa fa-times-circle"></i> 失败</font>
+                                {% elif ghost_task.status == "cancelled" %}
+                                    <font color="#E6A23C"><i class="fa fa-ban"></i> 已取消</font>
+                                {% elif ghost_task.status == "rolled_back" %}
+                                    <font color="#909399"><i class="fa fa-undo"></i> 已回滚</font>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>进度</th>
+                            <td>{{ ghost_task.progress_pct }}% · 复制 {{ ghost_task.progress_rows_copied|default:"-" }}/{{ ghost_task.progress_rows_total|default:"-" }} 行</td>
+                        </tr>
+                        <tr>
+                            <th>耗时</th>
+                            <td>{{ ghost_task.duration_seconds }} 秒</td>
+                        </tr>
+                        {% if ghost_task.error_message %}
+                        <tr>
+                            <th>错误 / 备注</th>
+                            <td><pre style="max-height:120px;overflow:auto;background:#f5f5f5;padding:6px;margin:0;">{{ ghost_task.error_message }}</pre></td>
+                        </tr>
+                        {% endif %}
+                        <tr>
+                            <th>开始 / 结束</th>
+                            <td>{{ ghost_task.started_at|default:"-" }} → {{ ghost_task.finished_at|default:"-" }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <small class="text-muted">
+                    终态 task 不再轮询进度。要重跑（failed/cancelled）走"重试"端点；要 drop 影子表（failed）走"回滚"端点。
+                </small>
+            </div>
+            {% else %}
+            <!-- active：iframe 轮询 -->
             <iframe src="/gh_ost/progress/{{ workflow_detail.id }}/"
                     style="width:100%;height:600px;border:0;background:transparent;"
                     id="gh-ost-iframe"
                     title="gh-ost 进度面板"></iframe>
+            {% endif %}
         </div>
     </div>
     {% elif can_enable_ghost %}

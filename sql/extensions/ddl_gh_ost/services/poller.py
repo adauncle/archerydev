@@ -90,7 +90,14 @@ def _maybe_pause_resume(task, instance):
 
 
 def _finalize_task(task, new_status: str, error_message: str = ""):
-    """终态收尾：写状态、停止进程、通知、推进同表 rebuild 队列。"""
+    """终态收尾：写状态、停止进程、通知、推进同表 rebuild 队列。
+
+    ## CUSTOM-MODIFIED: v0.3.0-beta 同步 SqlWorkflow.status
+    ## gh-ost 完成后必须把工单状态推到 workflow_finish / workflow_exception，
+    ## 否则 DBA 详情页的"立即执行"按钮仍会显示，导致双 ALTER 锁等待。
+    ## @ 2026-08-10 @ mavis
+    关联设计: docs/designs/2026-08-10_gh-ost-detail-design.html §7.3
+    """
     task.status = new_status
     task.finished_at = timezone.now()
     if error_message:
@@ -101,6 +108,13 @@ def _finalize_task(task, new_status: str, error_message: str = ""):
         except (ProcessLookupError, PermissionError):
             pass
     task.save()
+
+    # CUSTOM: 同步工单状态 (仅对挂载到 SqlWorkflow 的 task 生效；rebuild 无关联)
+    try:
+        _sync_workflow_status(task, new_status)
+    except Exception:  # noqa: BLE001
+        logger.exception("_sync_workflow_status failed: task=%s", task.id)
+
     # 钉钉通知（best-effort）
     try:
         notify_terminal(task)
@@ -117,6 +131,57 @@ def _finalize_task(task, new_status: str, error_message: str = ""):
                 "try_advance_queue failed after task #%s finalize",
                 task.id,
             )
+
+
+# task 终态 → SqlWorkflow.status 映射表
+_WORKFLOW_STATUS_MAP = {
+    "success": "workflow_finish",        # cut-over 成功 → 工单正常结束
+    "failed": "workflow_exception",      # gh-ost 失败  → 工单执行异常
+    "rolled_back": "workflow_exception", # DBA 手动回滚 → 工单执行异常
+    # "cancelled" 不在这里 —— cancel 端点单独处理（不要覆盖"用户主动放弃"语义）
+}
+
+
+def _sync_workflow_status(task, new_status: str):
+    """CUSTOM: gh-ost 终态时同步 SqlWorkflow.status。
+
+    规则:
+      - 仅同步 task_type="ghost"（挂载到 SqlWorkflow）；rebuild task 跳过
+      - 仅在工单处于"待执行/执行中"语义时覆盖，避免打乱 manreviewing 等上游状态
+      - success → workflow_finish + finish_time
+      - failed/rolled_back → workflow_exception + finish_time
+    """
+    if task.task_type != "ghost":
+        return  # rebuild 任务无关联工单
+    if not task.workflow_id:
+        return  # 没挂工单
+    # 延迟 import 防循环
+    from sql.models import SqlWorkflow
+    try:
+        wf = SqlWorkflow.objects.get(pk=task.workflow_id)
+    except SqlWorkflow.DoesNotExist:
+        logger.warning("_sync_workflow_status: workflow %s not found", task.workflow_id)
+        return
+
+    target = _WORKFLOW_STATUS_MAP.get(new_status)
+    if not target:
+        return  # cancelled / queued/running 不动
+
+    # 仅在工单处于"已审核通过待执行"或"执行中"时同步
+    if wf.status not in ("workflow_review_pass", "workflow_executing", "workflow_timingtask"):
+        logger.info(
+            "_sync_workflow_status: skip task=%s wf=%s current_status=%s (not in expected)",
+            task.id, wf.id, wf.status,
+        )
+        return
+
+    wf.status = target
+    wf.finish_time = timezone.now()
+    wf.save(update_fields=["status", "finish_time"])
+    logger.info(
+        "_sync_workflow_status: task=%s wf=%s status=%s → %s",
+        task.id, wf.id, _WORKFLOW_STATUS_MAP.get(new_status, "?"), target,
+    )
 
 
 def poll_loop(task_id: int):

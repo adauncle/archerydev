@@ -242,12 +242,53 @@ def detail(request, workflow_id):
     if not can_view(request.user, workflow_id):
         raise PermissionDenied
     review_info = audit_handler.get_review_info()
+
+    ## CUSTOM-MODIFIED: v0.3.0-beta 接前端 UI —— 详情页展示 gh-ost 启用按钮 / 进度面板
+    ## 关键修复: 必须前移到 is_can_execute 计算之前，否则 Python UnboundLocalError
+    ## 关联设计: docs/designs/2026-08-05_gh-ost-product-design.html §启用 gh-ost
+    ## @ 2026-08-10 @ mavis
+    has_ghost_task = False
+    can_enable_ghost = False
+    ghost_task = None
+    has_active_ghost_task = False  # active task 在跑时禁用原路径"立即执行"按钮
+    ghost_task_is_terminal = False  # 终态历史 (UI 区分 active vs terminal)
+    if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):
+        from sql.extensions.ddl_gh_ost.models import DdlGhostTask
+        try:
+            ghost_task = DdlGhostTask.objects.get(workflow=workflow_detail)
+            has_ghost_task = True
+            ghost_task_is_terminal = ghost_task.is_terminal
+            # 关键修复: 修复 #1 - 避免 gh-ost 与原路径"立即执行"冲突
+            # active 状态 (queued/running/cut_over/precheck_failed) 都视为在跑
+            has_active_ghost_task = ghost_task.status in (
+                "queued", "running", "cut_over", "precheck_failed"
+            )
+        except DdlGhostTask.DoesNotExist:
+            ghost_task = None
+        # 启用条件: superuser / DBA 组 / 工单 submitter
+        from django.contrib.auth.models import Group
+        user = request.user
+        is_submitter = (user.username == workflow_detail.engineer)
+        is_dba_group = user.groups.filter(name__in=["DBA", "DBA组长"]).exists()
+        # 已存在 task (不论 active/terminal) → 不再显示"启用"按钮
+        # 终态 task 想要重启用走 /gh_ost/retry/ 端点 (仅 failed/cancelled 可用)
+        can_enable_ghost = (
+            (user.is_superuser or is_dba_group or is_submitter)
+            and workflow_detail.status in ("workflow_manreviewing", "workflow_review_pass", "workflow_timingtask")
+            and not has_ghost_task
+        )
+
     # 自动审批不通过的不需要获取下列信息
     if workflow_detail.status != "workflow_autoreviewwrong":
         # 是否可审核
         is_can_review = Audit.can_review(request.user, workflow_id, 2)
         # 是否可执行 TODO 这几个判断方法入参都修改为workflow对象，可减少多次数据库交互
-        is_can_execute = can_execute(request.user, workflow_id)
+        ## CUSTOM-MODIFIED: v0.3.0-beta 修复 gh-ost 与原路径"立即执行"冲突
+        ## 关键修复: has_active_ghost_task=True 时禁用立即执行按钮，避免双 ALTER
+        ## task 终态 (cancelled/failed/rolled_back) 后 has_active_ghost_task=False
+        ## 立即执行按钮重新可见，DBA 可点"取消迁移"否决后走原路径
+        ## @ 2026-08-10 @ mavis
+        is_can_execute = can_execute(request.user, workflow_id) and not has_active_ghost_task
         # 是否可定时执行
         is_can_timingtask = can_timingtask(request.user, workflow_id)
         # 是否可取消
@@ -301,31 +342,6 @@ def detail(request, workflow_id):
     # 获取是否开启手工执行确认
     manual = SysConfig().get("manual")
 
-    ## CUSTOM-MODIFIED: v0.3.0-beta 接前端 UI —— 详情页展示 gh-ost 启用按钮 / 进度面板
-    ## @ 2026-08-10 @ mavis
-    # 关联设计: docs/designs/2026-08-05_gh-ost-product-design.html §启用 gh-ost
-    has_ghost_task = False
-    can_enable_ghost = False
-    ghost_task = None
-    if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):
-        from sql.extensions.ddl_gh_ost.models import DdlGhostTask
-        try:
-            ghost_task = DdlGhostTask.objects.get(workflow=workflow_detail)
-            if not ghost_task.is_terminal:
-                has_ghost_task = True
-        except DdlGhostTask.DoesNotExist:
-            ghost_task = None
-        # 启用条件: superuser / DBA 组 / 工单 submitter
-        from django.contrib.auth.models import Group
-        user = request.user
-        is_submitter = (user.username == workflow_detail.engineer)
-        is_dba_group = user.groups.filter(name__in=["DBA", "DBA组长"]).exists()
-        can_enable_ghost = (
-            (user.is_superuser or is_dba_group or is_submitter)
-            and workflow_detail.status in ("workflow_manreviewing", "workflow_review_pass", "workflow_timingtask")
-            and not has_ghost_task
-        )
-
     context = {
         "workflow_detail": workflow_detail,
         "current_reviewers": current_reviewers,
@@ -341,6 +357,7 @@ def detail(request, workflow_id):
         "has_ghost_task": has_ghost_task,
         "can_enable_ghost": can_enable_ghost,
         "ghost_task": ghost_task,
+        "ghost_task_is_terminal": ghost_task_is_terminal,
     }
     return render(request, "detail.html", context)
 
