@@ -84,6 +84,29 @@ def try_advance_queue(db: str, table: str) -> Optional[DdlGhostTask]:
         logger.debug("queue empty for %s.%s", db, table)
         return None
 
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 修 134 dev 演练 bug：检查同表 running + is_alive @ 2026-08-10 @ mavis
+    ## bug 背景 1：原来只查 queued 任务，忽略 running —— 同表两个 task 都被推
+    ## 进 → 同时跑两个 gh-ost → 同表锁冲突 → 第二个 3s 失败
+    ## 修复：同表有 running 任务时，把 waiting 保留在队列，等终态后再推进
+    ## bug 背景 2：stale running（gh-ost 进程死了但 poller 没标 failed）会永久阻塞 queue
+    ## 修复：is_alive(pid) 为 False 的 stale running 跳过
+    from .runner import is_alive as _is_alive
+    has_alive_running = False
+    for t in DdlGhostTask.objects.filter(
+        task_type="rebuild",
+        db_name=db, table_name=table,
+        status__in=["running", "cut_over"],
+    ):
+        if t.ghost_pid and _is_alive(t.ghost_pid):
+            has_alive_running = True
+            break
+    if has_alive_running:
+        logger.debug(
+            "queue advance skip: 同表 %s.%s 有 alive running 任务，task #%s 继续等",
+            db, table, waiting.id,
+        )
+        return None
+
     instance = _resolve_instance(waiting)
     if instance is None:
         waiting.status = "failed"
@@ -214,6 +237,7 @@ def trigger_rebuild_after_archive(archive_id: int) -> Optional[DdlGhostTask]:
         db_name=archive.src_db_name,
         table_name=archive.src_table_name,
         target_table=f"{archive.src_db_name}.{archive.src_table_name}",
+        instance=archive.src_instance,  # CUSTOM: rebuild 必填 instance（v0.4.5-alpha 修）
         related_task_id=archive.id,
         enabled=True,
         status="queued",
@@ -237,22 +261,28 @@ def trigger_rebuild_after_archive(archive_id: int) -> Optional[DdlGhostTask]:
 def _resolve_instance(task: DdlGhostTask):
     """从 task 推断 instance。
 
-    rebuild task ``workflow=NULL`` 没有直接的 instance 字段。
-
-    推断规则：
-        1. 如果 ``task.related_task_id`` 非空（关联归档 task），
-           查 ``ArchiveConfig`` 拿 ``src_instance``（归档源实例）
-        2. 否则返回 None —— DBA 应通过端点 /gh_ost/rebuild/start/ 显式传 instance
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 修 queue 漏洞 @ 2026-08-10 @ mavis
+    推断规则（按优先级）：
+        1. ``task.instance`` 字段（v0.4.5-alpha 加，rebuild 任务必填）—— 最准
+        2. ``task.related_task_id`` 非空（关联归档 task）→ 查 ``ArchiveConfig`` 拿 src_instance
+        3. ``task.workflow.instance``（ghost 场景，反向 fallback）
+        4. 否则返回 None —— DBA 应通过端点 /gh_ost/rebuild/start/ 显式传 instance
     """
-    if task.related_task_id is None:
-        return None
-    try:
-        from sql.models import ArchiveConfig
-        archive = ArchiveConfig.objects.get(id=task.related_task_id)
-        return archive.src_instance
-    except Exception:  # noqa: BLE001
-        logger.warning(
-            "_resolve_instance: ArchiveConfig #%s 查不到",
-            task.related_task_id,
-        )
-        return None
+    # 1. instance 字段（v0.4.5-alpha 修复后首选）
+    if task.instance_id:
+        return task.instance
+    # 2. related_task_id 关联归档
+    if task.related_task_id is not None:
+        try:
+            from sql.models import ArchiveConfig
+            archive = ArchiveConfig.objects.get(id=task.related_task_id)
+            return archive.src_instance
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "_resolve_instance: ArchiveConfig #%s 查不到",
+                task.related_task_id,
+            )
+    # 3. ghost 场景 fallback
+    if task.workflow_id:
+        return task.workflow.instance
+    return None

@@ -64,7 +64,21 @@ def start_rebuild_process(task, instance) -> int:
         "gh-ost rebuild start: task_id=%s db=%s table=%s created_by=%s",
         task.id, task.db_name, task.table_name, task.created_by,
     )
-    return start_ghost_process(task, instance)
+    pid = start_ghost_process(task, instance)
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 修 134 dev 演练 bug：start_rebuild_process 写 task 字段 @ 2026-08-10 @ mavis
+    ## bug 背景：原代码只 return pid，调用方拿到 pid 后写 task.ghost_pid；但 poller 启动时
+    ## 如果调用方忘了写，task.ghost_pid=None → poller is_alive(None) 失败 → 标 failed
+    ## 修复：start_rebuild_process 内部写，跟 queue.try_advance_queue 一致
+    from django.utils import timezone
+    task.ghost_pid = pid
+    task.status = "running"
+    task.started_at = task.started_at or timezone.now()
+    task.current_stage = task.current_stage or "connecting"
+    task.progress_pct = 0
+    task.progress_message = "rebuild gh-ost 已启动"
+    task.last_heartbeat_at = timezone.now()
+    task.save()
+    return pid
 
 
 def _validate_rebuild_task(task) -> None:

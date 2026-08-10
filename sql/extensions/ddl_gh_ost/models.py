@@ -82,6 +82,15 @@ class DdlGhostTask(models.Model):
         "关联 task id", null=True, blank=True,
         help_text="归档联动时存 ArchiveConfig.id；rebuild 内部队列存前序 task id",
     )
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 修 queue 漏洞加 instance 字段 @ 2026-08-10 @ mavis
+    ## rebuild 任务 workflow=NULL 没有直接的 instance 字段，
+    ## 但 gh-ost 必须知道连哪个 instance。存到 instance 字段（PROTECT 防止误删）。
+    ## ghost 场景 nullable（从 task.workflow.instance 拿），rebuild 场景必填。
+    instance = models.ForeignKey(
+        "sql.Instance", on_delete=models.PROTECT,
+        null=True, blank=True, related_name="ghost_tasks",
+        verbose_name="实例（rebuild 必填）",
+    )
     audit = models.ForeignKey(
         "sql.WorkflowAudit", on_delete=models.SET_NULL,
         null=True, blank=True,

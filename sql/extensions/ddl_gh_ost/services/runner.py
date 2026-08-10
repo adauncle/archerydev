@@ -103,8 +103,20 @@ def build_ghost_command(task, instance=None, rebuild_mode: bool = False) -> List
 
 
 ## CUSTOM-MODIFIED: v0.4.5-alpha 新增 rebuild 场景空 alter 生成 @ 2026-08-06 @ mavis
+## CUSTOM-MODIFIED: v0.4.5-alpha 修 134 dev 演练 bug：去掉 ALTER TABLE 前缀 @ 2026-08-10 @ mavis
 def _make_rebuild_alter(task) -> str:
     """rebuild 场景的空 alter SQL —— 只改 COMMENT 触发表重建，不改变列结构。
+
+    ## gh-ost --alter 参数规则（关键踩坑）：
+    gh-ost 期望 ``--alter`` 是**裸子句**，gh-ost 内部拼成：
+    ``ALTER TABLE <ghost_table> <alter_subclause>``
+
+    之前 commit 2 我传完整 SQL ``ALTER TABLE x COMMENT '...'``，
+    gh-ost 拆掉 ALTER TABLE 后剩 ``x COMMENT '...'``，
+    拼到 ghost table: ``ALTER TABLE _x_gho x COMMENT '...'`` → SQL syntax error 1064
+
+    修复：传裸子句 ``COMMENT '...'``，gh-ost 拼成
+    ``ALTER TABLE _x_gho COMMENT '...'`` → 正确
 
     为什么不直接 OPTIMIZE TABLE：
     - MySQL 5.7.44 走 ALGORITHM=COPY 锁表，碎片大时长时间阻塞
@@ -120,14 +132,17 @@ def _make_rebuild_alter(task) -> str:
     业务无感：COMMENT 是元数据，应用程序不读 COMMENT 字符串。
     """
     today = timezone.now().strftime("%Y%m%d")
-    return (
-        f"ALTER TABLE `{task.db_name}`.`{task.table_name}` "
-        f"COMMENT 'archery-auto-rebuild-{today}'"
-    )
+    return f"COMMENT 'archery-auto-rebuild-{today}'"
 
 
 def start_ghost_process(task, instance=None) -> int:
     """启动 gh-ost 子进程（Popen + nohup）。
+
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 修 bug：从 task_type 推断 rebuild_mode @ 2026-08-10 @ mavis
+    rebuild 任务调 start_ghost_process 时，自动 rebuild_mode=True。
+    bug 背景：原代码 build_ghost_command(task, instance) 不传 rebuild_mode，
+    内部走 ghost 分支取 task.alter_statement，rebuild 任务 alter_statement 为空
+    → alter_arg = "ALTER TABLE "（空表名）→ gh-ost 报 SQL syntax error 1064
 
     Returns:
         gh-ost PID（成功）
@@ -138,7 +153,8 @@ def start_ghost_process(task, instance=None) -> int:
     log_dir = _ensure_log_dir()
     log_path = os.path.join(log_dir, f"ghost-{task.id}.log")
 
-    cmd = build_ghost_command(task, instance)
+    rebuild_mode = (getattr(task, "task_type", None) == "rebuild")
+    cmd = build_ghost_command(task, instance, rebuild_mode=rebuild_mode)
 
     logger.info("gh-ost start: task_id=%s cmd=%s", task.id, " ".join(shlex.quote(c) for c in cmd))
 

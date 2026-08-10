@@ -686,6 +686,7 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"ok": False, "error": f"instance #{instance_id} 不存在"}, status=404)
 
     ## CUSTOM-MODIFIED: v0.4.5-alpha 改 409 拒绝为排队入队 @ 2026-08-06 @ mavis
+    ## CUSTOM-MODIFIED: v0.4.5-alpha 修 queue 漏洞加 instance 字段 @ 2026-08-10 @ mavis
     # 3. 写 task（直接入队，queue 自动推进）
     # 同表已有 running/cut_over 任务时，本 task 进入 queued 状态等前序完成
     task = DdlGhostTask.objects.create(
@@ -694,6 +695,7 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
         db_name=db,
         table_name=table,
         target_table=f"{db}.{table}",
+        instance=instance,        # CUSTOM: rebuild 任务必填 instance（gh-ost 连接凭据源）
         enabled=True,
         status="queued",
         created_by=request.user.username,
