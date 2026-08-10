@@ -1,0 +1,1530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>钉钉 OA 审批集成 详细设计 · Archery</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --card: #ffffff;
+      --line: #e9e3d6;
+      --line-soft: #f0eadf;
+      --ink: #14171e;
+      --ink-mid: #3a4256;
+      --ink-soft: #7c7a72;
+      --primary: #2f6f5e;
+      --primary-soft: rgba(47,111,94,.08);
+      --warn: #c97b3f;
+      --warn-soft: rgba(201,123,63,.08);
+      --danger: #b06367;
+      --danger-soft: rgba(176,99,103,.08);
+      --good: #2f6f5e;
+      --good-soft: rgba(47,111,94,.1);
+      --blue: #3b4b6b;
+      --blue-soft: rgba(59,75,107,.06);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,.04);
+      --shadow-md: 0 4px 16px -2px rgba(0,0,0,.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: "";
+      position: fixed; inset: 0;
+      background: radial-gradient(circle at 0% 0%, rgba(47,111,94,.05), transparent 40%),
+                  radial-gradient(circle at 100% 100%, rgba(201,123,63,.05), transparent 40%);
+      pointer-events: none; z-index: -1;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 56px 32px 80px; }
+    .doc-head { padding-bottom: 24px; border-bottom: 1px solid var(--line); margin-bottom: 48px; }
+    .doc-eyebrow { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 12px; font-weight: 500; }
+    h1 { font-family: 'DM Serif Display', serif; font-size: 38px; font-weight: 400; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.01em; }
+    h1 .v { color: var(--primary); font-style: italic; }
+    .doc-sub { color: var(--ink-soft); font-size: 14px; }
+    .doc-meta { display: flex; gap: 20px; margin-top: 14px; font-size: 12px; color: var(--ink-soft); flex-wrap: wrap; }
+    .doc-meta b { color: var(--ink); font-weight: 500; }
+
+    .toc { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 26px; margin-bottom: 56px; }
+    .toc h3 { margin: 0 0 12px; font-size: 13px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+    .toc ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; }
+    .toc li { font-size: 14px; }
+    .toc a { color: var(--ink); text-decoration: none; }
+    .toc a:hover { color: var(--primary); }
+    .toc .num { color: var(--primary); font-weight: 600; margin-right: 8px; font-variant-numeric: tabular-nums; }
+
+    h2 { font-family: 'DM Serif Display', serif; font-size: 26px; font-weight: 400; margin: 64px 0 20px; letter-spacing: -0.005em; padding-top: 16px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+    h2 .h2-num { font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 600; color: var(--primary); background: var(--primary-soft); padding: 4px 10px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+    h3 { font-size: 18px; font-weight: 600; margin: 32px 0 12px; color: var(--ink); }
+    h4 { font-size: 14px; font-weight: 600; margin: 18px 0 8px; color: var(--ink); }
+
+    p { margin: 0 0 14px; color: var(--ink-mid); }
+    p.lead { font-size: 16px; color: var(--ink); }
+    strong { color: var(--ink); font-weight: 600; }
+    code { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: var(--line-soft); padding: 1px 6px; border-radius: 4px; color: var(--ink); }
+
+    .callout { padding: 18px 22px; border-radius: 12px; margin: 18px 0; display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--line); }
+    .callout .icon { flex-shrink: 0; margin-top: 2px; }
+    .callout p { margin: 0; }
+    .callout.warn { background: var(--warn-soft); border-color: rgba(201,123,63,.2); }
+    .callout.danger { background: var(--danger-soft); border-color: rgba(176,99,103,.2); }
+    .callout.good { background: var(--good-soft); border-color: rgba(47,111,94,.2); }
+    .callout.info { background: var(--blue-soft); border-color: rgba(59,75,107,.18); }
+
+    .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; margin: 28px 0; align-items: stretch; }
+    .flow-3 { grid-template-columns: repeat(3, 1fr); }
+    .flow-step { background: var(--card); border: 1px solid var(--line); padding: 20px 14px; text-align: center; position: relative; }
+    .flow-step:first-child { border-radius: 12px 0 0 12px; }
+    .flow-step:last-child { border-radius: 0 12px 12px 0; }
+    .flow-step .step-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-soft); font-weight: 500; margin-bottom: 8px; }
+    .flow-step .step-icon { color: var(--primary); margin: 0 auto 8px; display: block; }
+    .flow-step .step-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .flow-step .step-time { font-size: 11px; color: var(--ink-soft); font-family: 'JetBrains Mono', monospace; }
+    .flow-step .step-detail { font-size: 12px; color: var(--ink-soft); margin-top: 6px; line-height: 1.4; }
+    .flow-step.active { background: var(--primary-soft); border-color: var(--primary); z-index: 2; }
+    .flow-step.active .step-name { color: var(--primary); }
+
+    .ui-mock { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin: 24px 0; box-shadow: var(--shadow-sm); }
+    .ui-mock-head { background: #fafaf7; border-bottom: 1px solid var(--line); padding: 12px 18px; display: flex; align-items: center; gap: 8px; }
+    .ui-mock-dot { width: 10px; height: 10px; border-radius: 50%; background: #ddd; }
+    .ui-mock-dot.r { background: #ed6a5e; }
+    .ui-mock-dot.y { background: #f5bf4f; }
+    .ui-mock-dot.g { background: #62c554; }
+    .ui-mock-url { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-soft); margin-left: 12px; }
+    .ui-mock-body { padding: 20px 24px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.7; }
+    .ui-mock-body .l { color: var(--ink-soft); }
+    .ui-mock-body .k { color: var(--primary); font-weight: 600; }
+    .ui-mock-body .s { color: #2f6f5e; }
+    .ui-mock-body .c { color: var(--ink-soft); }
+    .ui-mock-body .badge { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; }
+    .ui-mock-body .badge-blue { background: rgba(59,75,107,.12); color: var(--blue); }
+    .ui-mock-body .badge-green { background: var(--good-soft); color: var(--good); }
+    .ui-mock-body .row { display: flex; gap: 16px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+    .ui-mock-body .row:last-child { border-bottom: 0; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); margin: 20px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+    th { background: #fafaf7; font-weight: 600; color: var(--ink); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    tr:last-child td { border-bottom: 0; }
+    tr:hover td { background: var(--primary-soft); }
+    td.mono { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+    td.warn { color: var(--danger); }
+    td.good { color: var(--good); }
+
+    .tag { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; }
+    .tag-green { background: var(--good-soft); color: var(--good); }
+    .tag-warn { background: var(--warn-soft); color: var(--warn); }
+    .tag-red { background: var(--danger-soft); color: var(--danger); }
+    .tag-blue { background: var(--blue-soft); color: var(--blue); }
+    .tag-gray { background: var(--line-soft); color: var(--ink-soft); }
+
+    pre.code { background: #14171e; color: #e9e3d6; padding: 18px 22px; border-radius: 12px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.65; overflow-x: auto; margin: 16px 0; }
+    pre.code .k { color: #c97b3f; }
+    pre.code .s { color: #8aaa85; }
+    pre.code .c { color: #6a6a5e; font-style: italic; }
+    pre.code .n { color: #b4a583; }
+    pre.code .p { color: #c8a4a4; }
+
+    .er-diagram { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 28px; margin: 24px 0; }
+    .er-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 12px 0; }
+    .er-box { background: #fafaf7; border: 2px solid var(--primary); border-radius: 10px; padding: 14px 16px; }
+    .er-box h4 { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--primary); margin: 0 0 6px; }
+    .er-box table { font-size: 11.5px; }
+    .er-box td { padding: 2px 6px; border: 0; }
+    .er-box td:first-child { font-family: 'JetBrains Mono', monospace; color: var(--ink-mid); }
+    .er-box td:last-child { font-family: 'JetBrains Mono', monospace; color: var(--ink); }
+    .er-box tr:hover td { background: transparent; }
+    .er-arrow { text-align: center; font-size: 20px; color: var(--primary); padding: 8px; }
+
+    .footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); text-align: center; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="doc-head">
+    <div class="doc-eyebrow">Archery 二次开发 · 详细设计稿</div>
+    <h1>钉钉 OA 审批集成<span class="v">详细设计</span></h1>
+    <p class="doc-sub">工单自动路由到钉钉 OA 智能工作流。driver 可插拔 + 3D 策略匹配 + 加解密 + 降级 + 对账。</p>
+    <div class="doc-meta">
+      <span><b>粒度</b> 函数 + 类 + 字段 + 异常 + 算法</span>
+      <span><b>面向</b> 实现开发者</span>
+      <span><b>模块位置</b> <code>sql/extensions/dingtalk_oa/</code></span>
+      <span><b>原则</b> 不记录开发进度，只记录开发前设计</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <h3>目录</h3>
+    <ol>
+      <li><a href="#overview"><span class="num">01</span>模块概览</a></li>
+      <li><a href="#models"><span class="num">02</span>数据模型（7 张表）</a></li>
+      <li><a href="#driver"><span class="num">03</span>driver 可插拔架构</a></li>
+      <li><a href="#policy"><span class="num">04</span>3D 策略匹配算法</a></li>
+      <li><a href="#sql-detect"><span class="num">05</span>SQL 类型检测</a></li>
+      <li><a href="#crypto"><span class="num">06</span>回调加密 / 签名</a></li>
+      <li><a href="#callback"><span class="num">07</span>回调处理流程</a></li>
+      <li><a href="#fallback"><span class="num">08</span>降级 + 重试 + 对账</a></li>
+      <li><a href="#views"><span class="num">09</span>视图 + 路由 + 任务</a></li>
+      <li><a href="#exception"><span class="num">10</span>异常处理总表</a></li>
+      <li><a href="#flags"><span class="num">11</span>灰度开关汇总</a></li>
+    </ol>
+  </div>
+
+  <!-- 01 -->
+  <h2 id="overview"><span class="h2-num">01</span>模块概览</h2>
+<pre class="code">sql/extensions/dingtalk_oa/
+├── models.py                 <span class="c"># 7 张数据模型（§2）</span>
+├── admin.py                  <span class="c"># Django admin 注册</span>
+├── apps.py                   <span class="c"># AppConfig（INSTALLED_APPS 灰度）</span>
+├── views.py                  <span class="c"># 视图（admin UI + 详情）</span>
+├── urls.py                   <span class="c"># 路由</span>
+├── callback.py               <span class="c"># 钉钉 OA 回调入口（handle_callback 委托给 services.oa_callback_handler）</span>
+├── tasks.py                  <span class="c"># django_q / celery 任务（对账、reconcile）</span>
+├── drivers/
+│   ├── __init__.py
+│   └── dingtalk.py           <span class="c"># DingtalkOaDriver + DingtalkApiError（§3）</span>
+├── services/
+│   ├── policy.py             <span class="c"># match_policy 3D 匹配（§4）</span>
+│   ├── sql_type_detect.py    <span class="c"># extract_sql_types / extract_affected_rows / extract_affected_tables（§5）</span>
+│   └── oa_callback_handler.py  <span class="c"># 回调处理（验签+解密+路由+对账）（§7）</span>
+├── security/
+│   ├── crypto.py             <span class="c"># DingtalkCrypto 加解密 + 签名（§6）</span>
+│   └── guard.py              <span class="c"># get_oa_access_token + IP 白名单（§6）</span>
+├── migrations/0001_initial.py
+├── management/commands/       <span class="c"># migrate / cleanup 等</span>
+└── tests/                     <span class="c"># pytest-django</span></pre>
+
+  <!-- 02 -->
+  <h2 id="models"><span class="h2-num">02</span>数据模型（7 张表）</h2>
+
+  <h3>2.1 `SqlTypeRegistry` — SQL 类型注册表</h3>
+<pre class="code"><span class="k">class</span> SqlTypeRegistry(models.Model):
+    <span class="s">"""SQL 类型注册表：内置 + 可扩展。
+
+用于 services.sql_type_detect 解析用户提交的 SQL 文本，
+提取出本工单涉及的 SQL 类型集合（如 {INSERT, DROP}）。
+"""</span>
+    code = models.CharField(
+        <span class="s">"类型编码"</span>, primary_key=<span class="k">True</span>, max_length=<span class="n">32</span>,
+        help_text=<span class="s">"主键，如 INSERT/DROP/TRUNCATE ..."</span>,
+    )
+    category = models.CharField(<span class="s">"分类"</span>, max_length=<span class="n">16</span>, help_text=<span class="s">"DML/DDL/DQL/DCL"</span>)
+    description = models.CharField(<span class="s">"说明"</span>, max_length=<span class="n">128</span>)
+    pattern = models.CharField(
+        <span class="s">"识别正则"</span>, max_length=<span class="n">255</span>,
+        help_text=<span class="s">"用于从 SQL 文本中匹配本类型"</span>,
+    )
+    default_severity = models.CharField(<span class="s">"默认风险等级"</span>, max_length=<span class="n">16</span>, help_text=<span class="s">"low/medium/high"</span>)
+    has_affected_rows = models.BooleanField(<span class="s">"是否参与行数维度"</span>, default=<span class="k">True</span>)
+    is_critical = models.BooleanField(<span class="s">"是否高危"</span>, default=<span class="k">False</span>)
+    is_active = models.BooleanField(<span class="s">"是否启用"</span>, default=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_sql_type_registry"</span></pre>
+
+  <h3>2.2 `CoreBusinessTable` — 核心业务表清单</h3>
+<pre class="code"><span class="k">class</span> CoreBusinessTable(models.Model):
+    <span class="s">"""核心业务表清单：用于业务表维度判定。"""</span>
+    instance = models.ForeignKey(<span class="s">"sql.Instance"</span>, on_delete=models.CASCADE, verbose_name=<span class="s">"所属实例"</span>)
+    db_name = models.CharField(<span class="s">"数据库名"</span>, max_length=<span class="n">64</span>)
+    table_name = models.CharField(<span class="s">"表名"</span>, max_length=<span class="n">128</span>)
+    LEVEL_CHOICES = ((<span class="s">"L1"</span>, <span class="s">"L1"</span>), (<span class="s">"L2"</span>, <span class="s">"L2"</span>), (<span class="s">"L3"</span>, <span class="s">"L3"</span>))
+    level = models.CharField(<span class="s">"等级"</span>, max_length=<span class="n">8</span>, choices=LEVEL_CHOICES)
+    remark = models.CharField(<span class="s">"备注"</span>, max_length=<span class="n">255</span>, blank=<span class="k">True</span>)
+    is_active = models.BooleanField(default=<span class="k">True</span>)
+    created_by = models.CharField(max_length=<span class="n">50</span>)
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>)
+    updated_at = models.DateTimeField(auto_now=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_core_business_table"</span>
+        unique_together = ((<span class="s">"instance"</span>, <span class="s">"db_name"</span>, <span class="s">"table_name"</span>),)
+        indexes = [models.Index(fields=[<span class="s">"db_name"</span>, <span class="s">"table_name"</span>])]</pre>
+
+  <h3>2.3 `ApprovalFlow` — 审批流程定义（核心模型）</h3>
+<pre class="code"><span class="k">class</span> ApprovalFlow(models.Model):
+    <span class="s">"""审批流程定义：用户可在 admin 中任意创建多个。"""</span>
+    DRIVER_CHOICES = (
+        (<span class="s">"archery"</span>, <span class="s">"Archery 本地 Group 审批"</span>),
+        (<span class="s">"dingtalk_oa"</span>, <span class="s">"钉钉 OA 智能工作流"</span>),
+    )
+    name = models.CharField(<span class="s">"流程名称"</span>, max_length=<span class="n">64</span>, unique=<span class="k">True</span>)
+    audit_driver = models.CharField(<span class="s">"驱动类型"</span>, max_length=<span class="n">16</span>, choices=DRIVER_CHOICES, default=<span class="s">"archery"</span>)
+    <span class="c"># 钉钉专用（audit_driver=dingtalk_oa 时必填）</span>
+    dingtalk_process_code = models.CharField(<span class="s">"钉钉模板编码"</span>, max_length=<span class="n">128</span>, blank=<span class="k">True</span>)
+    dingtalk_ originator = models.CharField(<span class="s">"发起人 userid"</span>, max_length=<span class="n">64</span>, blank=<span class="k">True</span>)
+    <span class="c"># Archery 专用（audit_driver=archery 时生效）</span>
+    audit_auth_groups = models.CharField(<span class="s">"审批权限组"</span>, max_length=<span class="n">255</span>, blank=<span class="k">True</span>)
+    is_enabled = models.BooleanField(default=<span class="k">True</span>)
+    description = models.CharField(max_length=<span class="n">255</span>, blank=<span class="k">True</span>)
+    created_by = models.CharField(max_length=<span class="n">50</span>)
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>)
+    updated_at = models.DateTimeField(auto_now=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_approval_flow"</span>
+
+    <span class="k">def</span> __str__(self):
+        <span class="k">return</span> <span class="s">f"{self.name} ({self.audit_driver})"</span></pre>
+
+  <h3>2.4 `ApprovalPolicy` — 审批策略</h3>
+<pre class="code"><span class="k">class</span> ApprovalPolicy(models.Model):
+    <span class="s">"""审批策略（路由规则）：DBA 在 admin 配置，按 priority 倒序匹配。"""</span>
+    MATCH_MODE_CHOICES = ((<span class="s">"all"</span>, <span class="s">"all 类型必须都有"</span>), (<span class="s">"any"</span>, <span class="s">"any 任一即可"</span>))
+    name = models.CharField(max_length=<span class="n">64</span>, unique=<span class="k">True</span>)
+    flow = models.ForeignKey(ApprovalFlow, on_delete=models.CASCADE, related_name=<span class="s">"policies"</span>, verbose_name=<span class="s">"目标流程"</span>)
+    priority = models.IntegerField(default=<span class="n">100</span>, help_text=<span class="s">"数字越大越优先"</span>)
+    is_enabled = models.BooleanField(default=<span class="k">True</span>)
+    <span class="c"># 维度 1: SQL 类型</span>
+    sql_types = models.ManyToManyField(SqlTypeRegistry, related_name=<span class="s">"policies"</span>, blank=<span class="k">True</span>)
+    sql_type_match_mode = models.CharField(max_length=<span class="n">8</span>, choices=MATCH_MODE_CHOICES, default=<span class="s">"any"</span>)
+    <span class="c"># 维度 2: 核心业务表</span>
+    require_core_table = models.BooleanField(default=<span class="k">False</span>)
+    table_levels = models.CharField(max_length=<span class="n">16</span>, blank=<span class="k">True</span>, help_text=<span class="s">"逗号分隔如 L1,L2"</span>)
+    <span class="c"># 维度 3: 影响行数</span>
+    min_affected_rows = models.IntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    max_affected_rows = models.IntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    description = models.CharField(max_length=<span class="n">255</span>, blank=<span class="k">True</span>)
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>)
+    updated_at = models.DateTimeField(auto_now=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_approval_policy"</span>
+        ordering = [<span class="s">"-priority"</span>]</pre>
+
+  <h3>2.5 `GroupDingtalkAuditor` — 权限组 ↔ 钉钉人映射</h3>
+<pre class="code"><span class="k">class</span> GroupDingtalkAuditor(models.Model):
+    <span class="s">"""审批权限组 ↔ 钉钉审批人 userid 映射。"""</span>
+    auth_group = models.ForeignKey(<span class="s">"sql.AuthGroup"</span>, on_delete=models.CASCADE)
+    dingtalk_userid = models.CharField(max_length=<span class="n">64</span>)
+    dingtalk_name = models.CharField(max_length=<span class="n">64</span>, blank=<span class="k">True</span>)
+    role = models.CharField(<span class="s">"角色"</span>, max_length=<span class="n">16</span>, choices=((<span class="s">"approver"</span>, <span class="s">"审批人"</span>), (<span class="s">"cc"</span>, <span class="s">"抄送人"</span>)), default=<span class="s">"approver"</span>)
+    is_active = models.BooleanField(default=<span class="k">True</span>)
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_group_dingtalk_auditor"</span>
+        unique_together = ((<span class="s">"auth_group"</span>, <span class="s">"dingtalk_userid"</span>, <span class="s">"role"</span>),)</pre>
+
+  <h3>2.6 `WorkflowAuditExternal` — 工单 ↔ 外部 OA 关联</h3>
+<pre class="code"><span class="k">class</span> WorkflowAuditExternal(models.Model):
+    <span class="s">"""工单与外部 OA 系统关联表。"""</span>
+    STATUS_CHOICES = (
+        (<span class="s">"PENDING"</span>, <span class="s">"待审批"</span>), (<span class="s">"RUNNING"</span>, <span class="s">"审批中"</span>),
+        (<span class="s">"PASSED"</span>, <span class="s">"已通过"</span>), (<span class="s">"REJECTED"</span>, <span class="s">"已拒绝"</span>),
+        (<span class="s">"TERMINATED"</span>, <span class="s">"已撤回"</span>), (<span class="s">"FALLBACK"</span>, <span class="s">"降级本地"</span>),
+    )
+    audit = models.OneToOneField(<span class="s">"sql.WorkflowAudit"</span>, on_delete=models.CASCADE, related_name=<span class="s">"external"</span>)
+    driver_name = models.CharField(max_length=<span class="n">32</span>)
+    external_instance_id = models.CharField(max_length=<span class="n">128</span>, help_text=<span class="s">"钉钉 processInstanceId"</span>)
+    external_url = models.CharField(max_length=<span class="n">512</span>, blank=<span class="k">True</span>)
+    status = models.CharField(max_length=<span class="n">16</span>, choices=STATUS_CHOICES)
+    last_synced_at = models.DateTimeField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>)
+    updated_at = models.DateTimeField(auto_now=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_workflow_audit_external"</span>
+        indexes = [models.Index(fields=[<span class="s">"status"</span>, <span class="s">"last_synced_at"</span>])]</pre>
+
+  <h3>2.7 `DingtalkOaEventLog` — 钉钉 OA 事件流水</h3>
+<pre class="code"><span class="k">class</span> DingtalkOaEventLog(models.Model):
+    <span class="s">"""钉钉 OA 事件流水：start / callback / sync / fallback。"""</span>
+    EVENT_TYPE_CHOICES = (
+        (<span class="s">"START"</span>, <span class="s">"发起"</span>), (<span class="s">"CALLBACK"</span>, <span class="s">"回调"</span>),
+        (<span class="s">"SYNC"</span>, <span class="s">"对账"</span>), (<span class="s">"FALLBACK_AT_START"</span>, <span class="s">"发起失败降级"</span>),
+        (<span class="s">"FALLBACK_AT_CALLBACK"</span>, <span class="s">"回调失败降级"</span>), (<span class="s">"TERMINATE"</span>, <span class="s">"撤回"</span>),
+    )
+    audit = models.ForeignKey(<span class="s">"sql.WorkflowAudit"</span>, null=<span class="k">True</span>, blank=<span class="k">True</span>, on_delete=models.SET_NULL)
+    event_type = models.CharField(max_length=<span class="n">24</span>, choices=EVENT_TYPE_CHOICES, db_index=<span class="k">True</span>)
+    request_payload = models.JSONField(default=dict, blank=<span class="k">True</span>)
+    response_payload = models.JSONField(default=dict, blank=<span class="k">True</span>)
+    error_message = models.TextField(blank=<span class="k">True</span>)
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>, db_index=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_dingtalk_oa_event_log"</span>
+        indexes = [models.Index(fields=[<span class="s">"event_type"</span>, <span class="s">"-created_at"</span>])]</pre>
+
+  <h3>2.8 7 张表 ER 关系</h3>
+  <div class="er-diagram">
+    <div class="er-row">
+      <div class="er-box">
+        <h4>ApprovalFlow</h4>
+        <table>
+          <tr><td>id</td><td>PK</td></tr>
+          <tr><td>name</td><td>UNIQUE</td></tr>
+          <tr><td>audit_driver</td><td>archery/dingtalk_oa</td></tr>
+          <tr><td>dingtalk_process_code</td><td>VARCHAR(128)</td></tr>
+        </table>
+      </div>
+      <div class="er-box">
+        <h4>ApprovalPolicy</h4>
+        <table>
+          <tr><td>id</td><td>PK</td></tr>
+          <tr><td>flow_id</td><td>FK → ApprovalFlow</td></tr>
+          <tr><td>priority</td><td>INT(100)</td></tr>
+          <tr><td>sql_types</td><td>M2M → SqlTypeRegistry</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="er-arrow">↑ priority 倒序匹配 ↓</div>
+    <div class="er-row">
+      <div class="er-box">
+        <h4>SqlTypeRegistry</h4>
+        <table>
+          <tr><td>code</td><td>PK (INSERT/DROP...)</td></tr>
+          <tr><td>category</td><td>DML/DDL/DQL/DCL</td></tr>
+          <tr><td>pattern</td><td>识别正则</td></tr>
+        </table>
+      </div>
+      <div class="er-box">
+        <h4>CoreBusinessTable</h4>
+        <table>
+          <tr><td>id</td><td>PK</td></tr>
+          <tr><td>instance_id + db + table</td><td>UNIQUE</td></tr>
+          <tr><td>level</td><td>L1/L2/L3</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="er-arrow">↘（3D 匹配）↙</div>
+    <div class="er-row">
+      <div class="er-box">
+        <h4>WorkflowAuditExternal</h4>
+        <table>
+          <tr><td>audit_id</td><td>1:1 → WorkflowAudit</td></tr>
+          <tr><td>driver_name</td><td>dingtalk_oa</td></tr>
+          <tr><td>external_instance_id</td><td>processInstanceId</td></tr>
+          <tr><td>status</td><td>PENDING/RUNNING/PASSED/...</td></tr>
+        </table>
+      </div>
+      <div class="er-box">
+        <h4>DingtalkOaEventLog</h4>
+        <table>
+          <tr><td>id</td><td>PK</td></tr>
+          <tr><td>audit_id</td><td>FK → WorkflowAudit</td></tr>
+          <tr><td>event_type</td><td>START/CALLBACK/SYNC/...</td></tr>
+          <tr><td>request/response</td><td>JSONField</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 03 -->
+  <h2 id="driver"><span class="h2-num">03</span>driver 可插拔架构</h2>
+  <p class="lead">通过 <code>ApprovalFlow.audit_driver</code> 字段路由：<code>archery</code>（本地 Group）或 <code>dingtalk_oa</code>（钉钉智能工作流）。<code>DRIVER_REGISTRY</code> 可扩展。</p>
+
+  <h3>3.1 AuditDriver 抽象基类</h3>
+<pre class="code"><span class="c"># 路径：sql/extensions/audit_drivers/base.py（不在 dingtalk_oa 内）</span>
+<span class="k">class</span> AuditDriver(ABC):
+    <span class="s">"""审批驱动抽象基类。"""</span>
+    name: <span class="n">str</span> = <span class="s">""</span>
+
+    <span class="k">@abstractmethod</span>
+    <span class="k">def</span> start(self, workflow, audit, flow) -> <span class="n">DriverStartResult</span>:
+        <span class="s">"""发起审批。返回 DriverStartResult(external_instance_id, url, raw)。"""</span>
+        <span class="k">raise</span> <span class="n">NotImplementedError</span>
+
+    <span class="k">@abstractmethod</span>
+    <span class="k">def</span> apply_decision(self, audit, decision: <span class="n">str</span>, operator, remark: <span class="n">str</span> = <span class="s">""</span>):
+        <span class="s">"""本地推进后，远程加备注 / 终止流程。"""</span>
+        <span class="k">raise</span> <span class="n">NotImplementedError</span>
+
+    <span class="k">@abstractmethod</span>
+    <span class="k">def</span> terminate(self, audit, operator, remark: <span class="n">str</span> = <span class="s">""</span>):
+        <span class="s">"""远程撤回。"""</span>
+
+    <span class="k">@abstractmethod</span>
+    <span class="k">def</span> get_status(self, audit) -> <span class="n">dict</span>:
+        <span class="s">"""对账用，返回 {status, last_synced_at, raw}。"""</span>
+
+    <span class="k">@abstractmethod</span>
+    <span class="k">def</span> handle_callback(self, request) -> <span class="n">HttpResponse</span>:
+        <span class="s">"""HTTP 回调入口。"""</span>
+
+
+<span class="n">DRIVER_REGISTRY</span>: <span class="n">Dict</span>[<span class="n">str</span>, <span class="n">Type</span>[AuditDriver]] = {
+    <span class="s">"archery"</span>: ArcheryDriver,
+    <span class="s">"dingtalk_oa"</span>: DingtalkOaDriver,
+    <span class="c"># 未来扩展：feishu, lark, wecom_oa ...</span>
+}
+
+<span class="k">def</span> get_driver(name: <span class="n">str</span>) -> AuditDriver:
+    cls = DRIVER_REGISTRY.get(name)
+    <span class="k">if not</span> cls:
+        <span class="k">raise</span> ValueError(<span class="s">f"unknown audit driver: {name}"</span>)
+    <span class="k">return</span> cls()</pre>
+
+  <h3>3.2 DingtalkOaDriver</h3>
+<pre class="code"><span class="k">class</span> DingtalkApiError(<span class="n">Exception</span>):
+    <span class="s">"""钉钉开放平台 API 业务错误（含 errcode != 0）。"""</span>
+    <span class="k">def</span> __init__(self, endpoint: <span class="n">str</span>, payload: <span class="n">dict</span>):
+        self.endpoint = endpoint
+        self.payload = payload
+        errcode = payload.get(<span class="s">"errcode"</span>)
+        errmsg = payload.get(<span class="s">"errmsg"</span>) <span class="k">or</span> payload.get(<span class="s">"message"</span>)
+        super().__init__(<span class="s">f"{endpoint} failed: errcode={errcode} errmsg={errmsg}"</span>)
+
+
+<span class="k">class</span> DingtalkOaDriver(AuditDriver):
+    <span class="s">"""钉钉 OA 智能工作流 driver。
+
+关键约束:
+    * start() 失败按 §8 重试 + 降级，不阻塞业务
+      （除非 CUSTOM_DINGTALK_OA_FALLBACK_ENABLED=False）
+    * 所有钉钉 API 调用吃掉异常记 logger（不能拖垮本地审批）
+    * SQL 全文**不**通过表单传给钉钉，只传摘要 + Archery 详情链接
+"""</span>
+    name = <span class="s">"dingtalk_oa"</span>
+
+    <span class="k">def</span> start(self, workflow, audit, flow) -> DriverStartResult:
+        <span class="s">"""发起钉钉 OA 审批。
+
+流程:
+    1. 构造脱敏表单（不含 SQL 全文）
+    2. 调 topapi.processinstance.create（最多 RETRY_TIMES 次重试）
+    3. 成功: 写 WorkflowAuditExternal 关联 + 记 DingtalkOaEventLog(START)
+    4. 失败且 FALLBACK_ENABLED=True: 降级到本地 archery flow + 推群告警
+    5. 失败且 FALLBACK_ENABLED=False: 抛 DingtalkApiError 阻塞业务
+"""</span>
+        max_retries = <span class="n">int</span>(<span class="n">getattr</span>(settings, <span class="s">"CUSTOM_DINGTALK_OA_RETRY_TIMES"</span>, <span class="n">3</span>))
+        timeout = <span class="n">int</span>(<span class="n">getattr</span>(settings, <span class="s">"CUSTOM_DINGTALK_OA_TIMEOUT_SECONDS"</span>, <span class="n">10</span>))
+        fallback = <span class="n">bool</span>(<span class="n">getattr</span>(settings, <span class="s">"CUSTOM_DINGTALK_OA_FALLBACK_ENABLED"</span>, <span class="k">True</span>))
+
+        <span class="k">if not</span> flow.dingtalk_process_code:
+            <span class="c"># 模板编码缺失是配置错误 → 直接降级（不要死循环重试）</span>
+            <span class="k">return</span> self._fallback(audit, flow, reason=<span class="s">"process_code 缺失"</span>)
+
+        form = self._build_form(workflow, audit, flow)
+        last_exc = <span class="k">None</span>
+        <span class="k">for</span> attempt <span class="k">in</span> <span class="n">range</span>(<span class="n">1</span>, max_retries + <span class="n">1</span>):
+            <span class="k">try</span>:
+                resp = self._call_api(
+                    <span class="s">"/topapi/processinstance/create"</span>,
+                    {<span class="s">"process_code"</span>: flow.dingtalk_process_code, <span class="s">"form_component_values"</span>: form},
+                    timeout=timeout,
+                )
+                instance_id = resp.get(<span class="s">"process_instance_id"</span>)
+                <span class="k">if not</span> instance_id:
+                    <span class="k">raise</span> DingtalkApiError(<span class="s">"/topapi/processinstance/create"</span>, resp)
+                <span class="c"># 写外部关联</span>
+                WorkflowAuditExternal.objects.update_or_create(
+                    audit=audit,
+                    defaults={
+                        <span class="s">"driver_name"</span>: self.name,
+                        <span class="s">"external_instance_id"</span>: instance_id,
+                        <span class="s">"status"</span>: <span class="s">"RUNNING"</span>,
+                        <span class="s">"external_url"</span>: <span class="s">f"https://aflow.dingtalk.com/dingtalk/pc/index.htm?procInsId={instance_id}"</span>,
+                    },
+                )
+                DingtalkOaEventLog.objects.create(
+                    audit=audit, event_type=<span class="s">"START"</span>, request_payload=form, response_payload=resp,
+                )
+                <span class="k">return</span> DriverStartResult(external_instance_id=instance_id, url=..., raw=resp)
+            <span class="k">except</span> (DingtalkApiError, requests.RequestException) <span class="k">as</span> exc:
+                last_exc = exc
+                logger.warning(<span class="s">"dingtalk start attempt %s failed: %s"</span>, attempt, exc)
+                <span class="k">continue</span>
+        <span class="c"># 全部重试失败</span>
+        <span class="k">if</span> fallback:
+            <span class="k">return</span> self._fallback(audit, flow, reason=<span class="s">f"start failed: {last_exc}"</span>)
+        <span class="k">raise</span> DingtalkApiError(<span class="s">"/topapi/processinstance/create"</span>, {<span class="s">"errcode"</span>: -<span class="n">1</span>, <span class="s">"errmsg"</span>: <span class="n">str</span>(last_exc)})
+
+    <span class="k">def</span> _build_form(self, workflow, audit, flow) -> <span class="n">List</span>[<span class="n">dict</span>]:
+        <span class="s">"""构造脱敏表单（不含 SQL 全文）。"""</span>
+        detail_url = <span class="s">f"/sqlworkflow/{workflow.id}/"</span>
+        <span class="k">return</span> [
+            {<span class="s">"name"</span>: <span class="s">"标题"</span>, <span class="s">"value"</span>: workflow.workflow_name},
+            {<span class="s">"name"</span>: <span class="s">"实例"</span>, <span class="s">"value"</span>: workflow.instance.instance_name},
+            {<span class="s">"name"</span>: <span class="s">"库"</span>, <span class="s">"value"</span>: workflow.db_name},
+            {<span class="s">"name"</span>: <span class="s">"SQL 摘要"</span>, <span class="s">"value"</span>: (workflow.sqlworkflowcontent.sql_content <span class="k">or</span> <span class="s">""</span>)[:<span class="n">100</span>] + <span class="s">"..."</span>},
+            {<span class="s">"name"</span>: <span class="s">"Archery 详情"</span>, <span class="s">"value"</span>: detail_url},
+            {<span class="s">"name"</span>: <span class="s">"发起人"</span>, <span class="s">"value"</span>: audit.user_display <span class="k">or</span> audit.user_name},
+        ]
+
+    <span class="k">def</span> _call_api(self, endpoint: <span class="n">str</span>, payload: <span class="n">dict</span>, timeout: <span class="n">int</span> = <span class="n">10</span>) -> <span class="n">dict</span>:
+        <span class="s">"""统一 API 调用（含 access_token 注入 + 错误处理）。
+
+Raises:
+    DingtalkApiError: errcode != 0
+    requests.RequestException: 网络错误
+"""</span>
+        access_token = get_oa_access_token()
+        url = <span class="s">f"https://oapi.dingtalk.com{endpoint}"</span>
+        params = {<span class="s">"access_token"</span>: access_token}
+        r = requests.post(url, params=params, json=payload, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+        <span class="k">if</span> data.get(<span class="s">"errcode"</span>) != <span class="n">0</span>:
+            <span class="k">raise</span> DingtalkApiError(endpoint, data)
+        <span class="k">return</span> data.get(<span class="s">"result"</span>, data)
+
+    <span class="k">def</span> _fallback(self, audit, flow, reason: <span class="n">str</span>) -> DriverStartResult:
+        <span class="s">"""降级到本地 archery flow + 推群告警。"""</span>
+        audit.audit_driver = <span class="s">"archery"</span>
+        audit.save(update_fields=[<span class="s">"audit_driver"</span>])
+        WorkflowAuditExternal.objects.update_or_create(
+            audit=audit, defaults={<span class="s">"driver_name"</span>: <span class="s">"archery"</span>, <span class="s">"status"</span>: <span class="s">"FALLBACK"</span>},
+        )
+        DingtalkOaEventLog.objects.create(
+            audit=audit, event_type=<span class="s">"FALLBACK_AT_START"</span>, error_message=reason,
+        )
+        <span class="c"># 推 DBA 群告警（best-effort）</span>
+        <span class="k">try</span>:
+            <span class="n">send_dingtalk_text</span>(<span class="s">f"⚠️ 钉钉 OA 降级: {audit.id} 原因: {reason}"</span>)
+        <span class="k">except</span> <span class="n">Exception</span>:
+            <span class="k">pass</span>
+        <span class="c"># 触发本地流程继续</span>
+        <span class="k">return</span> DriverStartResult(external_instance_id=<span class="s">""</span>, url=<span class="s">""</span>, raw={<span class="s">"fallback"</span>: <span class="k">True</span>, <span class="s">"reason"</span>: reason})
+
+    <span class="k">def</span> apply_decision(self, audit, decision: <span class="n">str</span>, operator, remark: <span class="n">str</span> = <span class="s">""</span>):
+        <span class="s">"""本地推进后，钉钉加备注 / 终止流程。"""</span>
+        ext = getattr(audit, <span class="s">"external"</span>, <span class="k">None</span>)
+        <span class="k">if not</span> ext <span class="k">or</span> ext.driver_name != self.name:
+            <span class="k">return</span>
+        <span class="k">try</span>:
+            <span class="k">if</span> decision <span class="k">in</span> (<span class="s">"passed"</span>, <span class="s">"rejected"</span>):
+                <span class="c"># 加备注</span>
+                self._call_api(<span class="s">"/topapi/processinstance/comment/add"</span>, {
+                    <span class="s">"process_instance_id"</span>: ext.external_instance_id,
+                    <span class="s">"comment"</span>: <span class="s">f"[Archery] {operator} {decision}: {remark}"</span>,
+                })
+                <span class="c"># 终止流程（本地已通过）</span>
+                self._call_api(<span class="s">"/topapi/processinstance/terminate"</span>, {
+                    <span class="s">"process_instance_id"</span>: ext.external_instance_id,
+                    <span class="s">"remark"</span>: remark,
+                })
+            ext.status = <span class="s">"PASSED"</span> <span class="k">if</span> decision == <span class="s">"passed"</span> <span class="k">else</span> <span class="s">"REJECTED"</span>
+            ext.last_synced_at = timezone.now()
+            ext.save()
+        <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+            logger.exception(<span class="s">"dingtalk apply_decision failed: %s"</span>, exc)
+
+    <span class="k">def</span> terminate(self, audit, operator, remark: <span class="n">str</span> = <span class="s">""</span>):
+        <span class="s">"""钉钉侧撤回。"""</span>
+        ext = getattr(audit, <span class="s">"external"</span>, <span class="k">None</span>)
+        <span class="k">if not</span> ext <span class="k">or</span> ext.driver_name != self.name:
+            <span class="k">return</span>
+        <span class="k">try</span>:
+            self._call_api(<span class="s">"/topapi/processinstance/terminate"</span>, {
+                <span class="s">"process_instance_id"</span>: ext.external_instance_id,
+                <span class="s">"remark"</span>: <span class="s">f"[Archery] {operator} 撤回: {remark}"</span>,
+            })
+            ext.status = <span class="s">"TERMINATED"</span>
+            ext.last_synced_at = timezone.now()
+            ext.save()
+            DingtalkOaEventLog.objects.create(
+                audit=audit, event_type=<span class="s">"TERMINATE"</span>, request_payload={<span class="s">"remark"</span>: remark},
+            )
+        <span class="k">except</span> <span class="n">Exception</span>:
+            logger.exception(<span class="s">"dingtalk terminate failed"</span>)
+
+    <span class="k">def</span> get_status(self, audit) -> <span class="n">dict</span>:
+        <span class="s">"""对账用。"""</span>
+        ext = getattr(audit, <span class="s">"external"</span>, <span class="k">None</span>)
+        <span class="k">if not</span> ext <span class="k">or</span> ext.driver_name != self.name <span class="k">or not</span> ext.external_instance_id:
+            <span class="k">return</span> {<span class="s">"status"</span>: <span class="s">"UNKNOWN"</span>}
+        <span class="k">try</span>:
+            data = self._call_api(<span class="s">"/topapi/processinstance/get"</span>, {
+                <span class="s">"process_instance_id"</span>: ext.external_instance_id,
+            })
+            status = data.get(<span class="s">"status"</span>)  <span class="c"># NEW / RUNNING / COMPLETED / TERMINATED</span>
+            <span class="c"># 映射到本系统 status</span>
+            ext_map = {<span class="s">"NEW"</span>: <span class="s">"PENDING"</span>, <span class="s">"RUNNING"</span>: <span class="s">"RUNNING"</span>,
+                      <span class="s">"COMPLETED"</span>: <span class="s">"PASSED"</span>, <span class="s">"TERMINATED"</span>: <span class="s">"TERMINATED"</span>}
+            ext.status = ext_map.get(status, <span class="s">"RUNNING"</span>)
+            ext.last_synced_at = timezone.now()
+            ext.save()
+            DingtalkOaEventLog.objects.create(
+                audit=audit, event_type=<span class="s">"SYNC"</span>, response_payload=data,
+            )
+            <span class="k">return</span> {<span class="s">"status"</span>: ext.status, <span class="s">"last_synced_at"</span>: ext.last_synced_at, <span class="s">"raw"</span>: data}
+        <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+            logger.warning(<span class="s">"dingtalk get_status failed: %s"</span>, exc)
+            <span class="k">return</span> {<span class="s">"status"</span>: <span class="s">"UNKNOWN"</span>, <span class="s">"error"</span>: <span class="k">str</span>(exc)}
+
+    <span class="k">def</span> handle_callback(self, request):
+        <span class="s">"""HTTP 回调入口（委托给 services.oa_callback_handler）。"""</span>
+        <span class="k">from</span> ..services.oa_callback_handler <span class="k">import</span> handle_oa_callback
+        <span class="k">return</span> handle_oa_callback(request, driver=self)</pre>
+
+  <!-- 04 -->
+  <h2 id="policy"><span class="h2-num">04</span>3D 策略匹配算法</h2>
+
+  <h3>4.1 `match_policy`</h3>
+<pre class="code"><span class="k">def</span> match_policy(
+    workflow,
+    affected_tables: <span class="n">Optional</span>[<span class="n">Sequence</span>[<span class="n">dict</span>]] = <span class="k">None</span>,
+) -> <span class="n">Optional</span>[ApprovalPolicy]:
+    <span class="s">"""根据工单特征匹配一条 ApprovalPolicy。
+
+Args:
+    workflow: sql.models.SqlWorkflow 实例
+    affected_tables: 可选 [{db, table}, ...]
+        传 None 时内部从 workflow.sqlworkflowcontent.sql_content
+        调上游 sql.utils.extract_tables.extract_tables 解析
+
+Returns:
+    命中的 ApprovalPolicy；未命中返回 None
+
+算法:
+    1. 从工单提取三个特征: SQL 类型集合、影响行数、涉及表集合
+    2. 按 priority 倒序遍历启用的 ApprovalPolicy
+    3. 三维 AND 匹配: SQL 类型 ∩ 业务表 ∩ 影响行数
+    4. 第一条命中即返回
+    5. 全部不命中 → None（调用方走默认 flow）
+"""</span>
+    sql_content = workflow.sqlworkflowcontent.sql_content <span class="k">or</span> <span class="s">""</span>
+    sql_types = extract_sql_types(sql_content)
+    <span class="k">if</span> affected_tables <span class="k">is</span> <span class="k">None</span>:
+        affected_tables = extract_affected_tables(workflow)
+    affected_rows = extract_affected_rows(workflow, mode=<span class="s">"total"</span>)
+
+    policies = (
+        ApprovalPolicy.objects.<span class="n">filter</span>(is_enabled=<span class="k">True</span>)
+        .select_related(<span class="s">"flow"</span>)
+        .prefetch_related(<span class="s">"sql_types"</span>)
+        .order_by(<span class="s">"-priority"</span>)
+    )
+    <span class="k">for</span> policy <span class="k">in</span> policies:
+        <span class="k">if not</span> _match_sql_types(policy, sql_types):
+            <span class="k">continue</span>
+        <span class="k">if</span> policy.require_core_table <span class="k">and not</span> _has_core_table(affected_tables, policy.table_levels):
+            <span class="k">continue</span>
+        <span class="k">if not</span> _match_affected_rows(policy, affected_rows):
+            <span class="k">continue</span>
+        <span class="k">return</span> policy
+    <span class="k">return</span> <span class="k">None</span></pre>
+
+  <h3>4.2 三维判定函数</h3>
+<pre class="code"><span class="k">def</span> _match_sql_types(policy: ApprovalPolicy, sql_types: <span class="n">set</span>) -> <span class="n">bool</span>:
+    <span class="s">"""维度 1: SQL 类型集合。
+
+策略为空集合时永远不命中（防御性）。
+match_mode='all' → 全部类型必须有；'any'（默认）→ 任一即可。
+"""</span>
+    policy_types: <span class="n">set</span> = <span class="n">set</span>(policy.sql_types.values_list(<span class="s">"code"</span>, flat=<span class="k">True</span>))
+    <span class="k">if not</span> policy_types:
+        <span class="k">return</span> <span class="k">False</span>
+    <span class="k">if</span> policy.sql_type_match_mode == <span class="s">"all"</span>:
+        <span class="k">return</span> policy_types.issubset(sql_types)
+    <span class="k">return</span> <span class="n">bool</span>(policy_types &amp; sql_types)
+
+
+<span class="k">def</span> _has_core_table(affected_tables: <span class="n">Sequence</span>[<span class="n">dict</span>], levels: <span class="n">str</span>) -> <span class="n">bool</span>:
+    <span class="s">"""维度 2: 业务表清单中存在受影响的表。
+
+levels 形如 "L1,L2"；空表示任意等级。
+命中条件: 任意受影响表 ∈ CoreBusinessTable 且 level ∈ levels。
+"""</span>
+    <span class="k">if not</span> levels:
+        <span class="k">return</span> <span class="k">True</span>
+    level_set = <span class="n">set</span>(s.strip() <span class="k">for</span> s <span class="k">in</span> levels.split(<span class="s">","</span>) <span class="k">if</span> s.strip())
+    core_dbs = <span class="n">set</span>(CoreBusinessTable.objects.<span class="n">filter</span>(
+        level__in=level_set, is_active=<span class="k">True</span>,
+    ).values_list(<span class="s">"db_name"</span>, <span class="s">"table_name"</span>))
+    <span class="k">for</span> t <span class="k">in</span> affected_tables:
+        <span class="k">if</span> (t[<span class="s">"db"</span>], t[<span class="s">"table"</span>]) <span class="k">in</span> core_dbs:
+            <span class="k">return</span> <span class="k">True</span>
+    <span class="k">return</span> <span class="k">False</span>
+
+
+<span class="k">def</span> _match_affected_rows(policy: ApprovalPolicy, affected_rows: <span class="n">int</span>) -> <span class="n">bool</span>:
+    <span class="s">"""维度 3: 影响行数在 [min, max] 区间内（None 端不限制）。"""</span>
+    <span class="k">if</span> policy.min_affected_rows <span class="k">is not None and</span> affected_rows &lt; policy.min_affected_rows:
+        <span class="k">return</span> <span class="k">False</span>
+    <span class="k">if</span> policy.max_affected_rows <span class="k">is not None and</span> affected_rows > policy.max_affected_rows:
+        <span class="k">return</span> <span class="k">False</span>
+    <span class="k">return</span> <span class="k">True</span></pre>
+
+  <!-- 05 -->
+  <h2 id="sql-detect"><span class="h2-num">05</span>SQL 类型检测</h2>
+
+  <h3>5.1 `extract_sql_types`</h3>
+<pre class="code"><span class="k">def</span> extract_sql_types(sql_content: <span class="n">str</span>) -> <span class="n">Set</span>[<span class="n">str</span>]:
+    <span class="s">"""从 SQL 文本提取 SQL 类型集合（去重）。
+
+算法:
+    1. sqlparse.parse(sql_content) 分句
+    2. 每句 first_token 取大写（如 INSERT/UPDATE/DELETE/DROP/TRUNCATE/CREATE/ALTER/SELECT）
+    3. 查 ext_sql_type_registry 匹配（用 SqlTypeRegistry.pattern 正则）
+    4. 返回匹配到的 code 集合
+
+Examples:
+    >>> extract_sql_types("INSERT INTO t VALUES (1); DROP TABLE t;")
+    {"INSERT", "DROP"}
+
+Raises:
+    不抛异常（无法识别时返回空集合）
+"""</span>
+    types = <span class="n">set</span>()
+    parsed = <span class="n">sqlparse</span>.parse(sql_content)
+    <span class="k">for</span> stmt <span class="k">in</span> parsed:
+        <span class="k">if not</span> <span class="n">isinstance</span>(stmt, Statement):
+            <span class="k">continue</span>
+        first = <span class="n">str</span>(stmt.token_first(skip_cm=<span class="k">True</span>)).upper().strip()
+        <span class="k">for</span> reg <span class="k">in</span> SqlTypeRegistry.objects.<span class="n">filter</span>(is_active=<span class="k">True</span>):
+            <span class="k">if</span> <span class="n">re</span>.<span class="n">match</span>(reg.pattern, first, <span class="n">re</span>.IGNORECASE):
+                types.add(reg.code)
+                <span class="k">break</span>
+    <span class="k">return</span> types
+
+
+<span class="k">def</span> extract_affected_rows(workflow, mode: <span class="n">str</span> = <span class="s">"total"</span>) -> <span class="n">int</span>:
+    <span class="s">"""估算影响行数（复用 Archery 上游 extract_changed_rows / estimate）。
+
+mode:
+    "total": 总影响行数（含 INSERT VALUES 多行）
+    "single": 单表最大行数
+    "exists": 0/1（只判断是否有影响）
+"""</span>
+    <span class="c"># 委托给 sql.utils.extract_changed_rows 复用</span>
+    <span class="k">from</span> sql.utils.extract_changed_rows <span class="k">import</span> extract_changed_rows
+    <span class="k">return</span> extract_changed_rows(workflow, mode=mode)
+
+
+<span class="k">def</span> extract_affected_tables(workflow) -> <span class="n">List</span>[<span class="n">dict</span>]:
+    <span class="s">"""提取涉及的表列表 [{db, table}, ...]（委托给 sql.utils.extract_tables）。"""</span>
+    <span class="k">from</span> sql.utils.extract_tables <span class="k">import</span> extract_tables
+    <span class="k">return</span> extract_tables(workflow)</pre>
+
+  <!-- 06 -->
+  <h2 id="crypto"><span class="h2-num">06</span>回调加密 / 签名</h2>
+  <div class="callout warn">
+    <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <p><strong>钉钉回调双重保护</strong>：签名 = SHA1(sorted([token, timestamp, nonce, encrypted_body]))；加密 = AES-256-CBC，IV = aes_key 前 16 字节；密文 = random(16B) + msg_len(4B) + msg_json + receiveid；填充 PKCS7（block=32）。</p>
+  </div>
+
+  <h3>6.1 `DingtalkCrypto`</h3>
+<pre class="code"><span class="k">class</span> DingtalkCrypto:
+    <span class="s">"""钉钉 OA 回调加密/解密 + 签名校验。
+
+Args:
+    token: 钉钉后台「事件订阅」生成的 Token 字符串
+    aes_key: 43 字符 base64（不含 =），钉钉后台生成
+        解码后是 32 字节，作为 AES-256 key + IV（前 16 字节）
+    receiveid: 钉钉后台配置的企业 corp_id / receive_id
+        用于校验密文尾部、加密回包尾部。空字符串跳过此校验。
+"""</span>
+    BLOCK_SIZE = <span class="n">32</span>
+
+    <span class="k">def</span> __init__(self, token: <span class="n">str</span>, aes_key: <span class="n">str</span>, receiveid: <span class="n">str</span> = <span class="s">""</span>):
+        <span class="k">if not</span> token:
+            <span class="k">raise</span> ValueError(<span class="s">"token is required"</span>)
+        <span class="k">if not</span> aes_key <span class="k">or len</span>(aes_key) != <span class="n">43</span>:
+            <span class="k">raise</span> ValueError(<span class="s">"aes_key must be 43 chars (base64 without padding)"</span>)
+        self.token = token
+        self.receiveid = receiveid <span class="k">or</span> <span class="s">""</span>
+        <span class="k">try</span>:
+            self.aes_key = base64.b64decode(aes_key + <span class="s">"="</span>)
+        <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> e:
+            <span class="k">raise</span> ValueError(<span class="s">f"aes_key base64 decode failed: {e}"</span>) <span class="k">from</span> e
+        <span class="k">if len</span>(self.aes_key) != <span class="n">32</span>:
+            <span class="k">raise</span> ValueError(<span class="s">f"aes_key decoded length must be 32 bytes, got {len(self.aes_key)}"</span>)
+
+    <span class="k">def</span> verify_signature(self, timestamp: <span class="n">str</span>, nonce: <span class="n">str</span>, encrypted_b64: <span class="n">str</span>, signature: <span class="n">str</span>) -> <span class="n">bool</span>:
+        <span class="s">"""校验 URL 参数 signature。
+
+钉钉 v2 签名规则:
+    1) 把 token、timestamp、nonce、encrypted_body 排序
+    2) 拼接后 SHA1（hex）
+    3) 与 URL 参数 signature 比较（hmac.compare_digest 防时序攻击）
+"""</span>
+        <span class="k">if not</span> signature:
+            <span class="k">return</span> <span class="k">False</span>
+        params = <span class="n">sorted</span>([self.token, <span class="n">str</span>(timestamp), <span class="n">str</span>(nonce), <span class="n">str</span>(encrypted_b64)])
+        expected = hashlib.sha1(<span class="s">""</span>.<span class="n">join</span>(params).encode(<span class="s">"utf-8"</span>)).hexdigest()
+        <span class="k">return</span> hmac.compare_digest(expected, <span class="n">str</span>(signature))
+
+    <span class="k">def</span> decrypt(self, encrypted_b64: <span class="n">str</span>) -> <span class="n">dict</span>:
+        <span class="s">"""AES-256-CBC 解密 + 解析 JSON。
+
+密文布局: random(16B) + msg_len(4B 大端) + msg_json + receiveid
+
+Raises:
+    ValueError: 密文长度异常、receiveid 不匹配、msg_len 越界
+    json.JSONDecodeError: 解密后非 JSON
+"""</span>
+        <span class="k">if not</span> encrypted_b64:
+            <span class="k">raise</span> ValueError(<span class="s">"encrypted body is empty"</span>)
+        <span class="k">try</span>:
+            ciphertext = base64.b64decode(encrypted_b64)
+        <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> e:
+            <span class="k">raise</span> ValueError(<span class="s">f"base64 decode failed: {e}"</span>) <span class="k">from</span> e
+        <span class="k">if len</span>(ciphertext) &lt; <span class="n">32</span>:
+            <span class="k">raise</span> ValueError(<span class="s">f"ciphertext too short: {len(ciphertext)} bytes (min 32)"</span>)
+
+        iv = self.aes_key[:<span class="n">16</span>]
+        cipher = AES.new(self.aes_key, AES.MODE_CBC, iv)
+        plain = cipher.decrypt(ciphertext)
+        plain = plain[<span class="n">16</span>:]  <span class="c"># 跳过前 16 字节 random</span>
+
+        <span class="k">if len</span>(plain) &lt; <span class="n">4</span>:
+            <span class="k">raise</span> ValueError(<span class="s">"plaintext header too short"</span>)
+        msg_len = struct.unpack(<span class="s">"&gt;I"</span>, plain[:<span class="n">4</span>])[<span class="n">0</span>]
+        <span class="k">if</span> msg_len &lt;= <span class="n">0</span> <span class="k">or</span> msg_len &gt; <span class="n">len</span>(plain) - <span class="n">4</span>:
+            <span class="k">raise</span> ValueError(<span class="s">f"msg_len out of range: {msg_len}"</span>)
+
+        msg = plain[<span class="n">4</span> : <span class="n">4</span> + msg_len]
+        <span class="k">if</span> self.receiveid:
+            tail = plain[<span class="n">4</span> + msg_len : <span class="n">4</span> + msg_len + <span class="n">len</span>(self.receiveid)]
+            expected = self.receiveid.encode(<span class="s">"utf-8"</span>)
+            <span class="k">if</span> tail != expected:
+                <span class="k">raise</span> ValueError(<span class="s">"receiveid mismatch"</span>)
+        <span class="k">return</span> json.loads(msg.decode(<span class="s">"utf-8"</span>))
+
+    <span class="k">def</span> encrypt(self, msg: <span class="n">Union</span>[<span class="n">dict</span>, <span class="n">str</span>]) -> <span class="n">str</span>:
+        <span class="s">"""AES-256-CBC 加密回包用。"""</span>
+        <span class="k">if</span> <span class="n">isinstance</span>(msg, <span class="n">dict</span>):
+            msg_bytes = json.dumps(msg, ensure_ascii=<span class="k">False</span>).encode(<span class="s">"utf-8"</span>)
+        <span class="k">elif</span> <span class="n">isinstance</span>(msg, <span class="n">str</span>):
+            msg_bytes = msg.encode(<span class="s">"utf-8"</span>)
+        <span class="k">else</span>:
+            <span class="k">raise</span> <span class="n">TypeError</span>(<span class="s">f"msg must be dict or str, got {type(msg).__name__}"</span>)
+
+        msg_len = struct.pack(<span class="s">"&gt;I"</span>, <span class="n">len</span>(msg_bytes))
+        random_bytes = os.urandom(<span class="n">16</span>)
+        plain = random_bytes + msg_len + msg_bytes + self.receiveid.encode(<span class="s">"utf-8"</span>)
+        <span class="c"># PKCS7 padding</span>
+        pad = self.BLOCK_SIZE - <span class="n">len</span>(plain) % self.BLOCK_SIZE
+        plain += <span class="n">bytes</span>([pad] * pad)
+
+        iv = self.aes_key[:<span class="n">16</span>]
+        cipher = AES.new(self.aes_key, AES.MODE_CBC, iv)
+        <span class="k">return</span> base64.b64encode(cipher.encrypt(plain)).decode(<span class="s">"utf-8"</span>)</pre>
+
+  <h3>6.2 `get_oa_access_token`</h3>
+<pre class="code"><span class="c"># security/guard.py</span>
+<span class="k">from</span> django.core.cache <span class="k">import</span> cache
+
+<span class="n">_TOKEN_CACHE_KEY</span> = <span class="s">"dingtalk_oa:access_token"</span>
+<span class="n">_TOKEN_TTL</span> = <span class="n">7000</span>  <span class="c"># 7000s（钉钉 access_token 2h 有效期，提前 100s 刷新）</span>
+
+<span class="k">def</span> get_oa_access_token() -> <span class="n">str</span>:
+    <span class="s">"""获取企业 access_token（带 cache）。
+
+1. cache 命中 → 直接返回
+2. 未命中 → 调 /gettoken 拉新 + 写 cache
+3. 过期前自动刷新
+
+Raises:
+    RuntimeError: 钉钉返回 errcode != 0
+    requests.RequestException: 网络错误
+"""</span>
+    token = cache.<span class="n">get</span>(_TOKEN_CACHE_KEY)
+    <span class="k">if</span> token:
+        <span class="k">return</span> token
+
+    app_key = <span class="n">getattr</span>(settings, <span class="s">"CUSTOM_DINGTALK_OA_APP_KEY"</span>, <span class="s">""</span>)
+    app_secret = <span class="n">getattr</span>(settings, <span class="s">"CUSTOM_DINGTALK_OA_APP_SECRET"</span>, <span class="s">""</span>)
+    <span class="k">if not</span> app_key <span class="k">or not</span> app_secret:
+        <span class="k">raise</span> <span class="n">RuntimeError</span>(<span class="s">"CUSTOM_DINGTALK_OA_APP_KEY/SECRET 未配置"</span>)
+
+    resp = requests.<span class="n">get</span>(
+        <span class="s">"https://oapi.dingtalk.com/gettoken"</span>,
+        params={<span class="s">"appkey"</span>: app_key, <span class="s">"appsecret"</span>: app_secret},
+        timeout=<span class="n">10</span>,
+    )
+    data = resp.json()
+    <span class="k">if</span> data.get(<span class="s">"errcode"</span>) != <span class="n">0</span>:
+        <span class="k">raise</span> <span class="n">RuntimeError</span>(<span class="s">f"gettoken failed: {data}"</span>)
+    token = data[<span class="s">"access_token"</span>]
+    cache.<span class="n">set</span>(_TOKEN_CACHE_KEY, token, _TOKEN_TTL)
+    <span class="k">return</span> token</pre>
+
+  <!-- 07 -->
+  <h2 id="callback"><span class="h2-num">07</span>回调处理流程</h2>
+  <div class="flow flow-5">
+    <div class="flow-step">
+      <div class="step-num">01</div>
+      <div class="step-name">钉钉 POST</div>
+      <div class="step-detail">签名 timestamp<br>+ nonce + body</div>
+    </div>
+    <div class="flow-step">
+      <div class="step-num">02</div>
+      <div class="step-name">验签</div>
+      <div class="step-detail">DingtalkCrypto<br>.verify_signature</div>
+    </div>
+    <div class="flow-step active">
+      <div class="step-num">03</div>
+      <div class="step-name">解密</div>
+      <div class="step-detail">AES-256-CBC<br>.decrypt → JSON</div>
+    </div>
+    <div class="flow-step">
+      <div class="step-num">04</div>
+      <div class="step-name">路由</div>
+      <div class="step-detail">eventType →<br>bpms_instance_change</div>
+    </div>
+    <div class="flow-step">
+      <div class="step-num">05</div>
+      <div class="step-name">本地推进</div>
+      <div class="step-detail">audit.status=<br>passed/rejected</div>
+    </div>
+  </div>
+
+  <h3>7.1 `handle_oa_callback`</h3>
+<pre class="code"><span class="c"># services/oa_callback_handler.py</span>
+<span class="k">from</span> django.views.decorators.csrf <span class="k">import</span> csrf_exempt
+<span class="k">from</span> django.http <span class="k">import</span> HttpResponse, JsonResponse
+
+<span class="k">@csrf_exempt</span>
+<span class="k">def</span> handle_oa_callback(request, driver: DingtalkOaDriver):
+    <span class="s">"""钉钉 OA 回调入口（不含 CSRF，依赖签名校验）。
+
+Args:
+    request: Django HttpRequest
+    driver: DingtalkOaDriver 实例
+
+Returns:
+    JsonResponse / HttpResponse
+
+Raises:
+    不抛异常（所有错误写 DingtalkOaEventLog）
+"""</span>
+    <span class="k">try</span>:
+        timestamp = request.GET.get(<span class="s">"timestamp"</span>, <span class="s">""</span>)
+        nonce = request.GET.get(<span class="s">"nonce"</span>, <span class="s">""</span>)
+        signature = request.GET.get(<span class="s">"signature"</span>, <span class="s">""</span>)
+        encrypted = request.body.decode(<span class="s">"utf-8"</span>)
+
+        crypto = DingtalkCrypto(
+            token=<span class="n">getattr</span>(settings, <span class="s">"CUSTOM_DINGTALK_OA_TOKEN"</span>, <span class="s">""</span>),
+            aes_key=<span class="n">getattr</span>(settings, <span class="s">"CUSTOM_DINGTALK_OA_AES_KEY"</span>, <span class="s">""</span>),
+            receiveid=<span class="n">getattr</span>(settings, <span class="s">"CUSTOM_DINGTALK_OA_RECEIVEID"</span>, <span class="s">""</span>),
+        )
+
+        <span class="c"># 1. 验签</span>
+        <span class="k">if not</span> crypto.verify_signature(timestamp, nonce, encrypted, signature):
+            DingtalkOaEventLog.objects.create(
+                event_type=<span class="s">"CALLBACK"</span>, error_message=<span class="s">f"signature 校验失败: signature={signature}"</span>,
+            )
+            <span class="k">return</span> HttpResponse(<span class="s">"signature fail"</span>, status=<span class="n">403</span>)
+
+        <span class="c"># 2. 解密</span>
+        payload = crypto.decrypt(encrypted)
+        DingtalkOaEventLog.objects.create(
+            event_type=<span class="s">"CALLBACK"</span>, request_payload=payload,
+        )
+
+        <span class="c"># 3. 路由：bpms_instance_change 等事件</span>
+        event_type = payload.get(<span class="s">"eventType"</span>)
+        <span class="k">if</span> event_type <span class="k">in</span> (<span class="s">"bpms_instance_change"</span>, <span class="s">"process_instance_change"</span>):
+            _handle_instance_change(payload, driver)
+        <span class="k">elif</span> event_type == <span class="s">"check_url"</span>:
+            <span class="c"># 钉钉事件订阅验证（首次配置时）</span>
+            <span class="k">return</span> HttpResponse(<span class="s">"success"</span>)
+        <span class="k">else</span>:
+            logger.info(<span class="s">"unknown event type: %s"</span>, event_type)
+
+        <span class="c"># 4. 回包加密（success 字符串）</span>
+        encrypted_resp = crypto.encrypt(<span class="s">"success"</span>)
+        <span class="k">return</span> JsonResponse({<span class="s">"msg"</span>: <span class="s">"success"</span>, <span class="s">"encrypted"</span>: encrypted_resp})
+    <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> exc:
+        logger.exception(<span class="s">"handle_oa_callback failed: %s"</span>, exc)
+        DingtalkOaEventLog.objects.create(
+            event_type=<span class="s">"CALLBACK"</span>, error_message=<span class="n">str</span>(exc),
+        )
+        <span class="k">return</span> HttpResponse(<span class="s">f"error: {exc}"</span>, status=<span class="n">500</span>)
+
+
+<span class="k">def</span> _handle_instance_change(payload: <span class="n">dict</span>, driver: DingtalkOaDriver):
+    <span class="s">"""bpms_instance_change: 解析 processInstanceId + type + result → 推进本地 audit。"""</span>
+    process_instance_id = payload.get(<span class="s">"processInstanceId"</span>)
+    <span class="k">if not</span> process_instance_id:
+        <span class="k">return</span>
+    <span class="k">try</span>:
+        ext = WorkflowAuditExternal.objects.<span class="n">get</span>(external_instance_id=process_instance_id)
+    <span class="k">except</span> WorkflowAuditExternal.DoesNotExist:
+        logger.warning(<span class="s">"unknown processInstanceId: %s"</span>, process_instance_id)
+        <span class="k">return</span>
+
+    type_ = payload.get(<span class="s">"type"</span>)  <span class="c"># start / finish</span>
+    result = payload.get(<span class="s">"result"</span>)  <span class="c"># agree / refuse</span>
+    operator_userid = payload.get(<span class="s">"staffId"</span>)
+
+    <span class="k">if</span> type_ == <span class="s">"finish"</span>:
+        decision = <span class="s">"passed"</span> <span class="k">if</span> result == <span class="s">"agree"</span> <span class="k">else</span> <span class="s">"rejected"</span>
+        <span class="c"># 调本地审计推进（复用 Archery 上游 audit handler）</span>
+        <span class="k">from</span> common.utils.workflow_audit <span class="k">import</span> Audit
+        audit_handler = Audit(audit=ext.audit, operator=<span class="n">_resolve_user</span>(operator_userid))
+        <span class="k">if</span> decision == <span class="s">"passed"</span>:
+            audit_handler.operate(WorkflowAction.PASS, <span class="n">_resolve_user</span>(operator_userid), <span class="s">"钉钉 OA 通过"</span>)
+        <span class="k">else</span>:
+            audit_handler.operate(WorkflowAction.REJECT, <span class="n">_resolve_user</span>(operator_userid), <span class="s">"钉钉 OA 拒绝"</span>)
+        ext.status = <span class="s">"PASSED"</span> <span class="k">if</span> decision == <span class="s">"passed"</span> <span class="k">else</span> <span class="s">"REJECTED"</span>
+        ext.last_synced_at = timezone.now()
+        ext.save()
+        <span class="c"># 调 driver 加备注（已通过则撤回钉钉流程）</span>
+        driver.apply_decision(ext.audit, decision, <span class="n">_resolve_user</span>(operator_userid), <span class="s">"钉钉 OA 自动同步"</span>)</pre>
+
+  <h3>7.2 callback.py 入口</h3>
+<pre class="code"><span class="c"># callback.py</span>
+<span class="k">from</span> django.urls <span class="k">import</span> path
+<span class="k">from</span> django.views.decorators.csrf <span class="k">import</span> csrf_exempt
+<span class="k">from</span> .drivers.dingtalk <span class="k">import</span> DingtalkOaDriver
+
+<span class="k">@csrf_exempt</span>
+<span class="k">def</span> callback_entry(request):
+    <span class="s">"""URL: POST /dingtalk_oa/callback/"""</span>
+    driver = DingtalkOaDriver()
+    <span class="k">return</span> driver.handle_callback(request)
+
+urlpatterns = [path(<span class="s">"callback/"</span>, callback_entry, name=<span class="s">"dingtalk_oa_callback"</span>)]</pre>
+
+  <!-- 08 -->
+  <h2 id="fallback"><span class="h2-num">08</span>降级 + 重试 + 对账</h2>
+
+  <h3>8.1 重试策略（<code>start</code>）</h3>
+  <p>「灰度开关 + 行为」映射表：<code>DingtalkOaDriver.start()</code> 调钉钉 <code>topapi/processinstance/create</code> 失败时，按下表决定重试或降级。所有重试都在 driver 内部同步进行；超过最大次数后抛 <code>DingtalkApiError</code>，由 §8.2 补偿兜底。</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>异常分类</th><th>判定</th><th>重试次数</th><th>退避</th><th>终态</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>网络超时 / 连接重置</td>
+          <td><code>requests.Timeout</code> / <code>ConnectionError</code> / <code>ConnectionResetError</code></td>
+          <td>3</td>
+          <td>指数 1s / 4s / 9s（<code>2^n - 1</code>）</td>
+          <td>仍失败 → 抛 <code>DingtalkApiError</code>，§8.2 接管 fallback</td>
+        </tr>
+        <tr>
+          <td>5xx 服务器错</td>
+          <td><code>errcode ∈ {50000, 503, 502, 504}</code></td>
+          <td>2</td>
+          <td>2s / 6s</td>
+          <td>仍失败 → 抛 <code>DingtalkApiError</code></td>
+        </tr>
+        <tr>
+          <td>429 限流</td>
+          <td><code>errcode = 88</code> (system busy)</td>
+          <td>3</td>
+          <td>60s / 180s / 300s</td>
+          <td>仍失败 → 抛 <code>DingtalkApiError</code></td>
+        </tr>
+        <tr>
+          <td>401 / 403 token 失效</td>
+          <td><code>errcode ∈ {88, 40014, 42001, 43004}</code></td>
+          <td>0（不重试）</td>
+          <td>—</td>
+          <td>立即抛 <code>DingtalkApiError("token_invalid")</code>，<code>_force_refresh_token()</code> 刷新一次后再次尝试，失败则 §8.2 接管</td>
+        </tr>
+        <tr>
+          <td>400 业务参数错</td>
+          <td><code>errcode ∈ {400, 40001, 40002, 40003}</code></td>
+          <td>0（不重试）</td>
+          <td>—</td>
+          <td>立即抛 <code>DingtalkApiError("invalid_param")</code>，<code>_send_admin_alert()</code> 推 DBA 群</td>
+        </tr>
+        <tr>
+          <td>业务码：模板未上架 / 已停用</td>
+          <td><code>errcode = "processCodeInvalid"</code></td>
+          <td>0（不重试）</td>
+          <td>—</td>
+          <td>立即抛 <code>DingtalkApiError("process_disabled")</code>，推 DBA 群 + 写 <code>DingtalkOaEventLog</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>8.1.1 重试实现（driver 内部）</h4>
+<pre class="code"><span class="c"># drivers/dingtalk.py</span>
+<span class="k">import</span> time
+<span class="k">import</span> requests
+
+<span class="k">from</span> django.conf <span class="k">import</span> settings
+
+<span class="k">class</span> DingtalkApiError(<span class="n">Exception</span>):
+    <span class="s">"""钉钉 OA 业务异常。code: token_invalid / invalid_param / process_disabled / network / unknown"""</span>
+    <span class="k">def</span> __init__(self, code: <span class="n">str</span>, message: <span class="n">str</span>, raw: <span class="n">dict</span> | <span class="k">None</span> = <span class="k">None</span>):
+        <span class="nb">super</span>().__init__(message)
+        self.code = code
+        self.raw = raw <span class="k">or</span> {}
+
+_RETRY_POLICY = {
+    <span class="s">"network"</span>:    {<span class="s">"max"</span>: <span class="n">3</span>, <span class="s">"backoff"</span>: [<span class="n">1</span>, <span class="n">4</span>, <span class="n">9</span>]},
+    <span class="s">"5xx"</span>:        {<span class="s">"max"</span>: <span class="n">2</span>, <span class="s">"backoff"</span>: [<span class="n">2</span>, <span class="n">6</span>]},
+    <span class="s">"429"</span>:        {<span class="s">"max"</span>: <span class="n">3</span>, <span class="s">"backoff"</span>: [<span class="n">60</span>, <span class="n">180</span>, <span class="n">300</span>]},
+    <span class="s">"token"</span>:      {<span class="s">"max"</span>: <span class="n">0</span>, <span class="s">"backoff"</span>: []},
+    <span class="s">"invalid"</span>:    {<span class="s">"max"</span>: <span class="n">0</span>, <span class="s">"backoff"</span>: []},
+    <span class="s">"disabled"</span>:   {<span class="s">"max"</span>: <span class="n">0</span>, <span class="s">"backoff"</span>: []},
+}
+
+<span class="k">def</span> _classify_error(exc_or_resp) -> <span class="n">str</span>:
+    <span class="s">"""把 requests 异常 / 钉钉 errcode 归类为 _RETRY_POLICY 的 key。"""</span>
+    <span class="k">if</span> <span class="nb">isinstance</span>(exc_or_resp, (requests.Timeout, requests.ConnectionError)):
+        <span class="k">return</span> <span class="s">"network"</span>
+    errcode = <span class="nb">str</span>((exc_or_resp <span class="k">or</span> {}).get(<span class="s">"errcode"</span>) <span class="k">or</span> <span class="s">""</span>)
+    <span class="k">if</span> errcode <span class="k">in</span> (<span class="s">"88"</span>, <span class="s">"40014"</span>, <span class="s">"42001"</span>, <span class="s">"43004"</span>):
+        <span class="k">return</span> <span class="s">"token"</span>
+    <span class="k">if</span> errcode <span class="k">in</span> (<span class="s">"50000"</span>, <span class="s">"503"</span>, <span class="s">"502"</span>, <span class="s">"504"</span>):
+        <span class="k">return</span> <span class="s">"5xx"</span>
+    <span class="k">if</span> errcode == <span class="s">"400"</span> <span class="k">or</span> errcode.startswith(<span class="s">"4000"</span>):
+        <span class="k">return</span> <span class="s">"invalid"</span>
+    <span class="k">if</span> errcode <span class="k">in</span> (<span class="s">"processCodeInvalid"</span>, <span class="s">"PROCESS_NOT_FOUND"</span>):
+        <span class="k">return</span> <span class="s">"disabled"</span>
+    <span class="k">return</span> <span class="s">"unknown"</span>
+
+<span class="k">def</span> _retry_with_backoff(func, *args, **kwargs):
+    <span class="s">"""通用重试包装：根据异常分类查表。"""</span>
+    attempt, last_exc = <span class="n">0</span>, <span class="k">None</span>
+    <span class="k">while</span> <span class="k">True</span>:
+        <span class="k">try</span>:
+            <span class="k">return</span> func(*args, **kwargs)
+        <span class="k">except</span> (requests.Timeout, requests.ConnectionError) <span class="k">as</span> e:
+            kind = <span class="s">"network"</span>
+            last_exc = e
+        <span class="k">except</span> DingtalkApiError <span class="k">as</span> e:
+            kind = _classify_error(e.raw)
+            last_exc = e
+        policy = _RETRY_POLICY[kind]
+        <span class="k">if</span> attempt >= policy[<span class="s">"max"</span>]:
+            <span class="k">raise</span> last_exc
+        wait = policy[<span class="s">"backoff"</span>][attempt]
+        logger.warning(<span class="s">"dingtalk retry kind=%s attempt=%d wait=%ds"</span>, kind, attempt + <span class="n">1</span>, wait)
+        time.sleep(wait)
+        attempt += <span class="n">1</span></pre>
+
+  <h3>8.2 失败补偿（fallback）</h3>
+  <p>所有重试耗尽后，由 <code>_fallback_to_archery()</code> 把工单降级到本地 Group 审批，保证业务不阻塞：</p>
+
+<pre class="code"><span class="c"># drivers/dingtalk.py</span>
+<span class="k">def</span> _fallback_to_archery(workflow, audit, reason: <span class="n">str</span>):
+    <span class="s">"""start() 失败时调用：把 driver 切回 archery，写降级原因。"""</span>
+    workflow.audit_driver = <span class="s">"archery"</span>
+    workflow.audit_fallback_reason = <span class="n">f</span><span class="s">"钉钉 OA 失败降级：{reason}"</span>[:<span class="n">255</span>]
+    workflow.save(update_fields=[<span class="s">"audit_driver"</span>, <span class="s">"audit_fallback_reason"</span>])
+
+    <span class="c"># 写 WorkflowAuditExternal + EventLog</span>
+    WorkflowAuditExternal.objects.update_or_create(
+        audit=audit,
+        defaults={<span class="s">"external_status"</span>: <span class="s">"FALLBACK"</span>,
+                  <span class="s">"oa_failure_reason"</span>: reason[:<span class="n">500</span>],
+                  <span class="s">"fallback_at"</span>: timezone.now()},
+    )
+    DingtalkOaEventLog.objects.create(
+        audit=audit, event_type=<span class="s">"FALLBACK_AT_START"</span>,
+        event_id=<span class="n">f</span><span class="s">"start-fallback-{audit.audit_id}-{int(timezone.now().timestamp())}"</span>,
+        payload={<span class="s">"reason"</span>: reason}, processed=<span class="k">True</span>, error=reason[:<span class="n">1000</span>],
+    )
+
+    <span class="c"># 推 DBA 群 + 钉消息给发起人</span>
+    _send_admin_alert(<span class="n">f</span><span class="s">"⚠️ 钉钉 OA 失败降级\n工单 #{audit.audit_id}\n原因：{reason[:200]}"</span>)
+    <span class="k">return</span> AuditResult(extra={<span class="s">"fallback"</span>: <span class="k">True</span>, <span class="s">"reason"</span>: reason})</pre>
+
+  <h4>8.2.1 降级后的处理</h4>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>环节</th><th>动作</th></tr></thead>
+      <tbody>
+        <tr><td>workflow.audit_driver</td><td>archery → dingtalk_oa（start）→ archery（fallback 后）</td></tr>
+        <tr><td>workflow.audit_fallback_reason</td><td>前 255 字符，写到 sql_workflow</td></tr>
+        <tr><td>WorkflowAuditExternal.external_status</td><td>PENDING → FALLBACK</td></tr>
+        <tr><td>WorkflowAuditExternal.oa_failure_reason</td><td>前 500 字符</td></tr>
+        <tr><td>DingtalkOaEventLog</td><td>写 FALLBACK_AT_START / FALLBACK_AT_RECONCILE</td></tr>
+        <tr><td>前端工单详情页</td><td>显示「⚠️ 钉钉 OA 失败，已降级为本地审批」黄色 banner + 失败原因</td></tr>
+        <tr><td>降级工单的 retry_oa 按钮</td><td>展示「手动重试钉钉 OA」按钮（需 sql.audit_user 权限）</td></tr>
+        <tr><td>工单状态</td><td>audit.current_status 仍走 WAITING → 触发本地 Group 审批</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>8.3 对账 cron（reconcile）</h3>
+  <p>钉钉侧的工单状态可能因为回调丢失、token 过期、回调服务重启等原因，停留在 <code>RUNNING</code> 而本地无更新。django-q2 每 5 分钟跑一次对账 task 主动同步：</p>
+
+  <h4>8.3.1 <code>reconcile_pending_oa_workflows</code></h4>
+<pre class="code"><span class="c"># tasks.py</span>
+<span class="k">from</span> celery <span class="k">import</span> shared_task   <span class="c"># 项目无 Celery，装饰器由 try/except fallback 为 noop</span>
+<span class="k">from</span> django_q.models <span class="k">import</span> Schedule
+<span class="k">from</span> django_q.tasks <span class="k">import</span> schedule
+
+RECONCILE_SCHEDULE_NAME = <span class="s">"dingtalk_oa_reconcile"</span>
+
+<span class="nd">@shared_task</span>
+<span class="k">def</span> reconcile_pending_oa_workflows() -> <span class="n">int</span>:
+    <span class="s">"""每 5 分钟扫一次 RUNNING 中超时的工单。Returns: 本次扫描数（监控用）。"""</span>
+    threshold = timezone.now() - timedelta(minutes=settings.CUSTOM_DINGTALK_OA_RECONCILE_TIMEOUT_MIN)
+    pending = WorkflowAuditExternal.objects.<span class="nb">filter</span>(
+        external_status=<span class="s">"RUNNING"</span>, last_synced_at__lt=threshold,
+    ).select_related(<span class="s">"audit"</span>, <span class="s">"audit__workflow"</span>)
+    driver = DingtalkOaDriver()
+    scanned = <span class="n">0</span>
+    <span class="k">for</span> ext <span class="k">in</span> pending:
+        scanned += <span class="n">1</span>
+        <span class="k">try</span>:
+            status = driver.get_status(ext.audit) <span class="k">or</span> {}
+        <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> e:
+            ext.reconcile_failed_count = (ext.reconcile_failed_count <span class="k">or</span> <span class="n">0</span>) + <span class="n">1</span>
+            ext.last_synced_at = timezone.now()
+            ext.save(update_fields=[<span class="s">"reconcile_failed_count"</span>, <span class="s">"last_synced_at"</span>])
+            <span class="k">if</span> ext.reconcile_failed_count >= <span class="n">3</span>:
+                _force_fallback(ext, <span class="n">f</span><span class="s">"reconcile failed 3 times: {e}"</span>)
+            <span class="k">continue</span>
+        <span class="c"># 钉钉 status: COMPLETED/AGREE/REFUSE/TERMINATED</span>
+        ext_status = <span class="nb">str</span>(status.get(<span class="s">"status"</span>) <span class="k">or</span> <span class="s">""</span>).upper()
+        <span class="k">if</span> ext_status <span class="k">in</span> (<span class="s">"COMPLETED"</span>, <span class="s">"APPROVED"</span>, <span class="s">"AGREE"</span>):
+            ext.external_status, ext.last_synced_at = <span class="s">"DONE"</span>, timezone.now()
+            ext.save(update_fields=[<span class="s">"external_status"</span>, <span class="s">"last_synced_at"</span>])
+        <span class="k">elif</span> ext_status <span class="k">in</span> (<span class="s">"TERMINATED"</span>, <span class="s">"REFUSED"</span>, <span class="s">"REJECTED"</span>):
+            ext.external_status, ext.last_synced_at = <span class="s">"TERMINATED"</span>, timezone.now()
+            ext.save(update_fields=[<span class="s">"external_status"</span>, <span class="s">"last_synced_at"</span>])
+        <span class="k">else</span>:
+            ext.last_synced_at, ext.reconcile_failed_count = timezone.now(), <span class="n">0</span>
+            ext.save(update_fields=[<span class="s">"last_synced_at"</span>, <span class="s">"reconcile_failed_count"</span>])
+    <span class="k">return</span> scanned
+
+<span class="k">def</span> _force_fallback(ext, reason: <span class="n">str</span>):
+    <span class="s">"""对账连续 3 次失败：把工单强制降级到本地 Group 审批 + 推 DBA 群。"""</span>
+    audit, workflow = ext.audit, ext.audit.get_workflow()
+    workflow.audit_driver = <span class="s">"archery"</span>
+    workflow.audit_fallback_reason = <span class="n">f</span><span class="s">"对账失败降级：{reason}"</span>[:<span class="n">255</span>]
+    workflow.save(update_fields=[<span class="s">"audit_driver"</span>, <span class="s">"audit_fallback_reason"</span>])
+    ext.external_status, ext.fallback_at, ext.oa_failure_reason = <span class="s">"FALLBACK"</span>, timezone.now(), reason[:<span class="n">500</span>]
+    ext.save(update_fields=[<span class="s">"external_status"</span>, <span class="s">"fallback_at"</span>, <span class="s">"oa_failure_reason"</span>])
+    DingtalkOaEventLog.objects.create(
+        audit=audit, event_type=<span class="s">"FALLBACK_AT_RECONCILE"</span>,
+        event_id=<span class="n">f</span><span class="s">"reconcile-fallback-{audit.audit_id}-{int(timezone.now().timestamp())}"</span>,
+        payload={<span class="s">"reason"</span>: reason}, processed=<span class="k">True</span>, error=reason[:<span class="n">1000</span>],
+    )
+    DingtalkOaDriver._send_admin_alert(<span class="n">f</span><span class="s">"⚠️ 钉钉 OA 对账失败，已降级\naudit_id={audit.audit_id}\n原因：{reason[:200]}"</span>)
+
+<span class="k">def</span> add_reconcile_schedule():
+    <span class="s">"""ops 部署后跑一次：注册 django-q2 schedule（每 5 分钟）。"""</span>
+    schedule(
+        <span class="s">"sql.extensions.dingtalk_oa.tasks.reconcile_pending_oa_workflows"</span>,
+        name=RECONCILE_SCHEDULE_NAME,
+        schedule_type=<span class="s">"I"</span>,     <span class="c"># I = interval</span>
+        minutes=settings.CUSTOM_DINGTALK_OA_RECONCILE_INTERVAL_MIN,
+        repeats=-<span class="n">1</span>, timeout=-<span class="n">1</span>,
+    )</pre>
+
+  <h4>8.3.2 对账关键参数</h4>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>环境变量</th><th>默认</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_RECONCILE_INTERVAL_MIN</td><td>5</td><td>扫描周期（分钟）</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_RECONCILE_TIMEOUT_MIN</td><td>30</td><td>超过多久未同步算「超时」（<code>last_synced_at &lt; now - 30min</code>）</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_RECONCILE_MAX_FAIL</td><td>3</td><td>连续失败次数到 N 触发强制降级</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>8.3.3 对账 state machine</h4>
+  <div class="ui-mock">
+    <div class="ui-mock-head">
+      <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+      <span class="ui-mock-url">/dingtalk_oa/callback  +  reconcile cron</span>
+    </div>
+    <div class="ui-mock-body">
+<div class="row"><span style="flex:1">回调成功 (type=finish, result=agree)</span>     <span class="badge badge-green">PENDING → DONE</span></div>
+<div class="row"><span style="flex:1">回调成功 (type=finish, result=refuse)</span>    <span class="badge badge-green">PENDING → TERMINATED</span></div>
+<div class="row"><span style="flex:1">回调丢失超过 30min</span>                       <span class="badge badge-blue">进入对账</span></div>
+<div class="row"><span style="flex:1">对账查到 COMPLETED</span>                       <span class="badge badge-green">RUNNING → DONE</span></div>
+<div class="row"><span style="flex:1">对账查到 TERMINATED</span>                      <span class="badge badge-green">RUNNING → TERMINATED</span></div>
+<div class="row"><span style="flex:1">对账 get_status 异常 1~2 次</span>               <span class="badge badge-blue">reconcile_failed_count++</span></div>
+<div class="row"><span style="flex:1">对账 get_status 异常 3 次</span>                 <span class="badge badge-green">RUNNING → FALLBACK + 推 DBA 群</span></div>
+<div class="row"><span style="flex:1">start() 失败 1 次 + 灰度开关 关闭</span>          <span class="badge badge-green">立即 fallback (DRAFT)</span></div>
+    </div>
+  </div>
+
+  <!-- 09 -->
+  <h2 id="views"><span class="h2-num">09</span>视图 + 路由 + 任务</h2>
+
+  <h3>9.1 视图清单</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>URL</th><th>视图</th><th>方法</th><th>权限</th><th>作用</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="mono">/dingtalk/oa/callback</td>
+          <td><code>callback.dingtalk_oa_callback</code></td>
+          <td>POST</td>
+          <td>公开（钉钉调用）</td>
+          <td>钉钉回调入口：验签 + 解密 + 路由 + 写 EventLog（§7）</td>
+        </tr>
+        <tr>
+          <td class="mono">/dingtalk/oa/retry/&lt;int:workflow_id&gt;/</td>
+          <td><code>views.retry_oa</code></td>
+          <td>POST</td>
+          <td><code>sql.audit_user</code></td>
+          <td>手动重试钉钉 OA：重跑 match_policy + driver.start（fallback 后用）</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>9.2 <code>retry_oa</code> 视图实现</h3>
+<pre class="code"><span class="c"># views.py</span>
+<span class="nd">@permission_required</span>(<span class="s">"sql.audit_user"</span>, raise_exception=<span class="k">True</span>)
+<span class="nd">@require_POST</span>
+<span class="k">def</span> retry_oa(request, workflow_id: <span class="n">int</span>):
+    <span class="s">"""手动重试钉钉 OA（仅降级工单显示按钮，v0.7 §10.4.6）。
+
+    流程：1) 重新跑 match_policy 看是否仍命中 dingtalk_oa flow
+          2) 调 DingtalkOaDriver.start()
+          3) 清空 audit_fallback_reason，driver 切回 dingtalk_oa
+    失败时回到原页面 + 错误消息；不抛出。
+    """</span>
+    workflow = get_object_or_404(SqlWorkflow, pk=workflow_id)
+    <span class="k">try</span>:
+        affected_tables = extract_affected_tables(workflow)
+        policy = match_policy(workflow, affected_tables=affected_tables)
+    <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> e:
+        messages.error(request, <span class="n">f</span><span class="s">"策略匹配失败：{e}"</span>)
+        <span class="k">return</span> redirect(reverse(<span class="s">"sql:detail"</span>, args=[workflow_id]))
+
+    <span class="k">if</span> <span class="k">not</span> policy <span class="k">or</span> policy.flow.audit_driver != <span class="s">"dingtalk_oa"</span>:
+        messages.error(request, <span class="s">"当前工单策略不要求钉钉 OA，无需重试"</span>)
+        <span class="k">return</span> redirect(reverse(<span class="s">"sql:detail"</span>, args=[workflow_id]))
+
+    audit = workflow.get_audit()
+    <span class="k">if</span> audit <span class="k">is</span> <span class="k">None</span>:
+        messages.error(request, <span class="s">"找不到对应的审批记录"</span>)
+        <span class="k">return</span> redirect(reverse(<span class="s">"sql:detail"</span>, args=[workflow_id]))
+
+    <span class="k">try</span>:
+        result = DingtalkOaDriver().start(workflow, audit, policy.flow)
+    <span class="k">except</span> <span class="n">Exception</span> <span class="k">as</span> e:
+        messages.error(request, <span class="n">f</span><span class="s">"重试失败：{e}"</span>)
+        <span class="k">return</span> redirect(reverse(<span class="s">"sql:detail"</span>, args=[workflow_id]))
+
+    <span class="k">if</span> (result.extra <span class="k">or</span> {}).get(<span class="s">"fallback"</span>):
+        messages.warning(request, <span class="n">f</span><span class="s">"重试触发降级：{result.extra.get('reason', '')[:200]}"</span>)
+    <span class="k">else</span>:
+        messages.success(request, <span class="s">"已重新发起钉钉 OA"</span>)
+    <span class="k">return</span> redirect(reverse(<span class="s">"sql:detail"</span>, args=[workflow_id]))</pre>
+
+  <h3>9.3 路由（<code>urls.py</code>）</h3>
+<pre class="code"><span class="c"># urls.py</span>
+<span class="k">from</span> django.urls <span class="k">import</span> path
+<span class="k">from</span> . <span class="k">import</span> callback, views
+
+app_name = <span class="s">"dingtalk_oa"</span>
+
+urlpatterns = [
+    path(<span class="s">"callback"</span>, callback.dingtalk_oa_callback, name=<span class="s">"callback"</span>),
+    path(<span class="s">"retry/&lt;int:workflow_id&gt;/"</span>, views.retry_oa, name=<span class="s">"retry_oa"</span>),
+]</pre>
+
+  <h4>9.3.1 挂到 archery/urls.py（灰度）</h4>
+<pre class="code"><span class="c"># archery/urls.py（最后追加）</span>
+<span class="k">if</span> <span class="nb">getattr</span>(settings, <span class="s">"CUSTOM_DINGTALK_OA_ENABLED"</span>, <span class="k">False</span>):
+    urlpatterns += [
+        path(<span class="s">"dingtalk/oa/"</span>, <span class="nb">include</span>((<span class="s">"sql.extensions.dingtalk_oa.urls"</span>, <span class="s">"dingtalk_oa"</span>))),
+    ]</pre>
+
+  <h3>9.4 任务（<code>tasks.py</code>）</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>函数</th><th>调度</th><th>周期</th><th>作用</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>reconcile_pending_oa_workflows</code></td>
+          <td>django-q2 <code>Schedule(name="dingtalk_oa_reconcile")</code></td>
+          <td>5 min</td>
+          <td>扫 RUNNING 中超时的 <code>WorkflowAuditExternal</code>，主动查钉钉 status 同步本地；3 次失败 → 强制 fallback</td>
+        </tr>
+        <tr>
+          <td><code>_force_fallback(ext, reason)</code></td>
+          <td>被 reconcile 调用</td>
+          <td>—</td>
+          <td>把 workflow.audit_driver 切回 archery + 写降级原因 + 推 DBA 群</td>
+        </tr>
+        <tr>
+          <td><code>add_reconcile_schedule()</code></td>
+          <td>ops 部署后手动跑一次</td>
+          <td>—</td>
+          <td>注册 django-q2 schedule（按名 upsert）</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>9.4.1 Celery 兼容（<code>@shared_task</code>）</h4>
+  <p>archery 当前用 <strong>django-q2</strong>，没装 Celery。代码用 try/except 兼容：</p>
+<pre class="code"><span class="k">try</span>:
+    <span class="k">from</span> celery <span class="k">import</span> shared_task
+<span class="k">except</span> <span class="n">ImportError</span>:
+    <span class="k">def</span> shared_task(func):
+        <span class="s">"""Celery 未装时的 fallback 装饰器（noop + 保留 .delay / .apply_async）。"""</span>
+        func.delay = <span class="k">lambda</span> *a, **kw: func(*a, **kw)
+        func.apply_async = <span class="k">lambda</span> *a, **kw: func()
+        <span class="k">return</span> func</pre>
+
+  <h4>9.4.2 注册 schedule（部署后跑一次）</h4>
+<pre class="code"><span class="c"># shell</span>
+python manage.py shell -<span class="n">c</span> <span class="s">"from sql.extensions.dingtalk_oa.tasks import add_reconcile_schedule; add_reconcile_schedule()"</span></pre>
+
+  <!-- 10 -->
+  <h2 id="exception"><span class="h2-num">10</span>异常处理总表</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>模块</th><th>异常</th><th>处理</th></tr></thead>
+      <tbody>
+        <tr><td>DingtalkOaDriver.start</td><td class="mono">DingtalkApiError("token_invalid")</td><td>不重试 → _force_refresh_token 一次 → 再失败则 fallback</td></tr>
+        <tr><td>DingtalkOaDriver.start</td><td class="mono">DingtalkApiError("invalid_param")</td><td>不重试 → 写 EventLog + 推 DBA 群 → fallback</td></tr>
+        <tr><td>DingtalkOaDriver.start</td><td class="mono">DingtalkApiError("process_disabled")</td><td>不重试 → 推 DBA 群 → fallback</td></tr>
+        <tr><td>DingtalkOaDriver.start</td><td class="mono">requests.Timeout / ConnectionError</td><td>3 次指数退避（1/4/9s）→ fallback</td></tr>
+        <tr><td>DingtalkOaDriver.start</td><td>5xx 业务码</td><td>2 次退避（2/6s）→ fallback</td></tr>
+        <tr><td>DingtalkOaDriver.start</td><td>429 限流</td><td>3 次长退避（60/180/300s）→ fallback</td></tr>
+        <tr><td>match_policy</td><td>StrategyError</td><td>返回 None → workflow 走 archery 默认</td></tr>
+        <tr><td>extract_sql_types</td><td>sqlparse.ParseError</td><td>logger.warning + 返回空集 → 走默认 archery</td></tr>
+        <tr><td>extract_affected_tables</td><td>正则无匹配</td><td>返回空 set → 业务表维度判定为 false</td></tr>
+        <tr><td>DingtalkCrypto.decrypt</td><td class="mono">SignatureError</td><td>写 EventLog(error) + 返回 403</td></tr>
+        <tr><td>DingtalkCrypto.decrypt</td><td class="mono">AESCipher 解密失败</td><td>写 EventLog(error) + 返回 400</td></tr>
+        <tr><td>handle_callback</td><td>未知 eventType</td><td>logger.info + 写 EventLog + 返回 success（钉钉不要重试）</td></tr>
+        <tr><td>handle_callback</td><td>未知 processInstanceId</td><td>logger.warning + 写 EventLog + 返回 success（不抛错）</td></tr>
+        <tr><td>_handle_instance_change</td><td>WorkflowAuditExternal.DoesNotExist</td><td>logger.warning + 返回 success</td></tr>
+        <tr><td>_resolve_user</td><td>钉钉 userid 找不到本地用户</td><td>查 sql.Users.username == userid；找不到则用 fallback 账号（admin）</td></tr>
+        <tr><td>retry_oa 视图</td><td>match_policy 抛错</td><td>messages.error + redirect</td></tr>
+        <tr><td>retry_oa 视图</td><td>driver.start 抛错</td><td>messages.error + redirect</td></tr>
+        <tr><td>reconcile_pending_oa_workflows</td><td>get_status 异常</td><td>reconcile_failed_count++ → 满 3 次触发 _force_fallback</td></tr>
+        <tr><td>_force_fallback</td><td>workflow 无 audit_driver 字段</td><td>logger.warning + return（不影响其他工单）</td></tr>
+        <tr><td>_send_admin_alert</td><td class="mono">requests.RequestException</td><td>logger.warning（best-effort，不影响主流程）</td></tr>
+        <tr><td>get_oa_access_token</td><td>4xx/5xx</td><td>抛 DingtalkApiError，让外层重试 / fallback</td></tr>
+        <tr><td>get_oa_access_token</td><td>Redis 故障</td><td>本地内存缓存兜底 5 min（不依赖 Redis）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 11 -->
+  <h2 id="flags"><span class="h2-num">11</span>灰度开关汇总</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>变量</th><th>默认</th><th>控制功能</th><th>设计稿</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_ENABLED</td><td><span class="tag tag-red">False</span></td><td>整个 OA 集成模块（apps / urls / 路由）</td><td>§1</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_RECONCILE_INTERVAL_MIN</td><td><span class="tag tag-gray">5</span></td><td>对账 cron 周期（分钟）</td><td>§8.3.2</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_RECONCILE_TIMEOUT_MIN</td><td><span class="tag tag-gray">30</span></td><td>超时阈值（分钟）</td><td>§8.3.2</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_RECONCILE_MAX_FAIL</td><td><span class="tag tag-gray">3</span></td><td>连续失败次数到 N 触发强制降级</td><td>§8.3.2</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_AUTO_RETRY_ON_START</td><td><span class="tag tag-red">False</span></td><td>start 失败后自动 fallback（DRAFT 阶段先关）</td><td>§8.2</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_TOKEN_CACHE_TTL</td><td><span class="tag tag-gray">7000</span></td><td>access_token 缓存 TTL（秒，钉钉官方 7200）</td><td>§6</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_CALLBACK_TOKEN</td><td><span class="tag tag-gray">空</span></td><td>钉钉事件订阅 token（v0.2.2 ops 配）</td><td>§6.1</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_CALLBACK_AES_KEY</td><td><span class="tag tag-gray">空</span></td><td>回调 AES key（43 字符 base64，v0.2.2 ops 配）</td><td>§6.1</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_RECEIVEID</td><td><span class="tag tag-gray">空</span></td><td>corpId（v0.2.2 ops 配）</td><td>§6.1</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_APP_KEY</td><td><span class="tag tag-gray">空</span></td><td>应用 AppKey（v0.2.1 ops 配）</td><td>§3.2</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_APP_SECRET</td><td><span class="tag tag-gray">空</span></td><td>应用 AppSecret（v0.2.1 ops 配）</td><td>§3.2</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_AGENT_ID</td><td><span class="tag tag-gray">空</span></td><td>应用 AgentId（v0.2.1 ops 配）</td><td>§3.2</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_NOTIFY_WEBHOOK</td><td><span class="tag tag-gray">空</span></td><td>钉钉群机器人 webhook（管理员告警）</td><td>§8.2</td></tr>
+        <tr><td class="mono">CUSTOM_DINGTALK_OA_PROCESS_CODE</td><td><span class="tag tag-gray">空</span></td><td>默认审批模板编码（v0.2.1 ops 在钉钉后台建）</td><td>§3.2</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    Archery 二次开发 · 钉钉 OA 详细设计稿 · 2026-08-10 · 仅记录开发前设计规划
+  </div>
+
+</div>
+</body>
+</html>
