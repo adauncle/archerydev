@@ -162,11 +162,14 @@
             <button class="btn btn-danger" id="cancelBtn">取消迁移</button>
           {% endif %}
           <!-- CUSTOM-MODIFIED: v0.3.0-beta 修 admin URL (app_label=ddl_gh_ost) + target=_blank 绕过 X-Frame-Options
+               + 仅 is_admin_user (is_superuser) 才显示"查看 admin 详情"按钮，避免普通用户点跳 admin 登录页
                @ 2026-08-10 @ mavis -->
+          {% if is_admin_user %}
           <a class="btn btn-default" href="/admin/ddl_gh_ost/ddlghosttask/{{ task.id }}/change/"
              target="_blank" rel="noopener">
             查看 admin 详情
           </a>
+          {% endif %}
         </div>
       </div>
 

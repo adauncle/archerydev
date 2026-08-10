@@ -527,9 +527,14 @@ def progress_page(request: HttpRequest, workflow_id: int) -> HttpResponse:
     """
     workflow = get_object_or_404(SqlWorkflow, pk=workflow_id)
     task = DdlGhostTask.objects.filter(workflow=workflow).first()
+    ## CUSTOM-MODIFIED: v0.3.0-beta 视图 —— is_admin_user 给模板判断"查看 admin 详情"按钮显隐
+    ## 仅 is_superuser 才显示（避免普通用户点跳 admin 登录页 UX 差）
+    ## @ 2026-08-10 @ mavis
+    is_admin_user = bool(request.user.is_authenticated and request.user.is_superuser)
     return render(request, "ddl_gh_ost/progress.html", {
         "workflow": workflow,
         "task": task,
+        "is_admin_user": is_admin_user,
     })
 
 
