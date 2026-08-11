@@ -39,8 +39,9 @@ except Exception:
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_XLSX = REPO_ROOT / "docs" / "reports" / "2026-08-06_功能开发计划_v3.xlsx"
 
-# 主功能分组（与表格里的 4 组对应）
-VALID_GROUPS = ("平台基础", "钉钉 OA 集成", "gh-ost 无锁 DDL", "收尾")
+# 主功能分组（与表格里的分组对应）
+# 2026-08-11 新增"提测阶段"分组 —— 收纳 DBA 浏览器验证触发的 bug 修复
+VALID_GROUPS = ("平台基础", "钉钉 OA 集成", "gh-ost 无锁 DDL", "收尾", "提测阶段")
 
 # alias 别名（让 --group 输短名也行）
 GROUP_ALIASES = {
@@ -48,6 +49,7 @@ GROUP_ALIASES = {
     "oa": "钉钉 OA 集成", "dingtalk": "钉钉 OA 集成", "钉钉": "钉钉 OA 集成", "ding": "钉钉 OA 集成",
     "gh-ost": "gh-ost 无锁 DDL", "ghost": "gh-ost 无锁 DDL", "无锁": "gh-ost 无锁 DDL", "ddl": "gh-ost 无锁 DDL",
     "wrap": "收尾", "cleanup": "收尾", "收尾": "收尾", "尾": "收尾",
+    "qa": "提测阶段", "test": "提测阶段", "bug": "提测阶段", "提测": "提测阶段", "测试": "提测阶段",
 }
 
 VALID_STATUS = ("已发布", "待办", "TBD", "可选")
@@ -122,6 +124,7 @@ def append_row_to_xlsx(
         "钉钉 OA 集成":  PatternFill("solid", fgColor="EAF1F8"),
         "gh-ost 无锁 DDL": PatternFill("solid", fgColor="FBF1E4"),
         "收尾":          PatternFill("solid", fgColor="F2F0EA"),
+        "提测阶段":      PatternFill("solid", fgColor="FDEEEE"),  # 浅粉 — bug 修复区
     }
     STATUS_FILLS = {"已发布": PatternFill("solid", fgColor="C6EFCE"), "待办": PatternFill("solid", fgColor="FFEB9C"),
                     "TBD": PatternFill("solid", fgColor="D9D9D9"), "可选": PatternFill("solid", fgColor="D9D9D9")}
