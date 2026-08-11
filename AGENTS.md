@@ -38,6 +38,11 @@
 4. **变更必带 changelog** —— 路径 `docs/changelogs/YYYY-MM-DD_<short-name>.md`
 5. **不要往仓库提交** —— 凭据、`.env`、`*.sql` 数据、真实的 SQL 审核日志
 6. **前端改动优先复用** Element UI 组件，不要引入新框架
+7. **每个 bug / 踩坑 / 解决方式都要记录** —— **核心原则 (用户 2026-08-11 固化)**:
+   - 修一个 bug：先写 `docs/changelogs/YYYY-MM-DD_<bug-name>.md`（含症状 / 根因 / 修法 / 验证），再写代码，最后 commit
+   - 踩一个坑（不用修代码）：写进 agent memory（`MEMORY.md` 或 topic file），含触发场景 / 解决方式 / 同源 entry
+   - 修架构 / 改 API 之类大改：既要 changelog 也要 memory
+   - **不允许**"修完代码直接 commit，文档后补"——文档必须跟代码同 commit（或更早）
 
 ## 关键约定速记
 
@@ -89,8 +94,9 @@ git fetch upstream && git rebase upstream/master
 
 1. `docs/customization.md` —— 二次开发规范
 2. `docs/architecture.md` —— 模块结构
-3. `docs/changelogs/` —— 历次变更历史
-4. 上游 [Archery 官方文档](https://github.com/hhyo/Archery/wiki)
+3. `docs/troubleshooting.md` —— **踩坑速查表（按现象反查 changelog / memory）**
+4. `docs/changelogs/` —— 历次变更历史
+5. 上游 [Archery 官方文档](https://github.com/hhyo/Archery/wiki)
 
 ## 不在 AI agent 职责内
 
