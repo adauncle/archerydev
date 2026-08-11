@@ -409,6 +409,11 @@ CUSTOM_GH_OST_CUT_OVER_STRATEGY = env(
 CUSTOM_GH_OST_LOG_DIR = env(
     "CUSTOM_GH_OST_LOG_DIR", default="/var/log/archery/gh_ost",
 )
+## CUSTOM-MODIFIED: v0.3.0-beta 大表 DDL 防呆阈值 @ 2026-08-11 @ mavis
+## 行数 ≥ 阈值 或 大小 ≥ 阈值 → detail 页面红色 alert + 立即执行 confirm
+## 默认 10w 行 / 100MB, 生产可调高
+CUSTOM_BIG_TABLE_ROW_THRESHOLD = env("CUSTOM_BIG_TABLE_ROW_THRESHOLD", default=100000)
+CUSTOM_BIG_TABLE_SIZE_THRESHOLD_MB = env("CUSTOM_BIG_TABLE_SIZE_THRESHOLD_MB", default=100)
 
 if CUSTOM_GH_OST_ENABLED:
     INSTALLED_APPS += ("sql.extensions.ddl_gh_ost.apps.DdlGhOstConfig",)

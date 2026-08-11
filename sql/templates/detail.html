@@ -363,6 +363,50 @@
             <input type="button" id="btnPass" class="btn btn-success" value="审核通过"/>
         </form>
     {% endif %}
+    <!-- CUSTOM-MODIFIED: v0.3.0-beta 大表 DDL 防呆 alert (DBA 兜底)
+         关联 changelog: docs/changelogs/2026-08-11_gh-ost-dba-fallback.md
+         @ 2026-08-11 @ mavis -->
+    {% if big_table_alert %}
+    <div class="alert alert-danger" id="big-table-alert"
+         style="margin:12px 0;padding:14px 18px;border-left:4px solid #b06367;">
+        <div style="display:flex;align-items:flex-start;gap:14px;">
+            <i class="fa fa-exclamation-triangle" style="font-size:22px;color:#b06367;flex-shrink:0;margin-top:2px;"></i>
+            <div style="flex:1;">
+                <strong style="font-size:15px;">⚠️ 检测到 <code>{{ big_table_alert.table_name }}</code> 是大表 DDL</strong>
+                <div style="margin-top:6px;color:#5a3a3a;font-size:13px;">
+                    行数 <strong>{{ big_table_alert.rows|default:0 }}</strong> / 数据大小 <strong>{{ big_table_alert.size_mb }} MB</strong>
+                    （阈值: {{ big_table_alert.row_threshold }} 行 或 {{ big_table_alert.size_threshold_mb }} MB）
+                </div>
+                <div style="margin-top:8px;color:#5a3a3a;font-size:13px;line-height:1.55;">
+                    大表 DDL 走原路径"立即执行"会<strong>锁表</strong>（业务写入阻塞几秒到几分钟）。
+                    <br/><strong>强烈建议启用 gh-ost 无锁 DDL</strong>——RD 漏勾时，DBA 可在下方兜底启用。
+                </div>
+                <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;">
+                    {% if can_enable_ghost %}
+                    <button type="button" class="btn btn-primary" id="btn-big-table-enable-ghost">
+                        <i class="fa fa-rocket"></i> 启用 gh-ost（DBA 兜底）
+                    </button>
+                    {% endif %}
+                    {% if is_can_execute %}
+                    <button type="button" class="btn btn-danger" id="btn-big-table-execute">
+                        <i class="fa fa-warning"></i> 立即执行（确认锁表）
+                    </button>
+                    {% endif %}
+                    {% if is_can_cancel %}
+                    <form action="/cancel/" method="post" style="display:inline-block;margin:0;">
+                        {% csrf_token %}
+                        <input type="hidden" name="workflow_id" value="{{ workflow_detail.id }}">
+                        <input type="hidden" name="cancel_remark" value="DBA 兜底: 大表 DDL 走原路径会锁表, 建议 RD 重新提交并勾 gh-ost">
+                        <button type="submit" class="btn btn-warning" id="btn-big-table-cancel">
+                            <i class="fa fa-ban"></i> 终止工单（让 RD 重提）
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
     <!--立即执行按钮-->
     {% if is_can_execute %}
         <form id="from-execute" action="/execute/" method="post" style="display:inline-block;">
@@ -662,6 +706,81 @@
                 loading(this)
             }
         });
+
+        // CUSTOM-MODIFIED: v0.3.0-beta 大表 DDL 防呆 —— 立即执行按钮双层 confirm
+        // 关联 changelog: docs/changelogs/2026-08-11_gh-ost-dba-fallback.md
+        // @ 2026-08-11 @ mavis
+        // 整段 JS 都包到 if big_table_alert: 非大表页面 body 不含 btn-big-table-* id, drill 断言更准
+        {% if big_table_alert %}
+        $("#btn-big-table-execute").click(function () {
+            var rows = {{ big_table_alert.rows|default:0 }};
+            var sizeMb = "{{ big_table_alert.size_mb }}";
+            var tableName = "{{ big_table_alert.table_name }}";
+            var msg1 = "⚠️ 确认要走原路径执行大表 DDL 吗？\n\n"
+                + "表: " + tableName + "\n"
+                + "规模: " + rows + " 行 / " + sizeMb + " MB\n"
+                + "原路径会 **锁表**（业务写入阻塞），gh-ost 才是无锁 DDL。\n\n"
+                + "如果这是生产环境大表 DDL，强烈建议先终止工单让 RD 重新提交并勾 gh-ost。\n\n"
+                + "继续？";
+            if (!confirm(msg1)) return;
+            var msg2 = "再次确认：已评估锁表风险？\n\n"
+                + "我已确认：\n"
+                + "  • 这是测试/演练环境 OR 已评估锁表可接受\n"
+                + "  • 业务侧已沟通 OR 业务低峰期\n\n"
+                + "继续执行？";
+            if (!confirm(msg2)) return;
+            var formExecuteOnly = $("#from-execute");
+            formExecuteOnly.submit();
+            loading(this);
+        });
+
+        // CUSTOM: 大表 alert "启用 gh-ost" 按钮 —— 走 precheck + enable 流程
+        $("#btn-big-table-enable-ghost").click(function () {
+            if (!confirm("启用 gh-ost 无锁 DDL？\n\n"
+                + "启用后会跑 5 道预检（~5s），通过后启动 gh-ost 子进程。\n"
+                + "cut-over 成功后工单状态自动切到\"已正常结束\"。")) return;
+            var wfId = {{ workflow_detail.id }};
+            var btn = this;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> 预检中...';
+            fetch('/gh_ost/precheck/' + wfId + '/', {
+                method: 'POST',
+                headers: {'X-CSRFToken': getCookie('csrftoken')},
+                credentials: 'same-origin',
+            })
+            .then(function(r){return r.json()})
+            .then(function(j) {
+                if (!j.ok || !j.passed) {
+                    alert('预检失败：' + (j.summary || j.error || JSON.stringify(j)));
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa fa-rocket"></i> 启用 gh-ost（DBA 兜底）';
+                    return;
+                }
+                btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> 启用中...';
+                return fetch('/gh_ost/enable/' + wfId + '/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCookie('csrftoken')},
+                    credentials: 'same-origin',
+                });
+            })
+            .then(function(r){return r ? r.json() : null})
+            .then(function(j) {
+                if (!j) return;
+                if (!j.ok) {
+                    alert('启用失败：' + (j.error || j.summary || JSON.stringify(j)));
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa fa-rocket"></i> 启用 gh-ost（DBA 兜底）';
+                    return;
+                }
+                location.reload();
+            })
+            .catch(function(err) {
+                alert('请求失败：' + err);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa fa-rocket"></i> 启用 gh-ost（DBA 兜底）';
+            });
+        });
+        {% endif %}{# end if big_table_alert (DBA 兜底大表 alert JS 块) #}
 
         // 执行确认手工执行
         $("#btnExecuteOnly-manual").click(function () {

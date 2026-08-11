@@ -235,6 +235,82 @@ def submit_sql(request):
     return render(request, "sqlsubmit.html", context)
 
 
+def _workflow_sql_text(workflow: SqlWorkflow) -> str:
+    """拿工单的 SQL 文本, 兼容老工单无 content 行的情况."""
+    try:
+        return workflow.sqlworkflowcontent.sql_content or ""
+    except SqlWorkflowContent.DoesNotExist:
+        return ""
+
+
+def _parse_first_alter(sql_content: str) -> dict:
+    """简化版 ALTER 解析, 拿 db + table.
+
+    跟 gh-ost 的 _parse_first_alter 等价, 这里不引跨 app 函数避免启动期循环.
+    返回 {"db": str|None, "table": str|None, "full": str|None}, 失败返 None.
+    """
+    import re
+    if not sql_content:
+        return None
+    m = re.match(
+        r"^\s*ALTER\s+TABLE\s+(?:(?P<schema>[^`\s.()]+)\.)?`?(?P<table>[^`\s(]+)`?",
+        sql_content.strip(),
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    schema = (m.group("schema") or "").strip("`")
+    table = (m.group("table") or "").strip("`")
+    return {"db": schema or None, "table": table or None, "full": m.group(0)}
+
+
+def _get_table_size_info(instance, db_name: str, table_name: str) -> dict:
+    """CUSTOM: 查 instance 库的某表大小 + 行数.
+
+    返回 {"rows": int, "size_mb": float, "table_name": str}, 查不到返 None.
+    用于大表 DDL 防呆检测 (详情页红色 alert + 立即执行 confirm).
+    """
+    import logging
+    logger = logging.getLogger("default")
+    if not (instance and db_name and table_name):
+        return None
+    try:
+        # 用 PyMySQL 直连 (走 instance user/password 凭据, 兼容 ssh tunnel 通过查询 engine)
+        from sql.models import Instance
+        # 取明文凭据
+        user, password = instance.get_username_password() if hasattr(instance, "get_username_password") else (instance.user, instance.password)
+        host = instance.host
+        port = instance.port
+        import pymysql
+        conn = pymysql.connect(
+            host=host, port=port, user=user, password=password,
+            database=db_name, connect_timeout=5, autocommit=True,
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT TABLE_ROWS, DATA_LENGTH + INDEX_LENGTH "
+                    "FROM information_schema.tables "
+                    "WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s",
+                    (db_name, table_name),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                rows = int(row[0] or 0)
+                size_bytes = int(row[1] or 0)
+                return {
+                    "rows": rows,
+                    "size_mb": round(size_bytes / 1024 / 1024, 1),
+                    "table_name": table_name,
+                }
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        logger.exception("_get_table_size_info failed: %s.%s", db_name, table_name)
+        return None
+
+
 def detail(request, workflow_id):
     """展示SQL工单详细页面"""
     workflow_detail = get_object_or_404(SqlWorkflow, pk=workflow_id)
@@ -257,6 +333,37 @@ def detail(request, workflow_id):
     ghost_task = None
     has_active_ghost_task = False  # active task 在跑时禁用原路径"立即执行"按钮
     ghost_task_is_terminal = False  # 终态历史 (UI 区分 active vs terminal)
+
+    # CUSTOM: v0.3.0-beta 大表 DDL 防呆 —— 解析首条 ALTER 查表大小
+    ## 业务: 防止 RD 漏勾 gh-ost 时 DBA 走原路径"立即执行" 锁表
+    ## 阈值: 行数 ≥ 10w 或 大小 ≥ 100MB 视为大表
+    ## @ 2026-08-11 @ mavis
+    big_table_alert = None  # None or dict{rows, size_mb, table_name}
+    if workflow_detail.status == "workflow_review_pass" and not has_ghost_task:
+        try:
+            sql_text = _workflow_sql_text(workflow_detail)
+            parsed = _parse_first_alter(sql_text)
+            if parsed and parsed.get("table"):
+                size_info = _get_table_size_info(
+                    instance=workflow_detail.instance,
+                    db_name=parsed.get("db") or workflow_detail.db_name,
+                    table_name=parsed["table"],
+                )
+                if size_info:
+                    row_threshold = int(getattr(settings, "CUSTOM_BIG_TABLE_ROW_THRESHOLD", 100000))
+                    size_threshold_mb = int(getattr(settings, "CUSTOM_BIG_TABLE_SIZE_THRESHOLD_MB", 100))
+                    if (size_info["rows"] >= row_threshold
+                            or size_info["size_mb"] >= size_threshold_mb):
+                        big_table_alert = {
+                            "table_name": parsed["table"],
+                            "rows": size_info["rows"],
+                            "size_mb": size_info["size_mb"],
+                            "row_threshold": row_threshold,
+                            "size_threshold_mb": size_threshold_mb,
+                        }
+        except Exception:  # noqa: BLE001
+            logger.exception("big_table_alter detect crashed: wf=%s", workflow_detail.id)
+
     if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):
         from sql.extensions.ddl_gh_ost.models import DdlGhostTask
 
@@ -301,8 +408,15 @@ def detail(request, workflow_id):
         # 已存在 task (不论 active/terminal) → 不再显示"启用"按钮
         # 终态 task 想要重启用走 /gh_ost/retry/ 端点 (仅 failed/cancelled 可用)
         # CUSTOM-MODIFIED: 审批守卫 —— 去掉 manreviewing, 仅 review_pass + timingtask
+        # CUSTOM-MODIFIED: v0.3.0-beta DBA 兜底 —— 任何有 sql.sql_review 权限的 DBA 都能启用
+        ## 业务背景: DBA 是兜底角色, RD 漏勾 gh-ost 时 DBA 必须能启用, 不能让流程卡住
+        ## 134 dev 上 DBA user 没绑 "DBA"/"DBA组长" auth_group, 改用 has_perm 更准
+        ## @ 2026-08-11 @ mavis
         can_enable_ghost = (
-            (user.is_superuser or is_dba_group or is_submitter)
+            (user.is_superuser
+             or user.has_perm("sql.sql_review")  # DBA 兜底: 有审阅 perm 就能启用
+             or is_dba_group                      # 兼容老路径: auth_group 是 DBA/DBA组长
+             or is_submitter)
             and workflow_detail.status in ("workflow_review_pass", "workflow_timingtask")
             and not has_ghost_task
         )
@@ -389,6 +503,8 @@ def detail(request, workflow_id):
         "ghost_task_is_terminal": ghost_task_is_terminal,
         # CUSTOM: 提交人申请 gh-ost 标记 (审批前显示"等审批", 审批后自动启用)
         "enable_gh_ost_marked": bool(getattr(workflow_detail, "enable_gh_ost", False)),
+        # CUSTOM: 大表 DDL 防呆 (None = 不触发, dict = 触发红色 alert)
+        "big_table_alert": big_table_alert,
     }
     return render(request, "detail.html", context)
 
