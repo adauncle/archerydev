@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Archery 二次开发项目进度汇报 · 2026-08-11</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --line: #e9e3d6;
+    --line-soft: #f1ebde;
+    --ink: #14171e;
+    --ink-2: #3a4256;
+    --muted: #7c7a72;
+    --primary: #2f6f5e;        /* 深绿（公司色） */
+    --primary-soft: #e3ece8;
+    --warn: #c97b3f;          /* 橙 */
+    --warn-soft: #f6ecdd;
+    --danger: #b06367;        /* 红 */
+    --danger-soft: #f1e0df;
+    --info: #3b6f8a;          /* 蓝 */
+    --info-soft: #e2eaf0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Outfit', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.55;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(circle at 12% 6%, rgba(47,111,94,0.045) 0%, transparent 30%),
+      radial-gradient(circle at 90% 80%, rgba(201,123,63,0.035) 0%, transparent 30%);
+    background-attachment: fixed;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 32px 88px; }
+  @media (max-width: 640px) { .wrap { padding: 36px 20px 56px; } }
+
+  /* === Hero === */
+  .hero { margin-bottom: 64px; padding-bottom: 36px; border-bottom: 1px solid var(--line); }
+  .meta-row {
+    display: flex; align-items: center; gap: 14px;
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 18px;
+  }
+  .meta-row .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+  .meta-row .div { color: var(--line); }
+  h1 {
+    font-family: 'DM Serif Display', serif;
+    font-weight: 400;
+    font-size: 36px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin-bottom: 14px;
+  }
+  h1 .accent { color: var(--primary); font-style: italic; }
+  .hero .lede {
+    font-size: 17px;
+    color: var(--ink-2);
+    max-width: 680px;
+    line-height: 1.55;
+  }
+
+  /* === Section === */
+  section { margin-bottom: 64px; }
+  h2 {
+    font-family: 'DM Serif Display', serif;
+    font-weight: 400;
+    font-size: 26px;
+    color: var(--ink);
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px;
+  }
+  h2 .num {
+    font-family: 'Outfit', sans-serif;
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 500;
+    letter-spacing: 0.06em;
+  }
+
+  /* === Module status cards === */
+  .modules { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  @media (max-width: 980px) { .modules { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px) { .modules { grid-template-columns: 1fr; } }
+  .mod {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 16px 16px;
+    position: relative;
+    transition: all 0.18s;
+  }
+  .mod:hover { transform: translateY(-2px); box-shadow: 0 4px 16px -2px rgba(20,23,30,0.06); }
+  .mod .ver {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--primary);
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+  .mod .name {
+    font-size: 15px; font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+  .mod .stat {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; padding: 3px 9px; border-radius: 20px;
+    font-weight: 500;
+  }
+  .mod .stat.ok    { background: var(--primary-soft); color: var(--primary); }
+  .mod .stat.warn  { background: var(--warn-soft);    color: var(--warn); }
+  .mod .stat.danger{ background: var(--danger-soft);  color: var(--danger); }
+  .mod .note {
+    font-size: 12px; color: var(--muted);
+    margin-top: 10px; line-height: 1.4;
+  }
+  .mod .dot-mark { width: 7px; height: 7px; border-radius: 50%; }
+  .mod .dot-mark.ok    { background: var(--primary); }
+  .mod .dot-mark.warn  { background: var(--warn); }
+  .mod .dot-mark.danger{ background: var(--danger); }
+
+  /* === Big numbers === */
+  .bigstats {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    overflow: hidden;
+  }
+  @media (max-width: 720px) { .bigstats { grid-template-columns: repeat(2, 1fr); } }
+  .bigstat {
+    padding: 28px 24px;
+    border-right: 1px solid var(--line-soft);
+  }
+  .bigstat:last-child { border-right: 0; }
+  @media (max-width: 720px) {
+    .bigstat { border-right: 0; border-bottom: 1px solid var(--line-soft); }
+    .bigstat:nth-last-child(-n+2) { border-bottom: 0; }
+    .bigstat:nth-child(odd) { border-right: 1px solid var(--line-soft); }
+  }
+  .bigstat .num {
+    font-family: 'DM Serif Display', serif;
+    font-size: 42px;
+    line-height: 1;
+    color: var(--primary);
+    margin-bottom: 4px;
+  }
+  .bigstat .num small {
+    font-family: 'Outfit', sans-serif;
+    font-size: 16px;
+    color: var(--muted);
+    margin-left: 4px;
+    font-weight: 500;
+  }
+  .bigstat .lbl {
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* === Timeline === */
+  .timeline { list-style: none; padding: 0; margin: 0; position: relative; }
+  .timeline::before {
+    content: ""; position: absolute; left: 8px; top: 6px; bottom: 6px;
+    width: 2px; background: var(--primary); opacity: 0.25;
+  }
+  .timeline li {
+    position: relative; padding: 0 0 22px 38px;
+  }
+  .timeline li::before {
+    content: ""; position: absolute; left: 2px; top: 4px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: white; border: 2px solid var(--primary);
+  }
+  .timeline li.break { opacity: 0.7; }
+  .timeline li.break::before { border-color: var(--muted); }
+  .timeline .when {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; color: var(--primary);
+    margin-bottom: 2px; font-weight: 500;
+  }
+  .timeline .what {
+    font-size: 14.5px; color: var(--ink-2); line-height: 1.5;
+  }
+  .timeline .what strong { color: var(--ink); font-weight: 600; }
+  .timeline li.break .what { color: var(--muted); }
+
+  /* === Pillars (本周亮点 3 card) === */
+  .pillars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 780px) { .pillars { grid-template-columns: 1fr; } }
+  .pillar {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px 20px 18px;
+  }
+  .pillar .icon {
+    width: 36px; height: 36px;
+    background: var(--primary-soft);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--primary);
+    margin-bottom: 12px;
+  }
+  .pillar h3 {
+    font-size: 16px; font-weight: 600; color: var(--ink);
+    margin-bottom: 6px; line-height: 1.4;
+  }
+  .pillar p {
+    font-size: 13.5px; color: var(--ink-2);
+    line-height: 1.55;
+  }
+
+  /* === Risk table === */
+  .risk {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .risk table { width: 100%; border-collapse: collapse; }
+  .risk th, .risk td {
+    text-align: left; padding: 12px 16px;
+    font-size: 13.5px; vertical-align: top;
+  }
+  .risk th {
+    background: var(--line-soft);
+    font-weight: 600; color: var(--ink-2);
+    border-bottom: 1px solid var(--line);
+  }
+  .risk td { border-bottom: 1px solid var(--line-soft); color: var(--ink-2); }
+  .risk tr:last-child td { border-bottom: 0; }
+  .risk .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 500; letter-spacing: 0.02em;
+  }
+  .risk .tag.low { background: var(--primary-soft); color: var(--primary); }
+  .risk .tag.mid { background: var(--warn-soft); color: var(--warn); }
+  .risk .tag.high { background: var(--danger-soft); color: var(--danger); }
+
+  /* === Next steps === */
+  .next-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  .next-item {
+    display: grid; grid-template-columns: 60px 1fr 130px;
+    align-items: center; gap: 18px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+  @media (max-width: 640px) {
+    .next-item { grid-template-columns: 50px 1fr; }
+    .next-item .blk { grid-column: 1 / -1; padding-top: 8px; }
+  }
+  .next-item .pri {
+    font-family: 'DM Serif Display', serif;
+    font-size: 26px; line-height: 1; color: var(--primary);
+    text-align: center;
+  }
+  .next-item .pri.s0 { color: var(--danger); }
+  .next-item .pri.s1 { color: var(--warn); }
+  .next-item .pri.s2 { color: var(--muted); }
+  .next-item .body .ttl { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+  .next-item .body .blk { font-size: 12.5px; color: var(--muted); }
+  .next-item .body .blk strong { color: var(--ink-2); font-weight: 500; }
+
+  /* === Footer === */
+  footer {
+    margin-top: 80px; padding-top: 24px;
+    border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 12px;
+    display: flex; justify-content: space-between; gap: 16px;
+    flex-wrap: wrap;
+  }
+  footer .r { font-family: 'JetBrains Mono', monospace; }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="meta-row">
+      <span class="dot"></span>
+      <span>项目进度汇报</span>
+      <span class="div">/</span>
+      <span>2026-08-11</span>
+      <span class="div">/</span>
+      <span>Archery 二次开发</span>
+    </div>
+    <h1>把公司 SQL 上线流程<br/><span class="accent">标准化、自动化、钉钉 OA 集成</span></h1>
+    <p class="lede">基于上游 Archery v1.14.0 二次开发，服务公司内部 DBA 团队的 SQL 审核平台。已交付 <strong>DBA 群 OA 平台</strong>、<strong>gh-ost 无锁 DDL</strong>、<strong>归档/碎片回收</strong> 三大能力，134 dev 端到端演练全部通过。</p>
+  </div>
+
+  <!-- 1. 当前状态 -->
+  <section>
+    <h2><span class="num">01</span>当前状态</h2>
+    <div class="modules">
+      <div class="mod">
+        <div class="ver">v0.1.x</div>
+        <div class="name">基础 + DBA 群 OA</div>
+        <div class="stat ok"><span class="dot-mark ok"></span>已交付</div>
+        <div class="note">110 prod 已切换；OA 框架已合（未启用功能）</div>
+      </div>
+      <div class="mod">
+        <div class="ver">v0.2.x</div>
+        <div class="name">钉钉 OA 完整链路</div>
+        <div class="stat warn"><span class="dot-mark warn"></span>等用户操作</div>
+        <div class="note">设计稿写完，等建模板 + 配 tunnel</div>
+      </div>
+      <div class="mod">
+        <div class="ver">v0.3.0</div>
+        <div class="name">gh-ost 无锁 DDL</div>
+        <div class="stat ok"><span class="dot-mark ok"></span>已端到端跑通</div>
+        <div class="note">134 dev 8 次切表全成功，等推 110</div>
+      </div>
+      <div class="mod">
+        <div class="ver">v0.4.0</div>
+        <div class="name">归档专题</div>
+        <div class="stat warn"><span class="dot-mark warn"></span>设计完成</div>
+        <div class="note">v0.4.5 端到端跑通；v0.4.1~3 等实施</div>
+      </div>
+      <div class="mod">
+        <div class="ver">v0.4.5</div>
+        <div class="name">碎片回收</div>
+        <div class="stat ok"><span class="dot-mark ok"></span>alpha 完成</div>
+        <div class="note">单 task 18-21s；FIFO 队列 54s</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. 关键数据 -->
+  <section>
+    <h2><span class="num">02</span>关键数据</h2>
+    <div class="bigstats">
+      <div class="bigstat">
+        <div class="num">15<small>+</small></div>
+        <div class="lbl">累计 commits（7/22 ~ 8/11）</div>
+      </div>
+      <div class="bigstat">
+        <div class="num">8<small>次</small></div>
+        <div class="lbl">134 dev 切表全成功（18-21s/次）</div>
+      </div>
+      <div class="bigstat">
+        <div class="num">13<small>个</small></div>
+        <div class="lbl">端到端 Case 验证通过</div>
+      </div>
+      <div class="bigstat">
+        <div class="num">8<small>个</small></div>
+        <div class="lbl">修复的真流程 bug</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. 关键里程碑 -->
+  <section>
+    <h2><span class="num">03</span>关键里程碑（时间倒序）</h2>
+    <ol class="timeline">
+      <li>
+        <div class="when">2026-08-11</div>
+        <div class="what"><strong>gh-ost 审批守卫</strong> — 修真 bug：避免"提交勾 gh-ost → 审批前自启"绕过审批流程</div>
+      </li>
+      <li>
+        <div class="when">2026-08-11</div>
+        <div class="what"><strong>钉钉 OA 3 级审批配置生效</strong> — 修配置 bug：v0.1.4 占位"3"导致 3 周走单级；真正走 研发组长→DBA组长→DBA</div>
+      </li>
+      <li>
+        <div class="when">2026-08-11</div>
+        <div class="what">"bug 必记"原则固化 — 4 层文档（changelog / memory / AGENTS.md / 速查表），项目知识不丢</div>
+      </li>
+      <li>
+        <div class="when">2026-08-10</div>
+        <div class="what"><strong>gh-ost 状态机三件套</strong> — 启用 gh-ost 禁用原路径"立即执行"、cut-over 自动同步工单状态、cancel 路径不污染</div>
+      </li>
+      <li>
+        <div class="when">2026-08-10</div>
+        <div class="what"><strong>gh-ost zombie socket 双层防御</strong> — 启动前自动清 + 终态主动删，业务不中断</div>
+      </li>
+      <li>
+        <div class="when">2026-08-10</div>
+        <div class="what">gh-ost 详情页 UI 集成 — 启用按钮 + 进度面板 + 终态摘要，DBA 不需要后端命令</div>
+      </li>
+      <li>
+        <div class="when">2026-08-10</div>
+        <div class="what">134 dev 部署层 7 bug 全修 — 静态资源 404 / SQL 老工单兼容 / 视图 UnboundLocalError 等</div>
+      </li>
+      <li>
+        <div class="when">2026-08-06</div>
+        <div class="what">v0.4.5-alpha 碎片回收 134 dev 端到端跑通 — 单 task 18-21s / 3 task FIFO 54s</div>
+      </li>
+      <li>
+        <div class="when">2026-08-05</div>
+        <div class="what">gh-ost 演练大表迁移 134 dev 完成 — 433k 行 / 243MB 大表就绪</div>
+      </li>
+      <li>
+        <div class="when">2026-08-05</div>
+        <div class="what">gh-ost v0.3.0-alpha 骨架 — 6 endpoint + 5 道预检 + admin 后台</div>
+      </li>
+      <li class="break">
+        <div class="when">2026-07-22</div>
+        <div class="what">v0.1.4 sub workflow_audit_setting 接入 — 审批配置自动读取</div>
+      </li>
+      <li class="break">
+        <div class="when">2026-07-20</div>
+        <div class="what">v0.1.0 + 钉钉 OA 框架集成 + 110 prod 切换 — 项目起点</div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- 4. 本周亮点 -->
+  <section>
+    <h2><span class="num">04</span>本周亮点</h2>
+    <div class="pillars">
+      <div class="pillar">
+        <div class="icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        </div>
+        <h3>gh-ost 完整闭环跑通</h3>
+        <p>134 dev 8 次真表切表全部成功（每次 18-21s），3 个修复让前端 UI 真正可用，DBA 不需要后端命令行。</p>
+      </div>
+      <div class="pillar">
+        <div class="icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+        </div>
+        <h3>修 2 个真流程 bug</h3>
+        <p>审批守卫（避免绕过审批）+ 3 级配置（修 3 周占位 bug）—— 避免数据/流程事故，业务合规性提升。</p>
+      </div>
+      <div class="pillar">
+        <div class="icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        </div>
+        <h3>项目知识不丢</h3>
+        <p>"bug 必记"原则固化，4 层文档体系（changelog / memory / AGENTS.md / 速查表）—— 后续 AI agent / DBA 接手都不踩坑。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. 风险 + 应对 -->
+  <section>
+    <h2><span class="num">05</span>风险 + 应对</h2>
+    <div class="risk">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 30%">风险</th>
+            <th style="width: 45%">应对方案</th>
+            <th style="width: 12%">状态</th>
+            <th style="width: 13%">等级</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>gh-ost 推 110 prod 后未跑通</td>
+            <td>5 步必做 + rollback runbook（log dir chown / sock 清理 / 影子表 / 凭据重加密）</td>
+            <td>准备就绪</td>
+            <td><span class="tag mid">中</span></td>
+          </tr>
+          <tr>
+            <td>钉钉 OA 模板/tunnel 用户操作延迟</td>
+            <td>不阻塞 v0.3.0 推 110，OA 走 archery fallback（已实现）</td>
+            <td>已 fallback</td>
+            <td><span class="tag low">低</span></td>
+          </tr>
+          <tr>
+            <td>MySQL 5.7→8.0 升级碎片</td>
+            <td>v0.4.5 走 gh-ost 触发空 alter 回收，134 dev 验证通过</td>
+            <td>已验证</td>
+            <td><span class="tag mid">中</span></td>
+          </tr>
+          <tr>
+            <td>老工单兼容（v0.1.x 时期无 content 行）</td>
+            <td><code>getattr(wf, "sqlworkflowcontent", None)</code> 兜底</td>
+            <td>134 dev 全 200</td>
+            <td><span class="tag low">低</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 6. 下周计划 -->
+  <section>
+    <h2><span class="num">06</span>下周计划</h2>
+    <div class="next-list">
+      <div class="next-item">
+        <div class="pri s0">P0</div>
+        <div class="body">
+          <div class="ttl">推 v0.3.0 到 110 prod</div>
+          <div class="blk">条件: <strong>DINGTALK_NOTIFY_WEBHOOK</strong> 配置 + <strong>DBA 重新保存 instance 凭据</strong> 触发 K2 重新加密</div>
+        </div>
+        <div class="blk" style="text-align:right;color:var(--danger);">阻塞中</div>
+      </div>
+      <div class="next-item">
+        <div class="pri s0">P0</div>
+        <div class="body">
+          <div class="ttl">v0.2.1 钉钉模板 → 实施</div>
+          <div class="blk">条件: <strong>你建"SQL 上线申请"模板</strong>（oa.dingtalk.com）</div>
+        </div>
+        <div class="blk" style="text-align:right;color:var(--danger);">等你操作</div>
+      </div>
+      <div class="next-item">
+        <div class="pri s1">P1</div>
+        <div class="body">
+          <div class="ttl">v0.4.1 ~ v0.4.3 归档实施</div>
+          <div class="blk">设计稿已写完（详细到函数签名），<strong>等你拍板开干</strong></div>
+        </div>
+        <div class="blk" style="text-align:right;color:var(--warn);">待拍板</div>
+      </div>
+      <div class="next-item">
+        <div class="pri s2">P2</div>
+        <div class="body">
+          <div class="ttl">v0.4.6 归档 cron 实施</div>
+          <div class="blk">归档后定时触发碎片回收（django-q2 Schedule）</div>
+        </div>
+        <div class="blk" style="text-align:right;color:var(--muted);">低优</div>
+      </div>
+      <div class="next-item">
+        <div class="pri s2">P2</div>
+        <div class="body">
+          <div class="ttl">v0.2.2 cloudflared tunnel 配</div>
+          <div class="blk">条件: <strong>你配 DINGTALK_OA_CALLBACK_TOKEN/AES_KEY/RECEIVEID</strong></div>
+        </div>
+        <div class="blk" style="text-align:right;color:var(--muted);">等你操作</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Archery 二次开发 · 项目组</span>
+    <span class="r">2026-08-11 14:20 CST</span>
+  </footer>
+
+</div>
+</body>
+</html>
