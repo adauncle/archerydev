@@ -247,6 +247,11 @@ def detail(request, workflow_id):
     ## 关键修复: 必须前移到 is_can_execute 计算之前，否则 Python UnboundLocalError
     ## 关联设计: docs/designs/2026-08-05_gh-ost-product-design.html §启用 gh-ost
     ## @ 2026-08-10 @ mavis
+    ## CUSTOM-MODIFIED: v0.3.0-beta 审批守卫 + lazy auto-enable
+    ## - 去掉 manreviewing: 审批前不能点启用 (用户报的真 bug)
+    ## - lazy auto-enable: enable_gh_ost=True + status=review_pass + 没 task → 渲染前自动调 _enable_ghost_for_workflow
+    ## 关联 changelog: docs/changelogs/2026-08-11_gh-ost-approval-gating.md
+    ## @ 2026-08-11 @ mavis
     has_ghost_task = False
     can_enable_ghost = False
     ghost_task = None
@@ -254,6 +259,29 @@ def detail(request, workflow_id):
     ghost_task_is_terminal = False  # 终态历史 (UI 区分 active vs terminal)
     if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):
         from sql.extensions.ddl_gh_ost.models import DdlGhostTask
+
+        # ===== lazy auto-enable: 审批通过 + 提交人勾了 gh-ost → 自动启用 =====
+        if (
+            getattr(workflow_detail, "enable_gh_ost", False)
+            and workflow_detail.status == "workflow_review_pass"
+        ):
+            try:
+                existing = DdlGhostTask.objects.filter(workflow=workflow_detail).first()
+                if existing is None:
+                    # 审批通过且没 task → 自动启用
+                    from sql.extensions.ddl_gh_ost.views import _enable_ghost_for_workflow
+                    auto_result = _enable_ghost_for_workflow(
+                        workflow_detail, created_by=f"lazy-auto(提交人={workflow_detail.engineer})"
+                    )
+                    if not auto_result.get("ok"):
+                        # 不阻塞详情页渲染, 记录 warning
+                        logger.warning(
+                            "lazy auto-enable failed: wf=%s result=%s",
+                            workflow_detail.id, auto_result,
+                        )
+            except Exception:  # noqa: BLE001
+                logger.exception("lazy auto-enable crashed: wf=%s", workflow_detail.id)
+
         try:
             ghost_task = DdlGhostTask.objects.get(workflow=workflow_detail)
             has_ghost_task = True
@@ -272,9 +300,10 @@ def detail(request, workflow_id):
         is_dba_group = user.groups.filter(name__in=["DBA", "DBA组长"]).exists()
         # 已存在 task (不论 active/terminal) → 不再显示"启用"按钮
         # 终态 task 想要重启用走 /gh_ost/retry/ 端点 (仅 failed/cancelled 可用)
+        # CUSTOM-MODIFIED: 审批守卫 —— 去掉 manreviewing, 仅 review_pass + timingtask
         can_enable_ghost = (
             (user.is_superuser or is_dba_group or is_submitter)
-            and workflow_detail.status in ("workflow_manreviewing", "workflow_review_pass", "workflow_timingtask")
+            and workflow_detail.status in ("workflow_review_pass", "workflow_timingtask")
             and not has_ghost_task
         )
 
@@ -358,6 +387,8 @@ def detail(request, workflow_id):
         "can_enable_ghost": can_enable_ghost,
         "ghost_task": ghost_task,
         "ghost_task_is_terminal": ghost_task_is_terminal,
+        # CUSTOM: 提交人申请 gh-ost 标记 (审批前显示"等审批", 审批后自动启用)
+        "enable_gh_ost_marked": bool(getattr(workflow_detail, "enable_gh_ost", False)),
     }
     return render(request, "detail.html", context)
 

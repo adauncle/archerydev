@@ -4,6 +4,7 @@ import logging
 import traceback
 
 import simplejson as json
+from django.conf import settings
 from django.contrib.auth.decorators import permission_required
 from django.contrib.auth.models import Group
 from django.core.exceptions import PermissionDenied
@@ -12,6 +13,7 @@ from django.db.models import Q
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import render, get_object_or_404
 from django.urls import reverse
+from django.utils import timezone
 from django_q.tasks import async_task
 
 from common.config import SysConfig
@@ -494,6 +496,32 @@ def cancel(request):
         # 将流程状态修改为人工终止流程
         sql_workflow.status = "workflow_abort"
         sql_workflow.save()
+        ## CUSTOM-MODIFIED: v0.3.0-beta 拒绝/撤回时清理 DdlGhostTask @ 2026-08-11 @ mavis
+        ## 业务规则: 审批拒绝/撤回 → 任何挂的 gh-ost task 都清掉 (避免脏数据),
+        ## 但 SqlWorkflow.enable_gh_ost 标记保留 (业务上"申请过"是事实, 后续可审计).
+        ## 关联 changelog: docs/changelogs/2026-08-11_gh-ost-approval-gating.md
+        if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):
+            try:
+                from sql.extensions.ddl_gh_ost.models import DdlGhostTask
+                # is_terminal 是 @property, 不能直接 filter, 用 status 集合
+                pending_tasks = DdlGhostTask.objects.filter(
+                    workflow=sql_workflow,
+                    status__in=("pending", "precheck_failed", "queued", "running", "cut_over"),
+                )
+                cleaned = 0
+                for t in pending_tasks:
+                    t.status = "cancelled"
+                    t.finished_at = timezone.now()
+                    t.error_message = (t.error_message or "") + f"\n[aborted] 工单被 {request.user.username} 拒绝/撤回"
+                    t.save()
+                    cleaned += 1
+                if cleaned:
+                    logger.info(
+                        "拒绝/撤回工单 #%s 时清理了 %s 个非终态 DdlGhostTask",
+                        sql_workflow.id, cleaned,
+                    )
+            except Exception:  # noqa: BLE001
+                logger.exception("清理 DdlGhostTask 失败: wf=%s", sql_workflow.id)
     # 删除定时执行task
     if sql_workflow.status == "workflow_timingtask":
         del_schedule(f"sqlreview-timing-{workflow_id}")

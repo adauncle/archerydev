@@ -396,6 +396,17 @@ class SqlWorkflow(models.Model, WorkflowAuditMixin):
         max_length=255, blank=True, default="",
         help_text="如：钉钉 OA 启动失败 / 对账失败降级",
     )
+    ## CUSTOM-MODIFIED: v0.3.0-beta gh-ost 启用意图标记 —— 提交人勾选后, 等审批通过再 lazy 启用
+    ## 业务规则: 提交时勾 gh-ost = 仅写标记(不写 DdlGhostTask), 审批通过后由 detail 视图
+    ##          lazy 调 _enable_ghost_for_workflow; 审批拒绝/撤回时该标记保留(申请事实),
+    ##          但任何挂的 DdlGhostTask 都清掉.
+    ## 关联 changelog: docs/changelogs/2026-08-11_gh-ost-approval-gating.md
+    ## @ 2026-08-11 @ mavis
+    enable_gh_ost = models.BooleanField(
+        "提交人申请启用 gh-ost",
+        default=False,
+        help_text="勾选后等审批通过, detail 视图自动启用; 拒绝/撤回时 task 清理但标记保留",
+    )
 
     def __str__(self):
         return self.workflow_name

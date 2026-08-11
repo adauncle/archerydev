@@ -161,17 +161,18 @@ class WorkflowList(generics.ListAPIView):
                 task_name=f"sqlreview-submit-{workflow_content.workflow.id}",
             )
         ## CUSTOM-MODIFIED: v0.3.0-beta 提交页"启用 gh-ost"勾选联动
-        ## 提交时如果 enable_ghost=True 且 CUSTOM_GH_OST_ENABLED=True，自动调 enable 逻辑写 DdlGhostTask
-        ## @ 2026-08-10 @ mavis
+        ## v0.3.0-beta 修: 勾选不再立即调 _enable_ghost_for_workflow (会绕过审批流程)
+        ## 改为: 只写 SqlWorkflow.enable_gh_ost=True 标记, 由 detail 视图 lazy 在审批通过时自动启用
+        ## 关联 changelog: docs/changelogs/2026-08-11_gh-ost-approval-gating.md
+        ## @ 2026-08-11 @ mavis
         if request.data.get("enable_ghost") and getattr(settings, "CUSTOM_GH_OST_ENABLED", False):
             try:
-                from sql.extensions.ddl_gh_ost.views import _enable_ghost_for_workflow
-                ghost_result = _enable_ghost_for_workflow(
-                    workflow_content.workflow,
-                    created_by=request.user.username,
-                )
+                wf = workflow_content.workflow
+                wf.enable_gh_ost = True
+                wf.save(update_fields=["enable_gh_ost"])
+                ghost_result = {"ok": True, "pending_approval": True, "summary": "已记录 gh-ost 申请，等审批通过后自动启用"}
             except Exception as exc:  # noqa: BLE001
-                ghost_result = {"ok": False, "error": f"启用 gh-ost 异常: {exc}"}
+                ghost_result = {"ok": False, "error": f"保存 gh-ost 申请异常: {exc}"}
             # 不阻塞主流程，把结果塞进 response data 让前端展示
             serializer_data = dict(serializer.data) if isinstance(serializer.data, dict) else {}
             serializer_data["enable_ghost"] = ghost_result
