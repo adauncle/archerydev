@@ -15,6 +15,12 @@ v0.4.5-alpha 新增（碎片回收）：
     - ``/gh_ost/rebuild/list/?instance_id=N`` GET   列 instance 下可重建表（DBA 选表用）
     - ``/gh_ost/rebuild/start/``             POST  触发 rebuild task（写 task + 启 gh-ost + poller）
 
+## CUSTOM-MODIFIED: gh-ost 任务管理列表页 @ 2026-08-12 @ mavis
+## 关联: docs/designs/2026-08-05_gh-ost-product-design.html v0.3.0 完整版 §"DBA admin 列表页"
+## 业务: Django admin 后台有 ext_ddl_ghost_task, 但 DBA 不知道去 admin 后台翻。
+##       这个独立页面挂在 Archery 主菜单"DBA 工具"下, 列表 + 状态统计 + 取消/重试/回滚 一站式。
+    - ``/gh_ost/admin_list/``  GET   任务管理列表 (DBA 运维入口, 不需要 superuser)
+
 设计参考：docs/designs/2026-08-05_gh-ost-product-design.html §6/§10
 """
 
@@ -828,4 +834,76 @@ def rebuild_status(request: HttpRequest, task_id: int) -> JsonResponse:
         "duration_seconds": task.duration_seconds,
         "stderr_tail": task.stderr_tail[-2000:],
         "error_message": task.error_message,
+    })
+
+
+# ===========================================================================
+# CUSTOM-MODIFIED: gh-ost 任务管理列表页 @ 2026-08-12 @ mavis
+# 关联设计: docs/designs/2026-08-05_gh-ost-product-design.html v0.3.0 §"DBA admin 列表页"
+# 业务背景: Django admin 后台有 ext_ddl_ghost_task, 但 DBA 不知道去 admin 后台翻。
+#           这是一个独立的产品级页面, 挂在 Archery 主菜单, 列表 + 状态统计 + 取消/重试/回滚 一站式。
+# 关联 changelog: docs/changelogs/2026-08-12_gh-ost-task-list-page.md
+# ===========================================================================
+
+@login_required
+@require_GET
+def admin_list(request: HttpRequest) -> HttpResponse:
+    """gh-ost 任务管理列表页 (DBA 运维入口).
+
+    URL: GET /gh_ost/admin_list/
+    权限: 任何登录用户都能看 (DBA / RD / superuser), 操作按钮独立看 task 状态。
+          不强制 superuser, 因为这是日常运维入口, 不应该挡在 admin 后台里。
+
+    Query params:
+        - task_type: "ghost" | "rebuild" | "" (全部)
+        - status: "active" | "success" | "failed" | "cancelled" | "" (全部)
+        - q: 关键字 (工单名 / db.表)
+    """
+    from django.db.models import Q  # 局部 import 避免顶层污染
+
+    # 1. 拿筛选参数
+    filter_type = request.GET.get("task_type", "").strip()
+    filter_status = request.GET.get("status", "").strip()
+    filter_q = request.GET.get("q", "").strip()
+
+    # 2. 构造 query
+    qs = DdlGhostTask.objects.select_related("workflow", "workflow__instance").order_by("-id")
+
+    if filter_type in ("ghost", "rebuild"):
+        qs = qs.filter(task_type=filter_type)
+
+    # status 状态筛选 (active 是多个 in 查询)
+    if filter_status == "active":
+        qs = qs.filter(status__in=("pending", "precheck_failed", "queued", "running", "cut_over", "connecting", "copying"))
+    elif filter_status in ("success", "failed", "cancelled"):
+        qs = qs.filter(status=filter_status)
+
+    # 关键字搜索
+    if filter_q:
+        qs = qs.filter(
+            Q(workflow__workflow_name__icontains=filter_q)
+            | Q(workflow__db_name__icontains=filter_q)
+            | Q(target_table__icontains=filter_q)
+        )
+
+    # 3. 拿全部 (生产场景 task 量不大, 一次性渲染简单, 真多了再分页)
+    tasks = list(qs[:200])  # 限 200 防爆
+
+    # 4. 状态统计
+    all_count = DdlGhostTask.objects.count()
+    active_count = DdlGhostTask.objects.filter(
+        status__in=("pending", "precheck_failed", "queued", "running", "cut_over", "connecting", "copying")
+    ).count()
+    success_count = DdlGhostTask.objects.filter(status="success").count()
+    failed_count = DdlGhostTask.objects.filter(status__in=("failed", "rolled_back")).count()
+
+    return render(request, "ddl_gh_ost/task_list.html", {
+        "tasks": tasks,
+        "total": all_count,
+        "active_count": active_count,
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "filter_type": filter_type,
+        "filter_status": filter_status,
+        "filter_q": filter_q,
     })

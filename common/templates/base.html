@@ -116,6 +116,22 @@
                             <!-- /.nav-second-level -->
                         </li>
                     {% endif %}
+                    {# CUSTOM-MODIFIED: gh-ost 任务管理菜单 @ 2026-08-12 @ mavis #}
+                    {# 守卫: superuser 或有 sql.sql_review 权限的 DBA #}
+                    {# 关联 changelog: docs/changelogs/2026-08-12_gh-ost-task-list-page.md #}
+                    {# 注意: Django 模板 smartif 不支持 user.has_perm("...") 双引号语法, #}
+                    {#      用 perms.sql.sql_review 字典访问更安全 #}
+                    {% if user.is_superuser or perms.sql.sql_review %}
+                        <li>
+                            <a href="#"><i class="fa fa-rocket fa-fw"></i> gh-ost 任务<span class="fa arrow"></span></a>
+                            <ul class="nav nav-second-level collapse">
+                                <li>
+                                    <a href="/gh_ost/admin_list/"><i class="fa fa-list fa-fw"></i> 任务管理</a>
+                                </li>
+                            </ul>
+                            <!-- /.nav-second-level -->
+                        </li>
+                    {% endif %}
                     {% if perms.sql.menu_query %}
                         <li>
                             <a href="#"><i class="fa fa-search fa-fw"></i> SQL查询<span class="fa arrow"></span></a>

@@ -1,0 +1,238 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}gh-ost 任务管理 · Archery{% endblock %}
+
+{% block content %}
+<style>
+  /* gh-ost 任务管理页 —— 状态统计卡 + 列表 + 操作 */
+  .gh-ost-stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .gh-ost-stat-card {
+    background: var(--card, #fff); border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    padding: 16px 20px; flex: 1 1 180px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .gh-ost-stat-icon { font-size: 24px; width: 44px; height: 44px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; color: #fff; }
+  .gh-ost-stat-icon.total { background: #409EFF; }
+  .gh-ost-stat-icon.active { background: #E6A23C; }
+  .gh-ost-stat-icon.success { background: #67C23A; }
+  .gh-ost-stat-icon.failed { background: #F56C6C; }
+  .gh-ost-stat-num { font-size: 24px; font-weight: 700; }
+  .gh-ost-stat-label { color: #909399; font-size: 12px; }
+
+  /* 筛选器 */
+  .gh-ost-filters { background: #fff; border-radius: 8px; padding: 14px 18px; margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .gh-ost-filters label { color: #606266; font-size: 13px; margin-right: 4px; }
+  .gh-ost-filters select, .gh-ost-filters input {
+    padding: 5px 10px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 13px;
+  }
+  .gh-ost-filters .btn { margin-left: auto; }
+
+  /* 列表 */
+  .gh-ost-list-card { background: #fff; border-radius: 8px; padding: 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: hidden; }
+  table.gh-ost-tasks { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.gh-ost-tasks th {
+    background: #fafafa; color: #606266; font-weight: 600; text-align: left;
+    padding: 12px 14px; border-bottom: 1px solid #ebeef5; white-space: nowrap;
+  }
+  table.gh-ost-tasks td {
+    padding: 12px 14px; border-bottom: 1px solid #f0f0f0; vertical-align: middle;
+  }
+  table.gh-ost-tasks tr:hover td { background: #fafbfc; }
+  table.gh-ost-tasks tr.terminal td { opacity: .85; }
+
+  /* 状态 badge */
+  .gh-ost-badge { display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 600; color: #fff; }
+  .gh-ost-badge.queued, .gh-ost-badge.pending, .gh-ost-badge.precheck_failed { background: #409EFF; }
+  .gh-ost-badge.running, .gh-ost-badge.cut_over, .gh-ost-badge.connecting, .gh-ost-badge.copying { background: #E6A23C; }
+  .gh-ost-badge.success { background: #67C23A; }
+  .gh-ost-badge.failed, .gh-ost-badge.rolled_back { background: #F56C6C; }
+  .gh-ost-badge.cancelled, .gh-ost-badge.aborted { background: #909399; }
+
+  /* 类型 tag */
+  .gh-ost-type { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .gh-ost-type.ghost { background: #e6f0ff; color: #1f5b96; }
+  .gh-ost-type.rebuild { background: #fdeeee; color: #b06367; }
+
+  /* 进度条 */
+  .gh-ost-prog-bar { height: 6px; background: #ebeef5; border-radius: 3px; overflow: hidden; min-width: 80px; }
+  .gh-ost-prog-bar-fill { height: 100%; background: #409EFF; transition: width .3s; }
+  .gh-ost-prog-bar-fill.success { background: #67C23A; }
+  .gh-ost-prog-bar-fill.failed { background: #F56C6C; }
+  .gh-ost-prog-text { font-size: 11px; color: #909399; margin-top: 2px; }
+
+  /* 操作按钮 */
+  .gh-ost-actions { display: flex; gap: 6px; }
+  .gh-ost-act-btn { padding: 4px 10px; border: none; border-radius: 3px; font-size: 12px;
+    cursor: pointer; color: #fff; font-weight: 500; text-decoration: none; display: inline-block; }
+  .gh-ost-act-btn.view { background: #409EFF; }
+  .gh-ost-act-btn.cancel { background: #E6A23C; }
+  .gh-ost-act-btn.retry { background: #67C23A; }
+  .gh-ost-act-btn.rollback { background: #F56C6C; }
+  .gh-ost-act-btn.mini { padding: 3px 8px; font-size: 11px; }
+
+  .gh-ost-sub { color: #909399; font-size: 13px; margin-bottom: 20px; }
+  .gh-ost-wf-link { color: #409EFF; text-decoration: none; }
+  .gh-ost-wf-link:hover { text-decoration: underline; }
+  .gh-ost-muted { color: #909399; }
+  .gh-ost-empty { padding: 60px 20px; text-align: center; color: #909399; font-size: 14px; }
+</style>
+
+<div class="gh-ost-page">
+  <h1 style="font-size: 22px; margin: 0 0 6px;">gh-ost 任务管理</h1>
+  <p class="gh-ost-sub">DBA 运维入口 · 取消/重试/回滚无锁 DDL 任务 · 共 {{ total }} 条</p>
+
+  <!-- 状态统计卡 -->
+  <div class="gh-ost-stats">
+    <div class="gh-ost-stat-card">
+      <div class="gh-ost-stat-icon total"><i class="fa fa-list"></i></div>
+      <div><div class="gh-ost-stat-num">{{ total }}</div><div class="gh-ost-stat-label">总任务数</div></div>
+    </div>
+    <div class="gh-ost-stat-card">
+      <div class="gh-ost-stat-icon active"><i class="fa fa-spinner fa-spin"></i></div>
+      <div><div class="gh-ost-stat-num">{{ active_count }}</div><div class="gh-ost-stat-label">进行中</div></div>
+    </div>
+    <div class="gh-ost-stat-card">
+      <div class="gh-ost-stat-icon success"><i class="fa fa-check"></i></div>
+      <div><div class="gh-ost-stat-num">{{ success_count }}</div><div class="gh-ost-stat-label">cut-over 成功</div></div>
+    </div>
+    <div class="gh-ost-stat-card">
+      <div class="gh-ost-stat-icon failed"><i class="fa fa-times"></i></div>
+      <div><div class="gh-ost-stat-num">{{ failed_count }}</div><div class="gh-ost-stat-label">失败/回滚</div></div>
+    </div>
+  </div>
+
+  <!-- 筛选器 -->
+  <form class="gh-ost-filters" method="get">
+    <label>类型</label>
+    <select name="task_type">
+      <option value="" {% if not filter_type %}selected{% endif %}>全部</option>
+      <option value="ghost" {% if filter_type == "ghost" %}selected{% endif %}>ghost (工单 DDL)</option>
+      <option value="rebuild" {% if filter_type == "rebuild" %}selected{% endif %}>rebuild (碎片回收)</option>
+    </select>
+    <label>状态</label>
+    <select name="status">
+      <option value="" {% if not filter_status %}selected{% endif %}>全部</option>
+      <option value="active" {% if filter_status == "active" %}selected{% endif %}>进行中</option>
+      <option value="success" {% if filter_status == "success" %}selected{% endif %}>成功</option>
+      <option value="failed" {% if filter_status == "failed" %}selected{% endif %}>失败</option>
+      <option value="cancelled" {% if filter_status == "cancelled" %}selected{% endif %}>取消</option>
+    </select>
+    <label>关键字</label>
+    <input type="text" name="q" value="{{ filter_q|default:"" }}" placeholder="工单名 / db.表" style="min-width: 200px;">
+    <button type="submit" class="btn btn-primary"><i class="fa fa-search"></i> 筛选</button>
+    <a href="/gh_ost/admin_list/" class="btn btn-default"><i class="fa fa-refresh"></i> 重置</a>
+  </form>
+
+  <!-- 任务列表 -->
+  <div class="gh-ost-list-card">
+    {% if tasks %}
+    <table class="gh-ost-tasks">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>类型</th>
+          <th>状态</th>
+          <th>工单 / DB.表</th>
+          <th>进度</th>
+          <th>启动时间</th>
+          <th>结束时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tasks %}
+        <tr class="{% if t.is_terminal %}terminal{% endif %}">
+          <td class="gh-ost-muted">#{{ t.id }}</td>
+          <td><span class="gh-ost-type {{ t.task_type }}">{{ t.get_task_type_display|default:t.task_type }}</span></td>
+          <td>
+            <span class="gh-ost-badge {{ t.status }}">{{ t.get_status_display|default:t.status }}</span>
+            {% if t.current_stage %}<br><span class="gh-ost-muted" style="font-size:11px;">stage: {{ t.current_stage }}</span>{% endif %}
+          </td>
+          <td>
+            {% if t.workflow %}
+              <a class="gh-ost-wf-link" href="/detail/{{ t.workflow.id }}/" target="_blank">#{{ t.workflow.id }} {{ t.workflow.workflow_name|truncatechars:24 }}</a><br>
+              <span class="gh-ost-muted" style="font-size:11px;">{{ t.workflow.db_name }}.{{ t.workflow.table_name|default:"—" }}</span>
+            {% else %}
+              <span class="gh-ost-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if t.status == "success" %}
+              <div class="gh-ost-prog-bar"><div class="gh-ost-prog-bar-fill success" style="width:100%;"></div></div>
+              <div class="gh-ost-prog-text">100%</div>
+            {% elif t.status == "failed" or t.status == "rolled_back" %}
+              <div class="gh-ost-prog-bar"><div class="gh-ost-prog-bar-fill failed" style="width:100%;"></div></div>
+              <div class="gh-ost-prog-text">{{ t.progress_pct|default:0 }}%</div>
+            {% else %}
+              <div class="gh-ost-prog-bar"><div class="gh-ost-prog-bar-fill" style="width:{{ t.progress_pct|default:0 }}%;"></div></div>
+              <div class="gh-ost-prog-text">{{ t.progress_pct|default:0 }}% · {{ t.progress_rows_copied|default:0 }}/{{ t.progress_rows_total|default:0 }} rows</div>
+            {% endif %}
+          </td>
+          <td class="gh-ost-muted" style="font-size:12px;">{{ t.started_at|date:"Y-m-d H:i:s"|default:"—" }}</td>
+          <td class="gh-ost-muted" style="font-size:12px;">{{ t.finished_at|date:"Y-m-d H:i:s"|default:"—" }}</td>
+          <td>
+            <div class="gh-ost-actions">
+              {% if t.workflow %}
+                <a class="gh-ost-act-btn view mini" href="{% if t.task_type == 'rebuild' %}/gh_ost/rebuild/progress/{{ t.id }}/{% else %}/gh_ost/progress/{{ t.workflow.id }}/{% endif %}" target="_blank" title="查看进度"><i class="fa fa-eye"></i></a>
+                {% if t.status == "queued" or t.status == "running" or t.status == "cut_over" or t.status == "precheck_failed" %}
+                  <button class="gh-ost-act-btn cancel mini" data-act="cancel" data-wf="{{ t.workflow.id }}" title="取消"><i class="fa fa-stop"></i></button>
+                {% endif %}
+                {% if t.status == "failed" or t.status == "cancelled" %}
+                  <button class="gh-ost-act-btn retry mini" data-act="retry" data-wf="{{ t.workflow.id }}" title="重试 (仅 failed/cancelled)"><i class="fa fa-refresh"></i></button>
+                {% endif %}
+                {% if t.status == "success" and t.task_type == "ghost" %}
+                  <button class="gh-ost-act-btn rollback mini" data-act="rollback" data-wf="{{ t.workflow.id }}" title="回滚 (drop 影子表)"><i class="fa fa-undo"></i></button>
+                {% endif %}
+              {% else %}
+                <span class="gh-ost-muted" style="font-size:11px;">—</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="gh-ost-empty">
+      <i class="fa fa-inbox" style="font-size:42px;color:#dcdfe6;"></i><br><br>
+      暂无 gh-ost 任务<br>
+      <span style="font-size:12px;">(用户在工单页勾选"启用 gh-ost"并审批通过后, task 会出现在这里)</span>
+    </div>
+    {% endif %}
+  </div>
+
+  <p class="gh-ost-sub" style="margin-top:24px;">
+    <i class="fa fa-info-circle"></i>
+    操作走 AJAX 异步 (cancel/retry/rollback), 完成后自动刷新页面 · Django admin 后台完整版: <a href="/admin/ddl_gh_ost/ddlghosttask/">/admin/ddl_gh_ost/ddlghosttask/</a>
+  </p>
+</div>
+
+<script>
+function getCookie(name) {
+    var v = document.cookie.match('(^|;)\\s*' + name + '=([^;]+)');
+    return v ? v.pop() : '';
+}
+document.querySelectorAll('button[data-act]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var act = this.dataset.act;
+        var wf = this.dataset.wf;
+        var labels = {cancel: '取消', retry: '重试', rollback: '回滚'};
+        if (!confirm('确认要' + labels[act] + '这个 gh-ost 任务吗?\n\n工单 ID: ' + wf)) return;
+        var url = '/gh_ost/' + act + '/' + wf + '/';
+        btn.disabled = true;
+        fetch(url, {method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}, credentials: 'same-origin'})
+            .then(function(r){ return r.json(); })
+            .then(function(j) {
+                if (j.ok) { alert(labels[act] + '成功'); location.reload(); }
+                else { alert((labels[act] + '失败: ') + (j.error || j.summary || JSON.stringify(j))); btn.disabled = false; }
+            })
+            .catch(function(e) { alert('请求失败: ' + e); btn.disabled = false; });
+    });
+});
+</script>
+{% endblock %}

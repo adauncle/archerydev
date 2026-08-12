@@ -45,4 +45,6 @@ urlpatterns = [
     path("rebuild/start/", views.rebuild_start, name="rebuild_start"),
     path("rebuild/status/<int:task_id>/", views.rebuild_status, name="rebuild_status"),
     path("rebuild/progress/<int:task_id>/", views.rebuild_progress_page, name="rebuild_progress"),
+    # gh-ost 任务管理列表页 (DBA 运维入口) @ 2026-08-12
+    path("admin_list/", views.admin_list, name="admin_list"),
 ]
