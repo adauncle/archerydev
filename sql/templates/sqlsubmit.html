@@ -149,6 +149,10 @@
                         <table id="inception-result" data-toggle="table" class="table table-striped table-hover"
                                style="table-layout:inherit;overflow:hidden;white-space:nowrap;word-break:break-word;text-overflow:ellipsis;display: none"></table>
                     </div>
+                    {# CUSTOM-MODIFIED: v0.3.x 字段 diff 联动 @ 2026-08-12 @ mavis #}
+                    {# SQL 检测成功后, ALTER TABLE 自动 fetch 字段 diff 端点 #}
+                    {# 关联 changelog: docs/changelogs/2026-08-12_gh-ost-column-diff.md #}
+                    <div id="column-diff-result" style="display:none; margin-top:14px;"></div>
                 </div>
             </div>
         </div>
@@ -654,6 +658,10 @@
                     sessionStorage.setItem('CheckErrorCount', result.error_count);
                     $("#inception-result").show();
                     $('#btn-submitsql').button('reset').removeClass('disabled').prop("disabled", false);
+                    {# CUSTOM-MODIFIED: v0.3.x 字段 diff 联动 @ 2026-08-12 @ mavis #}
+                    {# SQL 检测成功后, ALTER TABLE 自动 fetch 字段 diff 端点 #}
+                    {# 失败 fallback: 静默不显示, 不影响 SQL 检测 #}
+                    fetchColumnDiff(editor.getValue(), $("#instance_name option:selected").attr("instance-id"), $("#db_name").val());
                 },
                 error: function (XMLHttpRequest, textStatus, errorThrown) {
                     if (XMLHttpRequest.responseJSON) {
@@ -664,6 +672,113 @@
                 }
             });
 
+        }
+
+        {# CUSTOM-MODIFIED: v0.3.x 字段 diff 联动函数 @ 2026-08-12 @ mavis #}
+        {# ALTER TABLE 自动触发; 其他类型静默; 失败 fallback 不显示 #}
+        function fetchColumnDiff(sqlContent, instanceId, dbName) {
+            var $box = $("#column-diff-result");
+            // 只对 ALTER TABLE 触发 (避免 SELECT/INSERT/UPDATE 等不必要检测)
+            if (!/\bALTER\s+TABLE\b/i.test(sqlContent || "")) {
+                $box.hide().empty();
+                return;
+            }
+            if (!instanceId || !dbName) {
+                $box.hide().empty();
+                return;
+            }
+            $.ajax({
+                type: "post",
+                url: "/gh_ost/column_diff/",
+                dataType: "json",
+                data: {instance_id: instanceId, db_name: dbName, sql_content: sqlContent},
+                success: function (data) {
+                    if (!data.ok) {
+                        // 表不存在 / SQL 不含 MODIFY 等, 静默不显示
+                        $box.hide().empty();
+                        return;
+                    }
+                    renderColumnDiff(data);
+                },
+                error: function () {
+                    // 失败 fallback: 静默, 不影响 SQL 检测主体
+                    $box.hide().empty();
+                }
+            });
+        }
+
+        function renderColumnDiff(data) {
+            var $box = $("#column-diff-result");
+            var high = data.high_risk_count || 0;
+            var mid = data.mid_risk_count || 0;
+            var low = data.low_risk_count || 0;
+
+            // 风险摘要 banner
+            var summaryColor = high > 0 ? "#b06367" : (mid > 0 ? "#c9a23f" : "#5a8c6e");
+            var summaryBg = high > 0 ? "rgba(176, 99, 103, 0.08)" : (mid > 0 ? "rgba(201, 162, 63, 0.08)" : "rgba(90, 140, 110, 0.08)");
+            var badges = "";
+            if (high > 0) badges += '<span style="background:#b06367;color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px;">🟥 高 ' + high + '</span>';
+            if (mid > 0) badges += '<span style="background:#c9a23f;color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px;">🟧 中 ' + mid + '</span>';
+            if (low > 0) badges += '<span style="background:#5a8c6e;color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px;">🟩 低 ' + low + '</span>';
+
+            // 字段 diff 表格
+            var tableHtml = '<div style="overflow-x:auto;"><table class="table table-bordered table-hover" style="margin:0;font-size:12px;"><thead><tr style="background:#fafafa;"><th style="padding:8px;width:60px;">操作</th><th style="padding:8px;width:140px;">字段</th><th style="padding:8px;width:80px;">属性</th><th style="padding:8px;">改前</th><th style="padding:8px;">改后</th><th style="padding:8px;width:60px;">风险</th><th style="padding:8px;">提示</th></tr></thead><tbody>';
+            $.each(data.columns || [], function (i, col) {
+                var opLabel = col.operation === "MODIFY" ? '<span class="label label-info">MODIFY</span>' :
+                              col.operation === "ADD" ? '<span class="label label-success">ADD</span>' :
+                              col.operation === "DROP" ? '<span class="label label-danger">DROP</span>' : col.operation;
+                if (!col.diffs || col.diffs.length === 0) {
+                    tableHtml += '<tr><td style="padding:8px;">' + opLabel + '</td><td style="padding:8px;font-weight:600;">' + col.name + '</td><td colspan="5" style="padding:8px;color:#909399;">' + (col.operation === "ADD" ? "新列, 无冲突" : "无变更") + '</td></tr>';
+                } else {
+                    var firstRow = true;
+                    $.each(col.diffs, function (j, d) {
+                        var riskColor = d.risk === "high" ? "#b06367" : (d.risk === "mid" ? "#c9a23f" : (d.risk === "low" ? "#5a8c6e" : "#909399"));
+                        var riskPill = '<span style="background:' + riskColor + ';color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + (d.risk === "high" ? "🟥 高" : d.risk === "mid" ? "🟧 中" : "🟩 低") + '</span>';
+                        tableHtml += '<tr>';
+                        if (firstRow) {
+                            tableHtml += '<td style="padding:8px;vertical-align:top;" rowspan="' + col.diffs.length + '">' + opLabel + '</td>';
+                            tableHtml += '<td style="padding:8px;font-weight:600;vertical-align:top;" rowspan="' + col.diffs.length + '">' + col.name + '</td>';
+                            firstRow = false;
+                        }
+                        tableHtml += '<td style="padding:8px;">' + d.field + '</td>';
+                        tableHtml += '<td style="padding:8px;font-family:monospace;font-size:11px;"><span style="background:rgba(176,99,103,0.1);color:#b06367;text-decoration:line-through;padding:1px 4px;border-radius:3px;">' + escapeHtml(String(d.old)) + '</span></td>';
+                        tableHtml += '<td style="padding:8px;font-family:monospace;font-size:11px;"><span style="background:rgba(90,140,110,0.1);color:#5a8c6e;padding:1px 4px;border-radius:3px;">' + escapeHtml(String(d.new)) + '</span></td>';
+                        tableHtml += '<td style="padding:8px;">' + riskPill + '</td>';
+                        tableHtml += '<td style="padding:8px;color:#606266;font-size:11px;">' + escapeHtml(d.reason) + '</td>';
+                        tableHtml += '</tr>';
+                    });
+                }
+            });
+            tableHtml += '</tbody></table></div>';
+
+            // 修复建议 (高风险时显示)
+            var fixHtml = "";
+            if (high > 0) {
+                var modifyCols = (data.columns || []).filter(function(c){return c.operation==="MODIFY" && c.diffs && c.diffs.some(function(d){return d.risk==="high";});});
+                var colNames = modifyCols.map(function(c){return c.name;}).join(", ");
+                fixHtml = '<div style="margin-top:12px;padding:10px 14px;background:rgba(47,111,94,0.04);border:1px solid rgba(47,111,94,0.2);border-radius:6px;">' +
+                          '<div style="font-size:12px;font-weight:600;color:#2f6f5e;margin-bottom:4px;">💡 建议: 在 ALTER 中显式指定原 CHARSET 和 COLLATE</div>' +
+                          '<div style="font-family:monospace;font-size:11px;color:#3a4256;line-height:1.5;">ALTER TABLE ' + escapeHtml(data.table_name) + '<br>&nbsp;&nbsp;MODIFY COLUMN ' + escapeHtml(colNames) + ' ...</div>' +
+                          '</div>';
+            }
+
+            var html = '<div style="background:white;border:1px solid #e9e3d6;border-radius:6px;padding:14px 18px;margin-top:8px;">' +
+                       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
+                         '<strong style="font-size:13px;color:#14171e;">📋 字段变更检测 (DBA 兜底)</strong>' +
+                         '<span style="font-size:12px;color:#7c7a72;margin-left:8px;">表: <code style="background:#f5f5f5;padding:1px 6px;border-radius:3px;">' + escapeHtml(data.table_name) + '</code></span>' +
+                       '</div>' +
+                       '<div style="background:' + summaryBg + ';padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:13px;color:' + summaryColor + ';">' +
+                         escapeHtml(data.summary) + ' &nbsp; ' + badges +
+                       '</div>' +
+                       tableHtml + fixHtml +
+                       '</div>';
+
+            $box.html(html).show();
+        }
+
+        function escapeHtml(s) {
+            if (s == null) return "";
+            return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
         }
 
         function sqlSubmit() {

@@ -907,3 +907,55 @@ def admin_list(request: HttpRequest) -> HttpResponse:
         "filter_status": filter_status,
         "filter_q": filter_q,
     })
+
+
+# ===========================================================================
+# CUSTOM-MODIFIED: v0.3.x 字段 diff 端点 @ 2026-08-12 @ mavis
+# 关联: docs/designs/2026-08-12_gh-ost-column-diff-mockup.html
+# 业务: SQL 检测结果页 / 详情页大表 alert 都调这个端点, 给 8 维字段 diff + 11 条风险规则
+# 关联 changelog: docs/changelogs/2026-08-12_gh-ost-column-diff.md
+# ===========================================================================
+
+@login_required
+@require_POST
+def column_diff(request: HttpRequest) -> JsonResponse:
+    """字段 diff 端点.
+
+    URL: POST /gh_ost/column_diff/
+    入参 (form data 或 JSON body):
+        - instance_id: int (Instance.id)
+        - db_name: str
+        - sql_content: str (通常是一条 ALTER TABLE)
+        - table_name: str (可选, 不传从 SQL 解析)
+
+    返回: 见 services.column_diff.column_diff_full 返回结构
+
+    注: 普通 Django WSGIRequest 没有 .data 属性 (那是 DRF 的), 用 getattr 兜底
+    """
+    # 兼容 form data 和 JSON body
+    def _get(key):
+        v = request.POST.get(key)
+        if v is None:
+            v = getattr(request, "data", {}).get(key)
+        return v
+
+    try:
+        instance_id = int(_get("instance_id"))
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "error": "instance_id 必填且为整数"}, status=400)
+    db_name = (_get("db_name") or "").strip()
+    sql_content = (_get("sql_content") or "").strip()
+    table_name = (_get("table_name") or "").strip() or None
+
+    if not db_name or not sql_content:
+        return JsonResponse({"ok": False, "error": "db_name 和 sql_content 必填"}, status=400)
+
+    from sql.models import Instance
+    try:
+        instance = Instance.objects.get(pk=instance_id)
+    except Instance.DoesNotExist:
+        return JsonResponse({"ok": False, "error": f"instance {instance_id} 不存在"}, status=404)
+
+    from .services.column_diff import column_diff_full
+    result = column_diff_full(instance, db_name, sql_content, table_name=table_name)
+    return JsonResponse(result)
