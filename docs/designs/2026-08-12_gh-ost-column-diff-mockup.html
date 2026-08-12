@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v0.3.x 字段 diff 检测 · 产品 mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f7f5f0;
+  --card: #ffffff;
+  --line: #e9e3d6;
+  --line-soft: #f0ebe0;
+  --ink: #14171e;
+  --ink-mid: #3a4256;
+  --muted: #7c7a72;
+  --primary: #2f6f5e;
+  --accent: #c97b3f;
+  --danger: #b06367;
+  --warn: #c9a23f;
+  --good: #5a8c6e;
+  --info: #4a7099;
+  --code-bg: #2d2d2d;
+  --code-fg: #e6e6e6;
+  --radius: 12px;
+  --shadow: 0 2px 8px rgba(0,0,0,0.04);
+  --shadow-lg: 0 4px 16px -2px rgba(0,0,0,0.06);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Outfit', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg); color: var(--ink);
+  line-height: 1.55; padding: 48px 24px 80px;
+  min-height: 100dvh;
+}
+.container { max-width: 1180px; margin: 0 auto; }
+
+/* ===== Header ===== */
+.hero { margin-bottom: 40px; }
+.hero-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; background: rgba(47, 111, 94, 0.1);
+  color: var(--primary); border-radius: 20px; font-size: 12px;
+  font-weight: 600; letter-spacing: 0.5px; margin-bottom: 14px;
+}
+.hero-tag .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+h1 {
+  font-family: 'DM Serif Display', serif; font-weight: 400;
+  font-size: 38px; line-height: 1.15; letter-spacing: -0.01em;
+  color: var(--ink); margin-bottom: 14px;
+}
+.hero-sub { font-size: 16px; color: var(--ink-mid); max-width: 720px; }
+
+/* ===== Background story ===== */
+.story {
+  background: linear-gradient(135deg, rgba(176, 99, 103, 0.04), rgba(201, 122, 63, 0.04));
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin-bottom: 36px;
+  display: flex; gap: 18px; align-items: flex-start;
+}
+.story-icon {
+  flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px;
+  background: rgba(176, 99, 103, 0.1); color: var(--danger);
+  display: flex; align-items: center; justify-content: center;
+}
+.story-title { font-size: 15px; font-weight: 600; color: var(--danger); margin-bottom: 4px; }
+.story-text { font-size: 14px; color: var(--ink-mid); line-height: 1.6; }
+.story-text code {
+  font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+  background: rgba(0,0,0,0.05); padding: 1px 6px; border-radius: 3px; color: var(--ink);
+}
+
+/* ===== Section ===== */
+section { margin-bottom: 48px; }
+h2 {
+  font-family: 'DM Serif Display', serif; font-weight: 400;
+  font-size: 26px; color: var(--ink); margin-bottom: 8px;
+  display: flex; align-items: center; gap: 10px;
+}
+h2 .num {
+  font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 12px;
+  background: var(--primary); color: white; padding: 4px 10px; border-radius: 12px;
+  letter-spacing: 0.5px;
+}
+.section-sub { color: var(--muted); font-size: 14px; margin-bottom: 20px; margin-left: 50px; }
+
+/* ===== Mockup container ===== */
+.mockup {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+}
+
+/* ===== Form bar ===== */
+.form-bar {
+  background: #fafaf7; border-bottom: 1px solid var(--line);
+  padding: 18px 22px; display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 14px;
+  align-items: end;
+}
+.form-field label {
+  display: block; font-size: 12px; font-weight: 600; color: var(--muted);
+  margin-bottom: 4px; letter-spacing: 0.3px; text-transform: uppercase;
+}
+.form-field input, .form-field select {
+  width: 100%; padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  background: white; color: var(--ink);
+}
+.btn-check {
+  background: var(--primary); color: white; border: none; border-radius: 6px;
+  padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  transition: all 0.2s;
+}
+.btn-check:hover { background: #245a4a; transform: translateY(-1px); }
+.btn-check .spinner {
+  display: none; width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.3); border-top-color: white;
+  border-radius: 50%; animation: spin 0.7s linear infinite;
+}
+.btn-check.loading .spinner { display: inline-block; }
+.btn-check.loading .icon-idle { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== SQL box ===== */
+.sql-area { padding: 16px 22px; background: #fcfcfa; border-bottom: 1px solid var(--line); }
+.sql-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.sql-box {
+  font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6;
+  background: var(--code-bg); color: var(--code-fg); padding: 12px 16px;
+  border-radius: 6px; white-space: pre-wrap; word-break: break-word;
+}
+.sql-box .kw { color: #ff9a6c; }
+.sql-box .str { color: #b8e986; }
+.sql-box .comment { color: #6b7785; font-style: italic; }
+
+/* ===== Detection result area ===== */
+.result-area { padding: 22px; }
+.result-summary {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: 8px; margin-bottom: 20px;
+  font-size: 14px; font-weight: 500;
+}
+.result-summary.has-high { background: rgba(176, 99, 103, 0.08); color: var(--danger); }
+.result-summary.has-mid { background: rgba(201, 162, 63, 0.08); color: var(--warn); }
+.result-summary.all-good { background: rgba(90, 140, 110, 0.08); color: var(--good); }
+.result-summary .dot { width: 8px; height: 8px; border-radius: 50%; }
+.result-summary.has-high .dot { background: var(--danger); }
+.result-summary.has-mid .dot { background: var(--warn); }
+.result-summary.all-good .dot { background: var(--good); }
+.risk-badges { display: flex; gap: 6px; margin-left: auto; }
+.risk-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.risk-badge.high { background: var(--danger); color: white; }
+.risk-badge.mid { background: var(--warn); color: white; }
+.risk-badge.low { background: var(--good); color: white; }
+
+/* ===== Diff table ===== */
+.diff-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.diff-table th {
+  text-align: left; padding: 10px 12px; font-size: 11px; font-weight: 600;
+  color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
+  background: #fafaf7; border-bottom: 1px solid var(--line);
+}
+.diff-table td {
+  padding: 12px; border-bottom: 1px solid var(--line-soft);
+  vertical-align: top; line-height: 1.5;
+}
+.diff-table tr:last-child td { border-bottom: none; }
+.diff-table .col-name { font-weight: 600; color: var(--ink); }
+.diff-table .col-name .badge-op {
+  display: inline-block; font-size: 10px; font-weight: 600;
+  padding: 1px 6px; border-radius: 3px; margin-left: 6px;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.badge-op.modify { background: rgba(74, 112, 153, 0.15); color: var(--info); }
+.badge-op.add { background: rgba(90, 140, 110, 0.15); color: var(--good); }
+.badge-op.drop { background: rgba(176, 99, 103, 0.15); color: var(--danger); }
+.diff-cell { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.diff-cell.old { color: var(--muted); }
+.diff-cell.new { color: var(--ink); font-weight: 500; }
+.diff-cell .arrow { color: var(--muted); margin: 0 6px; }
+.diff-cell .removed { background: rgba(176, 99, 103, 0.1); color: var(--danger); padding: 1px 4px; border-radius: 3px; text-decoration: line-through; }
+.diff-cell .added { background: rgba(90, 140, 110, 0.1); color: var(--good); padding: 1px 4px; border-radius: 3px; }
+.risk-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 10px;
+  white-space: nowrap;
+}
+.risk-pill.high { background: rgba(176, 99, 103, 0.12); color: var(--danger); }
+.risk-pill.mid { background: rgba(201, 162, 63, 0.12); color: #8a6c1a; }
+.risk-pill.low { background: rgba(90, 140, 110, 0.12); color: var(--good); }
+.reason { font-size: 12px; color: var(--ink-mid); margin-top: 4px; line-height: 1.5; }
+.reason code {
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+  background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 3px;
+}
+
+/* ===== Fix suggestion ===== */
+.fix-box {
+  margin-top: 18px; padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(47, 111, 94, 0.04), rgba(47, 111, 94, 0.02));
+  border: 1px solid rgba(47, 111, 94, 0.2); border-radius: 8px;
+  display: flex; gap: 14px; align-items: flex-start;
+}
+.fix-box .fix-icon {
+  flex-shrink: 0; width: 28px; height: 28px; border-radius: 7px;
+  background: var(--primary); color: white; display: flex;
+  align-items: center; justify-content: center;
+}
+.fix-box .fix-text { flex: 1; }
+.fix-title { font-size: 13px; font-weight: 600; color: var(--primary); margin-bottom: 6px; }
+.fix-suggestion { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-mid); line-height: 1.6; }
+.fix-suggestion .kw { color: #c97b3f; }
+.fix-suggestion .str { color: #2f6f5e; }
+
+/* ===== Empty state ===== */
+.empty { text-align: center; padding: 50px 20px; color: var(--muted); font-size: 14px; }
+.empty .icon { margin-bottom: 12px; opacity: 0.3; }
+
+/* ===== Case tabs (for interactive demo) ===== */
+.case-tabs { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
+.case-tab {
+  background: white; border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; font-weight: 500; color: var(--ink-mid);
+  cursor: pointer; transition: all 0.2s;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.case-tab:hover { border-color: var(--primary); color: var(--primary); }
+.case-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+.case-tab .num {
+  font-size: 10px; padding: 1px 6px; border-radius: 8px;
+  background: rgba(0,0,0,0.1);
+}
+.case-tab.active .num { background: rgba(255,255,255,0.25); }
+
+/* ===== Detail page preview (small) ===== */
+.detail-preview {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow);
+  display: flex; gap: 14px; align-items: center;
+}
+.detail-preview .alert-block {
+  flex: 1; background: rgba(176, 99, 103, 0.06); border-left: 3px solid var(--danger);
+  padding: 10px 14px; border-radius: 4px; font-size: 13px; color: var(--ink);
+}
+.detail-preview .alert-block strong { color: var(--danger); }
+.detail-preview .diff-btn {
+  background: var(--primary); color: white; border: none; border-radius: 6px;
+  padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ===== Decision matrix ===== */
+.decision-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+}
+.decision-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 8px; padding: 14px 16px;
+  display: flex; gap: 12px; align-items: flex-start;
+}
+.decision-card .q {
+  font-size: 12px; font-weight: 600; color: var(--primary);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
+}
+.decision-card .ans { font-size: 13px; color: var(--ink); }
+.decision-card .ans code {
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+  background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 3px;
+}
+.decision-num {
+  flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--primary); color: white; display: flex;
+  align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+}
+
+/* ===== Footer ===== */
+.footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="hero">
+    <div class="hero-tag"><span class="dot"></span>v0.3.x 产品 mockup</div>
+    <h1>字段 diff 检测 · 创建工单时智能比对</h1>
+    <p class="hero-sub">在 SQL 提交页面一键检测 ALTER 变更，提前发现类型/字符集/排序规则等隐式变化，避免生产事故。覆盖 8 维字段属性，11 条风险规则。</p>
+  </div>
+
+  <div class="story">
+    <div class="story-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </div>
+    <div>
+      <div class="story-title">生产事故复盘：MODIFY COLUMN 没带字符集</div>
+      <div class="story-text">
+        改前：<code>status VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci</code><br>
+        改后：<code>ALTER TABLE x MODIFY COLUMN status VARCHAR(50)</code>（省略 CHARSET/COLLATE）<br>
+        MySQL 自动用 <strong>表默认字符集</strong> 替换，跨表 JOIN 索引失效，<strong>性能暴跌 + 用户客诉</strong>。
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 5 Case 演示 ============ -->
+  <section>
+    <h2><span class="num">1</span> 交互演示 · 5 个真实场景</h2>
+    <p class="section-sub">点击下方 Case 切换，看不同 ALTER 的字段 diff 检测结果</p>
+
+    <div class="case-tabs" id="caseTabs">
+      <button class="case-tab active" data-case="1"><span class="num">1</span> 字符集丢失 (你的事故)</button>
+      <button class="case-tab" data-case="2"><span class="num">2</span> NULL → NOT NULL 无 DEFAULT</button>
+      <button class="case-tab" data-case="3"><span class="num">3</span> 自增被改</button>
+      <button class="case-tab" data-case="4"><span class="num">4</span> 类型缩短</button>
+      <button class="case-tab" data-case="5"><span class="num">5</span> 变长 + 改 COMMENT (无风险)</button>
+    </div>
+
+    <div class="mockup" id="caseContent">
+      <!-- 由 JS 填充 -->
+    </div>
+  </section>
+
+  <!-- ============ 详情页联动 ============ -->
+  <section>
+    <h2><span class="num">2</span> 联动设计 · SQL 检测结果页 + 详情页大表 alert</h2>
+    <p class="section-sub">SQL 检测和字段 diff 是不同维度（语法 vs 列定义），共存而非替代。点 SQL 检测一次，自动看到语法检查 + 字段 diff。</p>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px;">
+
+      <!-- 左：SQL 检测结果页联动 -->
+      <div class="detail-preview" style="display: block; padding: 0;">
+        <div style="background: #fafaf7; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;">
+          联动 1 · SQL 检测结果页 (sqlsubmit.html)
+        </div>
+        <div style="padding: 14px 16px;">
+          <div style="font-size: 12px; color: var(--ink-mid); margin-bottom: 8px;">
+            <strong>用户操作</strong>: 点 "SQL 检测" 按钮（<code>POST /api/v1/workflow/sqlcheck/</code>）
+          </div>
+          <div style="background: #fcfcfa; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; font-size: 12px;">
+            <div style="color: var(--good); font-weight: 600; margin-bottom: 4px;">✓ 语法检查通过 (inception 引擎)</div>
+            <div style="color: var(--ink-mid);">表 <code>accesscard_black_detail</code> 存在 · 字段 <code>status</code> 存在 · 无 WHERE 警告</div>
+          </div>
+          <!-- 字段 diff 折叠区 -->
+          <details style="background: rgba(176, 99, 103, 0.05); border-left: 3px solid var(--danger); border-radius: 4px; padding: 10px 12px;" open>
+            <summary style="cursor: pointer; font-size: 13px; font-weight: 600; color: var(--danger); display: flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              字段变更检测 (DBA 兜底) · 🟥 2 高 / 🟧 1 中
+            </summary>
+            <div style="margin-top: 10px; font-size: 11px; color: var(--muted);">自动触发 <code>POST /gh_ost/column_diff/</code>，无人工干预</div>
+            <table class="diff-table" style="margin-top: 8px;">
+              <tr>
+                <td class="col-name">status<span class="badge-op modify">modify</span></td>
+                <td class="diff-cell">
+                  <span class="removed">varchar(100)</span><span class="arrow">→</span><span class="added">varchar(50)</span><br>
+                  <span class="removed">utf8mb4_general_ci</span><span class="arrow">→</span><span class="added">(表默认)</span>
+                </td>
+                <td><span class="risk-pill high">🟥 高</span></td>
+              </tr>
+            </table>
+            <div style="margin-top: 8px; font-size: 11px; color: var(--ink-mid);">
+              <strong>智能联动</strong>: 改前 ALTER 是 MODIFY COLUMN，自动触发字段 diff；其他类型 (SELECT/INSERT/UPDATE) 不触发
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <!-- 右：详情页大表 alert 联动 -->
+      <div class="detail-preview" style="display: block; padding: 0;">
+        <div style="background: #fafaf7; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;">
+          联动 2 · 工单详情页大表 alert (detail.html)
+        </div>
+        <div style="padding: 14px 16px;">
+          <div style="font-size: 12px; color: var(--ink-mid); margin-bottom: 8px;">
+            <strong>用户操作</strong>: 审批通过后，详情页大表 alert 自动显示，DBA 可点 "字段 diff" 按钮
+          </div>
+          <div class="alert-block" style="background: rgba(176, 99, 103, 0.06); border-left: 3px solid var(--danger); padding: 10px 12px; border-radius: 4px; font-size: 12px; color: var(--ink); margin-bottom: 10px;">
+            ⚠️ 检测到 <code>accesscard_black_detail</code> 是大表 DDL（24w 行 / 134 MB）。<br>
+            <strong style="color: var(--danger);">同时检测到 2 个高风险字段变更。</strong>
+          </div>
+          <button class="diff-btn" style="background: var(--primary); color: white; border: none; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            字段 diff
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 18px; padding: 14px 18px; background: rgba(47, 111, 94, 0.05); border: 1px solid rgba(47, 111, 94, 0.2); border-radius: 8px; font-size: 13px; color: var(--ink);">
+      <strong style="color: var(--primary);">📐 联动架构</strong> · 同一端点 <code style="background: white; padding: 1px 6px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-size: 12px;">POST /gh_ost/column_diff/</code> 服务两处：
+      <ul style="margin-top: 8px; padding-left: 24px; line-height: 1.7; color: var(--ink-mid);">
+        <li><strong>SQL 检测结果页</strong>: JS 检测到 <code>ALTER TABLE ... MODIFY/ADD/DROP</code> 时自动 fetch, 默认折叠, 高风险自动展开</li>
+        <li><strong>详情页大表 alert</strong>: DBA 手动点 "字段 diff" 按钮 fetch (跟现有三按钮并列)</li>
+        <li><strong>端点职责单一</strong>: 只做列定义 diff, 不耦合 SQL 检测 / gh-ost 启动逻辑</li>
+        <li><strong>失败回退</strong>: column_diff 报错时静默 fallback, 不影响 SQL 检测主体</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ 决策点回顾 ============ -->
+  <section>
+    <h2><span class="num">3</span> 决策点回顾</h2>
+    <p class="section-sub">7 个设计决策 + 我的建议（等你拍板）</p>
+
+    <div class="decision-grid">
+      <div class="decision-card">
+        <div class="decision-num">1</div>
+        <div>
+          <div class="q">检测触发</div>
+          <div class="ans"><strong>建议手动点按钮</strong>（防反复查 instance 库）</div>
+        </div>
+      </div>
+      <div class="decision-card">
+        <div class="decision-num">2</div>
+        <div>
+          <div class="q">ALTER 多操作</div>
+          <div class="ans"><strong>建议一次性解析</strong>（一条 SQL 改 5 列要一次看到位）</div>
+        </div>
+      </div>
+      <div class="decision-card">
+        <div class="decision-num">3</div>
+        <div>
+          <div class="q">ADD COLUMN</div>
+          <div class="ans"><strong>建议冲突检测</strong>（查列名是否已存在）</div>
+        </div>
+      </div>
+      <div class="decision-card">
+        <div class="decision-num">4</div>
+        <div>
+          <div class="q">DROP COLUMN</div>
+          <div class="ans"><strong>🟧 中 + 备份提示</strong>（强提示但不阻止）</div>
+        </div>
+      </div>
+      <div class="decision-card">
+        <div class="decision-num">5</div>
+        <div>
+          <div class="q">风险规则 11 条</div>
+          <div class="ans"><strong>建议全做</strong>（1.2 人天全套，不分散）</div>
+        </div>
+      </div>
+      <div class="decision-card">
+        <div class="decision-num">6</div>
+        <div>
+          <div class="q">落地数据</div>
+          <div class="ans"><strong>建议不存</strong>（instance 是真相，每次重新查）</div>
+        </div>
+      </div>
+      <div class="decision-card">
+        <div class="decision-num">7</div>
+        <div>
+          <div class="q">演练表</div>
+          <div class="ans"><strong>134 dev accesscard_black_detail</strong>（24w 行真表）</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer">
+    v0.3.x 字段 diff 检测 · 产品 mockup · 2026-08-12 · mavis
+  </div>
+</div>
+
+<script>
+// ===== 5 Case 数据 =====
+const CASES = {
+  1: {
+    title: "字符集丢失 (你的事故)",
+    sql: "ALTER TABLE accesscard_black_detail\n  MODIFY COLUMN status VARCHAR(50);",
+    summary: { level: "high", text: "检测到 2 个高风险变更", badges: [["high", 2], ["mid", 1]] },
+    diffs: [
+      {
+        name: "status", op: "modify",
+        rows: [
+          { field: "类型", risk: "mid",
+            old: "varchar(100)", new: "varchar(50)",
+            reason: "类型缩短 100→50，已有数据可能截断" },
+          { field: "字符集", risk: "high",
+            old: "utf8mb4", new: "(表默认)",
+            reason: "字符集变化，跨表 JOIN 索引可能失效（生产事故根因）" },
+          { field: "排序规则", risk: "high",
+            old: "utf8mb4_general_ci", new: "(表默认)",
+            reason: "排序规则变化，大小写敏感 / 排序行为会变" },
+        ],
+      },
+    ],
+    fix: `ALTER TABLE accesscard_black_detail
+  MODIFY COLUMN status VARCHAR(50)
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_general_ci;`,
+  },
+  2: {
+    title: "NULL → NOT NULL 无 DEFAULT",
+    sql: "ALTER TABLE accesscard_black_detail\n  MODIFY COLUMN operator_id BIGINT NOT NULL;",
+    summary: { level: "high", text: "检测到 1 个高风险变更", badges: [["high", 1]] },
+    diffs: [
+      {
+        name: "operator_id", op: "modify",
+        rows: [
+          { field: "可空性", risk: "high",
+            old: "NULL", new: "NOT NULL",
+            reason: "已有 NULL 数据会 ALTER 失败，需先 UPDATE 填充或加 DEFAULT" },
+        ],
+      },
+    ],
+    fix: `-- 方案 A: 加 DEFAULT 让 ALTER 顺利执行
+ALTER TABLE accesscard_black_detail
+  MODIFY COLUMN operator_id BIGINT NOT NULL DEFAULT 0;
+
+-- 方案 B: 先更新 NULL 数据, 再改
+UPDATE accesscard_black_detail SET operator_id = 0 WHERE operator_id IS NULL;
+ALTER TABLE accesscard_black_detail
+  MODIFY COLUMN operator_id BIGINT NOT NULL;`,
+  },
+  3: {
+    title: "自增被改 / 删",
+    sql: "ALTER TABLE orders\n  MODIFY COLUMN id BIGINT;",
+    summary: { level: "high", text: "检测到 1 个高风险变更", badges: [["high", 1]] },
+    diffs: [
+      {
+        name: "id", op: "modify",
+        rows: [
+          { field: "自增", risk: "high",
+            old: "AUTO_INCREMENT", new: "(无)",
+            reason: "删 AUTO_INCREMENT 后，业务写入可能产生重复 ID，序列错乱" },
+        ],
+      },
+    ],
+    fix: `ALTER TABLE orders
+  MODIFY COLUMN id BIGINT AUTO_INCREMENT;`,
+  },
+  4: {
+    title: "类型缩短 + 改默认值",
+    sql: "ALTER TABLE users\n  MODIFY COLUMN name VARCHAR(50) NOT NULL DEFAULT '';",
+    summary: { level: "mid", text: "检测到 1 个中风险变更", badges: [["mid", 1]] },
+    diffs: [
+      {
+        name: "name", op: "modify",
+        rows: [
+          { field: "类型", risk: "mid",
+            old: "varchar(100)", new: "varchar(50)",
+            reason: "类型缩短 100→50，已有 >50 字符的数据会被截断" },
+          { field: "可空性", risk: "low",
+            old: "NULL", new: "NOT NULL DEFAULT ''",
+            reason: "已有 NULL 数据会变成空字符串（数据变化，但兼容）" },
+        ],
+      },
+    ],
+    fix: `-- 确认是否有 >50 字符的数据
+SELECT MAX(CHAR_LENGTH(name)) FROM users;
+
+-- 确认后执行
+ALTER TABLE users
+  MODIFY COLUMN name VARCHAR(50) NOT NULL DEFAULT '';`,
+  },
+  5: {
+    title: "变长 + 改 COMMENT (无风险)",
+    sql: "ALTER TABLE accounts\n  MODIFY COLUMN remark VARCHAR(500) COMMENT '备注(扩展)';",
+    summary: { level: "good", text: "所有变更兼容, 无风险", badges: [["low", 0]] },
+    diffs: [
+      {
+        name: "remark", op: "modify",
+        rows: [
+          { field: "类型", risk: "low",
+            old: "varchar(200)", new: "varchar(500)",
+            reason: "类型变长, 兼容" },
+          { field: "备注", risk: "low",
+            old: "备注", new: "备注(扩展)",
+            reason: "COMMENT 修改, 无影响" },
+        ],
+      },
+    ],
+    fix: null,
+  },
+};
+
+// ===== 渲染 =====
+function renderCase(id) {
+  const c = CASES[id];
+  const summaryClass = c.summary.level === "high" ? "has-high" : c.summary.level === "mid" ? "has-mid" : "all-good";
+  const dotColor = c.summary.level === "high" ? "var(--danger)" : c.summary.level === "mid" ? "var(--warn)" : "var(--good)";
+
+  let badgesHtml = c.summary.badges.map(([lvl, n]) => {
+    if (n === 0) return "";
+    return `<span class="risk-badge ${lvl}">${lvl === "high" ? "高" : lvl === "mid" ? "中" : "低"} ${n}</span>`;
+  }).join("");
+
+  let diffsHtml = c.diffs.map(d => {
+    const rows = d.rows.map(r => `
+      <tr>
+        <td>${r.field}</td>
+        <td class="diff-cell">
+          <span class="removed">${r.old}</span>
+          <span class="arrow">→</span>
+          <span class="added">${r.new}</span>
+        </td>
+        <td><span class="risk-pill ${r.risk}">${r.risk === "high" ? "🟥 高" : r.risk === "mid" ? "🟧 中" : "🟩 无"}</span></td>
+        <td><div class="reason">${r.reason}</div></td>
+      </tr>
+    `).join("");
+
+    return `
+      <table class="diff-table">
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>变更</th>
+            <th>风险</th>
+            <th>提示</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-name" rowspan="${d.rows.length}">
+              ${d.name}
+              <span class="badge-op modify">${d.op}</span>
+            </td>
+            ${rows.split('</tr>')[0] + '</tr>'}
+          </tr>
+          ${rows.split('</tr>').slice(1, d.rows.length).map(r => r.replace(/<tr>|<td class="col-name" rowspan=".*?">.*?<\/td>/, '')).join('')}
+        </tbody>
+      </table>
+    `;
+  }).join("");
+
+  // 简化：直接渲染
+  diffsHtml = c.diffs.map(d => {
+    const firstRow = d.rows[0];
+    const otherRows = d.rows.slice(1).map(r => `
+      <tr>
+        <td></td>
+        <td class="diff-cell">
+          <span class="removed">${r.old}</span><span class="arrow">→</span><span class="added">${r.new}</span>
+        </td>
+        <td><span class="risk-pill ${r.risk}">${r.risk === "high" ? "🟥 高" : r.risk === "mid" ? "🟧 中" : "🟩 无"}</span></td>
+        <td><div class="reason">${r.reason}</div></td>
+      </tr>
+    `).join("");
+
+    return `
+      <table class="diff-table">
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>变更</th>
+            <th>风险</th>
+            <th>提示</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-name" rowspan="${d.rows.length}">${d.name}<span class="badge-op modify">${d.op}</span></td>
+            <td class="diff-cell">
+              <span class="removed">${firstRow.old}</span><span class="arrow">→</span><span class="added">${firstRow.new}</span>
+            </td>
+            <td><span class="risk-pill ${firstRow.risk}">${firstRow.risk === "high" ? "🟥 高" : firstRow.risk === "mid" ? "🟧 中" : "🟩 无"}</span></td>
+            <td><div class="reason">${firstRow.reason}</div></td>
+          </tr>
+          ${otherRows}
+        </tbody>
+      </table>
+    `;
+  }).join("");
+
+  const fixHtml = c.fix ? `
+    <div class="fix-box">
+      <div class="fix-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div class="fix-text">
+        <div class="fix-title">建议补全后的 SQL</div>
+        <div class="fix-suggestion">${c.fix}</div>
+      </div>
+    </div>
+  ` : "";
+
+  document.getElementById("caseContent").innerHTML = `
+    <div class="form-bar">
+      <div class="form-field">
+        <label>实例</label>
+        <input value="2 - 测试 MySQL 8.0 (127.0.0.1)" readonly>
+      </div>
+      <div class="form-field">
+        <label>库</label>
+        <input value="archery_dev" readonly>
+      </div>
+      <div class="form-field">
+        <label>表</label>
+        <input value="${c.diffs[0].name.includes(".") ? "—" : (c.title.includes("status") ? "accesscard_black_detail" : c.diffs[0].name)}" readonly>
+      </div>
+      <button class="btn-check" onclick="this.classList.add('loading'); setTimeout(()=>this.classList.remove('loading'), 1200)">
+        <span class="icon-idle">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </span>
+        <span class="spinner"></span>
+        字段 diff
+      </button>
+    </div>
+
+    <div class="sql-area">
+      <div class="sql-label">待执行 SQL</div>
+      <div class="sql-box"><span class="kw">ALTER TABLE</span> ${c.sql.split("ALTER TABLE ")[1]}</div>
+    </div>
+
+    <div class="result-area">
+      <div class="result-summary ${summaryClass}">
+        <span class="dot"></span>
+        <span>${c.summary.text}</span>
+        <div class="risk-badges">${badgesHtml}</div>
+      </div>
+      ${diffsHtml}
+      ${fixHtml}
+    </div>
+  `;
+}
+
+// ===== Tab 切换 =====
+document.querySelectorAll(".case-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".case-tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    renderCase(tab.dataset.case);
+  });
+});
+
+// 初始渲染 Case 1
+renderCase("1");
+</script>
+</body>
+</html>
