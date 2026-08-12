@@ -117,11 +117,14 @@
                         </li>
                     {% endif %}
                     {# CUSTOM-MODIFIED: gh-ost 任务管理菜单 @ 2026-08-12 @ mavis #}
-                    {# 守卫: superuser 或有 sql.sql_review 权限的 DBA #}
+                    {# 守卫: superuser 或有 ddl_gh_ost.view_ddlghosttask 权限 #}
                     {# 关联 changelog: docs/changelogs/2026-08-12_gh-ost-task-list-page.md #}
+                    {# 关联 changelog: docs/changelogs/2026-08-12_gh-ost-task-list-permission.md #}
                     {# 注意: Django 模板 smartif 不支持 user.has_perm("...") 双引号语法, #}
-                    {#      用 perms.sql.sql_review 字典访问更安全 #}
-                    {% if user.is_superuser or perms.sql.sql_review %}
+                    {#      用 perms.<app>.<perm> 字典访问更安全 #}
+                    {# 分配方式: DBA 在 admin 后台 /admin/auth/group/<id>/change/ #}
+                    {#          把"Can view gh-ost 任务"勾到目标组 (Django admin 自动注册的标准 perm) #}
+                    {% if user.is_superuser or perms.ddl_gh_ost.view_ddlghosttask %}
                         <li>
                             <a href="#"><i class="fa fa-rocket fa-fw"></i> gh-ost 任务<span class="fa arrow"></span></a>
                             <ul class="nav nav-second-level collapse">

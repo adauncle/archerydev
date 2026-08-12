@@ -19,7 +19,12 @@ v0.4.5-alpha 新增（碎片回收）：
 ## 关联: docs/designs/2026-08-05_gh-ost-product-design.html v0.3.0 完整版 §"DBA admin 列表页"
 ## 业务: Django admin 后台有 ext_ddl_ghost_task, 但 DBA 不知道去 admin 后台翻。
 ##       这个独立页面挂在 Archery 主菜单"DBA 工具"下, 列表 + 状态统计 + 取消/重试/回滚 一站式。
-    - ``/gh_ost/admin_list/``  GET   任务管理列表 (DBA 运维入口, 不需要 superuser)
+## CUSTOM-MODIFIED: 任务列表页 perm 守卫 (view_ddlghosttask) @ 2026-08-12 @ mavis
+## 关联: docs/changelogs/2026-08-12_gh-ost-task-list-permission.md
+## 业务: 跟其他 SQL 页面一样可分给不同权限组, 由 DBA 在 admin 后台点"权限组"分配。
+##       Django admin 自动给 DdlGhostTask 注册 4 个标准 perm (view/add/change/delete),
+##       无需 migration, DBA 勾选即生效。
+    - ``/gh_ost/admin_list/``  GET   任务管理列表 (需 ``ddl_gh_ost.view_ddlghosttask`` 权限)
 
 设计参考：docs/designs/2026-08-05_gh-ost-product-design.html §6/§10
 """
@@ -31,6 +36,7 @@ from typing import Optional
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
@@ -851,8 +857,10 @@ def admin_list(request: HttpRequest) -> HttpResponse:
     """gh-ost 任务管理列表页 (DBA 运维入口).
 
     URL: GET /gh_ost/admin_list/
-    权限: 任何登录用户都能看 (DBA / RD / superuser), 操作按钮独立看 task 状态。
-          不强制 superuser, 因为这是日常运维入口, 不应该挡在 admin 后台里。
+    权限: 需 ``ddl_gh_ost.view_ddlghosttask`` 权限 (Django admin 自动注册的标准 perm)。
+          superuser 自动通过。DBA 在 admin 后台 ``/admin/auth/group/`` 给目标组
+          勾上"Can view gh-ost 任务"即可分配, 无需改代码 / 无需 migration。
+          没有 perm 的用户: 菜单不显示 + 直接访问 URL 返回 403。
 
     Query params:
         - task_type: "ghost" | "rebuild" | "" (全部)
@@ -860,6 +868,14 @@ def admin_list(request: HttpRequest) -> HttpResponse:
         - q: 关键字 (工单名 / db.表)
     """
     from django.db.models import Q  # 局部 import 避免顶层污染
+
+    # 0. perm 守卫 (跟其他 SQL 页面一致, 可在 admin 后台分配)
+    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask"):
+        logger.warning(
+            "用户 %s 访问 /gh_ost/admin_list/ 被拒: 无 view_ddlghosttask 权限",
+            request.user.username,
+        )
+        raise PermissionDenied("您没有查看 gh-ost 任务管理列表的权限, 请联系 DBA 在 admin 后台权限组中分配。")
 
     # 1. 拿筛选参数
     filter_type = request.GET.get("task_type", "").strip()
