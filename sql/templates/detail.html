@@ -894,12 +894,21 @@
 
             var fixHtml = "";
             if (high > 0) {
-                var modifyCols = (data.columns || []).filter(function(c){return c.operation==="MODIFY" && c.diffs && c.diffs.some(function(d){return d.risk==="high";});});
-                var colNames = modifyCols.map(function(c){return c.name;}).join(", ");
-                fixHtml = '<div style="margin-top:12px;padding:10px 14px;background:rgba(47,111,94,0.04);border:1px solid rgba(47,111,94,0.2);border-radius:6px;">' +
-                          '<div style="font-size:12px;font-weight:600;color:#2f6f5e;margin-bottom:4px;">💡 建议: 在 ALTER 中显式指定原 CHARSET 和 COLLATE</div>' +
-                          '<div style="font-family:monospace;font-size:11px;color:#3a4256;line-height:1.5;">ALTER TABLE ' + escapeHtmlSimple(data.table_name) + '<br>&nbsp;&nbsp;MODIFY COLUMN ' + escapeHtmlSimple(colNames) + ' ...</div>' +
-                          '</div>';
+                var modifyCols = (data.columns || []).filter(function(c){return c.operation==="MODIFY" && c.suggested_sql;});
+                if (modifyCols.length > 0) {
+                    fixHtml = '<div style="margin-top:14px;padding:12px 16px;background:rgba(47,111,94,0.04);border:1px solid rgba(47,111,94,0.2);border-radius:6px;">' +
+                              '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+                                '<div style="font-size:12px;font-weight:600;color:#2f6f5e;">💡 建议: 复制以下 SQL 直接替换 (已自动补全原 CHARSET + COLLATION)</div>' +
+                                '<button type="button" class="btn btn-xs btn-primary" onclick="copyColumnDiffFixDetail(this)"><i class="fa fa-copy"></i> 一键复制</button>' +
+                              '</div>' +
+                              modifyCols.map(function(c) {
+                                  return '<div style="margin-top:6px;padding:8px 10px;background:white;border:1px solid #e9e3d6;border-radius:4px;font-family:monospace;font-size:11px;color:#14171e;line-height:1.6;word-break:break-all;">' +
+                                         '<div style="font-weight:600;color:#606266;margin-bottom:4px;">' + escapeHtmlSimple(c.name) + '</div>' +
+                                         '<div>' + escapeHtmlSimple(c.suggested_sql) + ';</div>' +
+                                         '</div>';
+                              }).join("") +
+                              '</div>';
+                }
             }
 
             $body.html(
@@ -913,6 +922,27 @@
         function escapeHtmlSimple(s) {
             if (s == null) return "";
             return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+        // CUSTOM-MODIFIED: v0.3.x 字段 diff 一键复制 (详情页) @ 2026-08-12 @ mavis
+        function copyColumnDiffFixDetail(btn) {
+            var $box = $(btn).closest("div[style*='rgba(47,111,94']");
+            var texts = [];
+            $box.find("div[style*='word-break:break-all'] > div:nth-child(2)").each(function () {
+                texts.push($(this).text());
+            });
+            var combined = texts.join("\n\n");
+            var $tmp = $("<textarea>").val(combined).css({position: "fixed", top: -1000}).appendTo("body");
+            $tmp[0].select();
+            try {
+                document.execCommand("copy");
+                var orig = $(btn).html();
+                $(btn).html('<i class="fa fa-check"></i> 已复制');
+                setTimeout(function () { $(btn).html(orig); }, 1500);
+            } catch (e) {
+                alert("复制失败: " + e + "\n请手动复制");
+            }
+            $tmp.remove();
         }
         {% endif %}{# end if big_table_alert (DBA 兜底大表 alert JS 块) #}
 

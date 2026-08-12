@@ -714,12 +714,43 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
                 else:
                     low_risk += 1
 
+        # 生成补全 SQL (CUSTOM: 2026-08-12 mavis) — 修复建议要可复制粘贴
+        # 思路: 用 user 提供的 type/nullable/default/comment, 但强制补全原 charset/collation
+        suggested_sql = None
+        if any(d.get("risk") == "high" for d in diffs):
+            fixed_type = new_def.get("type") or current.get("type", "")
+            fixed_charset = current.get("charset", "")
+            fixed_collation = current.get("collation", "")
+            new_nullable = new_def.get("nullable", True)
+            new_default = new_def.get("default")
+            new_comment = new_def.get("comment", "")
+
+            parts = [f"ALTER TABLE {table_name} MODIFY COLUMN {change['name']} {fixed_type}"]
+            if fixed_charset:
+                parts.append(f"CHARACTER SET {fixed_charset}")
+            if fixed_collation:
+                parts.append(f"COLLATE {fixed_collation}")
+            if not new_nullable:
+                parts.append("NOT NULL")
+            if new_default is not None:
+                if isinstance(new_default, str):
+                    parts.append(f"DEFAULT '{new_default}'")
+                else:
+                    parts.append(f"DEFAULT {new_default}")
+            elif not new_nullable:
+                # NOT NULL 无 DEFAULT 是个 bug, 建议加 0
+                parts.append("DEFAULT 0")
+            if new_comment:
+                parts.append(f"COMMENT '{new_comment}'")
+            suggested_sql = " ".join(parts)
+
         columns_diff.append({
             "name": change["name"],
             "operation": "MODIFY",
             "current": current,
             "new": new_def,
             "diffs": diffs,
+            "suggested_sql": suggested_sql,
         })
 
     # 5. 总结
