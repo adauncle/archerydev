@@ -164,6 +164,10 @@ scripts/_tmp_remove_dba_fallback.tar.gz
 scripts/_check_apply_abort.py
 scripts/_check_wf38_task46.py
 scripts/_find_perm_link.py
+scripts/_check_goinception_alive.py
+scripts/_check_goinception_alive2.py
+scripts/_debug_admin_list.py
+scripts/_debug_admin_list2.py
 scripts/_archive_file_*
 scripts/_archive_progress_*
 scripts/_NUL_temp_*
