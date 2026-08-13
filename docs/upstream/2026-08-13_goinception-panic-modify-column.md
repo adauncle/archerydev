@@ -40,26 +40,28 @@ ALTER TABLE accesscard_black_detail
   COMMENT 'obuid:accesscard_obuinfo.id';
 ```
 
-**D+1 细化演练 (drill_check_goinception_alive2) — panic 触发条件精确到 3 要素**：
+注意: `obu_id` **原类型是 BIGINT**, 这次 MODIFY 是 **从 BIGINT 改 VARCHAR**。
+
+**D+1 细化演练 (drill_check_goinception_alive2) + 19:08 用户确认** — panic 触发条件精确:
 
 | SQL 组合 | 状态 |
 |----------|------|
-| 大表 + MODIFY + **VARCHAR** (64 / 128 / 256) | **400 panic** ✗ |
-| 大表 + MODIFY + **BIGINT** | 200 OK ✓ |
+| 大表 + MODIFY + **bigint → varchar** (64/128/256) | **400 panic** ✗ |
+| 大表 + MODIFY + **bigint → bigint** | 200 OK ✓ |
+| 大表 + MODIFY + **varchar → varchar** | 200 OK ✓ (待复核) |
 | 大表 + ADD / DROP / RENAME | 200 OK ✓ |
-| 小表 + MODIFY + VARCHAR | 200 OK ✓ |
+| 小表 + MODIFY + varchar | 200 OK ✓ |
 
-→ **3 要素必须全满足**:
+→ **panic 触发条件** (8/13 19:08 用户确认):
   1. **大表** (288310 行 / 134 MB, 触发阈值 100k 行 / 100 MB)
   2. **MODIFY COLUMN** (ADD/DROP/RENAME 不触发)
-  3. **VARCHAR 类型** (BIGINT/INT/CHAR 不触发; 长度无关)
+  3. **类型从 bigint 转 varchar** (改 varchar→varchar 不触发, bigint→bigint 不触发)
 
-→ goinception `checkModifyColumn` 函数 (session_inception.go:4318) 在解析 "大表 + MODIFY + VARCHAR"
-   时, slice 越界 `[:7]` capacity 6, 触发了 Go runtime panic。**VARCHAR 字符集解析** 应该是
-   slice 越界的源头 (解析 charset/collation 时按 `:` 切分, 大表 + MODIFY + VARCHAR 字符集
-   组合下, 切分结果不够 7 段, 越界)。
+→ goinception `checkModifyColumn` 函数 (session_inception.go:4318) 在解析 "大表 + MODIFY + **类型从 bigint 转 varchar**"
+   时, slice 越界 `[:7]` capacity 6, 触发了 Go runtime panic。
+   推测: 类型转换时需要同时处理 bigint 的整数特性和 varchar 的字符集/排序规则, 切分 token 不够 7 段。
 
-**关键: 不是 `:` 字符引起 (用户 17:31 截图去掉 `:` 后仍 panic)**
+**关键: 不是 `:` 字符引起 (用户 17:31 截图去掉 `:` 后仍 panic); 跟 VARCHAR 长度无关 (64/128/256 都触发)**
 
 ## 时间线
 

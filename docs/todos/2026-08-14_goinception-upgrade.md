@@ -4,12 +4,13 @@
 
 8/13 用户截图反馈 SQL 检测 400 Bad Request, 根因是 GoInception 1.x 上游 panic:
 - `session_inception.go:4318 checkModifyColumn` 函数 slice bounds out of range `[:7]` capacity 6
-- **触发条件** (drill 精确到 3 要素):
+- **触发条件** (drill + 8/13 19:08 用户确认, 精确到 3 要素):
   1. **大表** (288310 行 / 134 MB, 触发阈值 100k 行 / 100 MB)
   2. **MODIFY COLUMN** (ADD/DROP/RENAME 不触发)
-  3. **VARCHAR 类型** (BIGINT/INT/CHAR 不触发; 长度无关)
+  3. **类型从 bigint 转 varchar** (改 varchar→varchar 不触发, bigint→bigint 不触发)
 - **表现**: 每次新 connection 接收触发 SQL 都 panic, goinception 进程不死, Archery 收
   "Lost connection" 错误 (panic 副作用, 不是 MySQL 真挂)
+- **用户决策 (8/13 19:08)**: **bug 暂不处理, 只记录**
 
 完整现场: `docs/upstream/2026-08-13_goinception-panic-modify-column.md`
 
@@ -19,27 +20,27 @@
 
 - **负责人**: mavis (升级 + smoke test) / mkq (排期确认)
 - **投入**: 1-2 小时
-- **步骤**:
+- **状态**: **8/13 19:08 用户决定暂不处理**, 升级排期延后
+- **步骤** (升级启动时再执行):
   1. [ ] 备份当前 goinception 二进制 + 配置 (`/opt/goinception/`)
   2. [ ] 查 goinception 最新版 (GitHub releases: hanchuanchuan/goInception)
   3. [ ] 134 dev 升级 + 启动验证
-  4. [ ] smoke test 5 case (确认大表 MODIFY VARCHAR 不再 panic)
+  4. [ ] smoke test 5 case (确认大表 MODIFY bigint→varchar 不再 panic)
   5. [ ] 跑 drill `scripts/_check_goinception_alive2.py` 全过
 - **验收**: 5 case 0 panic, 进程稳定跑 24 小时
 - **rollback**: 旧版二进制 + 配置 restore, `systemctl restart goinception`
 
 ### 工单 2: 110 prod goinception 同步升级
 
-- **前置**: 工单 1 跑通 + 134 dev 稳定 1-2 周
-- **负责人**: mavis (升级 + 110 smoke test) / mkq (110 排期审批)
-- **投入**: 30 分钟
-- **步骤**:
+- **前置**: 工单 1 跑通 + 134 dev 稳定 1-2 周 + 用户重新拍板
+- **状态**: 跟随工单 1, 暂不排期
+- **步骤** (升级启动时再执行):
   1. [ ] 跟用户/团队确认 110 升级窗口 (DBA 业务低峰)
   2. [ ] 110 ssh 备份当前 goinception 容器/裸机
   3. [ ] 110 升级 (沿用 134 升级步骤, 适配容器/裸机)
   4. [ ] smoke test 5 case (134 dev 同样的 SQL 在 110 上测)
   5. [ ] 监控 24 小时无 panic
-- **验收**: 110 prod 走大表 MODIFY VARCHAR 工单 0 报错
+- **验收**: 110 prod 走大表 MODIFY bigint→varchar 工单 0 报错
 - **rollback**: 110 旧版秒回滚 (DBA 现场盯)
 
 ### 工单 3 (可选, 中长期): column_diff 端点扩展语法/兼容性
