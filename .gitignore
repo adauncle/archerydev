@@ -153,9 +153,11 @@ scripts/_list_tasks.py
 scripts/_restore_tasks.py
 scripts/_sync_views_progress.py
 scripts/_sync_ghost_sync.py
-scripts/_tmp_ghost_sync.tar.gz
+scripts/_sync_why_tip.py
+scripts/_tmp_why_tip.tar.gz
 scripts/_check_apply_abort.py
 scripts/_check_wf38_task46.py
+scripts/_find_perm_link.py
 scripts/_archive_file_*
 scripts/_archive_progress_*
 scripts/_NUL_temp_*
