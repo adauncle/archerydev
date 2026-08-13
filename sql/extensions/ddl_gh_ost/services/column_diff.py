@@ -91,6 +91,75 @@ def _fetch_current_columns(instance, db_name: str, table_name: str) -> dict:
         return {}
 
 
+def _fetch_table_size(instance, db_name: str, table_name: str) -> dict:
+    """CUSTOM: 查 instance 库的某表行数 + 数据大小 (information_schema.tables).
+
+    返回 {"rows": int, "size_mb": float, "table_name": str} 或 None (查不到).
+    复用 sql.views._get_table_size_info 的实现, 复制到这里避免循环 import。
+    用于 SQL 提交页大表 DDL 防呆 (跟详情页 big_table_alert 一致)。
+    """
+    if not (instance and db_name and table_name):
+        return None
+    try:
+        from sql.models import Instance
+        user, password = (
+            instance.get_username_password()
+            if hasattr(instance, "get_username_password")
+            else (instance.user, instance.password)
+        )
+        import pymysql
+        conn = pymysql.connect(
+            host=instance.host, port=instance.port, user=user, password=password,
+            database=db_name, connect_timeout=5, autocommit=True,
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT TABLE_ROWS, DATA_LENGTH + INDEX_LENGTH "
+                    "FROM information_schema.tables "
+                    "WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s",
+                    (db_name, table_name),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                rows = int(row[0] or 0)
+                size_bytes = int(row[1] or 0)
+                return {
+                    "rows": rows,
+                    "size_mb": round(size_bytes / 1024 / 1024, 1),
+                    "table_name": table_name,
+                }
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        logger.exception("_fetch_table_size failed: %s.%s", db_name, table_name)
+        return None
+
+
+def _build_big_table_alert(size_info: dict) -> dict:
+    """CUSTOM: 拼大表 DDL 防呆 alert 字典 (SQL 提交页 + 详情页共用).
+
+    返回 dict 给前端渲染, 包含阈值 + 实际值, 跟 detail.html big_table_alert 字段一致。
+    size_info=None 或小于阈值返 None (不触发 alert)。
+    """
+    if not size_info:
+        return None
+    from django.conf import settings as dj_settings
+    row_threshold = int(getattr(dj_settings, "CUSTOM_BIG_TABLE_ROW_THRESHOLD", 100000))
+    size_threshold_mb = int(getattr(dj_settings, "CUSTOM_BIG_TABLE_SIZE_THRESHOLD_MB", 100))
+    if (size_info["rows"] >= row_threshold
+            or size_info["size_mb"] >= size_threshold_mb):
+        return {
+            "table_name": size_info["table_name"],
+            "rows": size_info["rows"],
+            "size_mb": size_info["size_mb"],
+            "row_threshold": row_threshold,
+            "size_threshold_mb": size_threshold_mb,
+        }
+    return None
+
+
 # ============================================================
 # 2. 解析 ALTER TABLE MODIFY/ADD/DROP COLUMN 子句
 # ============================================================
@@ -763,6 +832,13 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
     else:
         summary = "所有变更兼容, 无风险"
 
+    # 6. 大表 DDL 防呆 (CUSTOM: 2026-08-13 mavis)
+    # 业务: SQL 提交页开发点"SQL检测"时就该看到大表 DDL 警告, 不需要等审批通过后 DBA 执行阶段才看到。
+    # 思路: 字段 diff 已经查了 information_schema.columns, 顺手查一下 information_schema.tables 拿行数+大小,
+    #      跟 CUSTOM_BIG_TABLE_* 阈值比, 触发大表 alert (跟详情页 big_table_alert 同一逻辑)。
+    size_info = _fetch_table_size(instance, db_name, table_name)
+    big_table_alert = _build_big_table_alert(size_info)
+
     return {
         "ok": True,
         "table_name": table_name,
@@ -772,4 +848,5 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
         "mid_risk_count": mid_risk,
         "low_risk_count": low_risk,
         "summary": summary,
+        "big_table_alert": big_table_alert,  # None 或 dict, 前端按需渲染
     }
