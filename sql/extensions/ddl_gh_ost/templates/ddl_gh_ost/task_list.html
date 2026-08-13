@@ -201,15 +201,21 @@
           <td>
             <div class="gh-ost-actions">
               {% if t.workflow %}
+                {# view 按钮所有有 view_ddlghosttask perm 的用户都可见 (RD 也能看自己 task 进度) #}
                 <a class="gh-ost-act-btn view mini" href="{% if t.task_type == 'rebuild' %}/gh_ost/rebuild/progress/{{ t.id }}/{% else %}/gh_ost/progress/{{ t.workflow.id }}/{% endif %}" target="_blank" title="查看进度"><i class="fa fa-eye"></i></a>
-                {% if t.status == "queued" or t.status == "running" or t.status == "cut_over" or t.status == "precheck_failed" %}
-                  <button class="gh-ost-act-btn cancel mini" data-act="cancel" data-wf="{{ t.workflow.id }}" title="取消"><i class="fa fa-stop"></i></button>
-                {% endif %}
-                {% if t.status == "failed" or t.status == "cancelled" %}
-                  <button class="gh-ost-act-btn retry mini" data-act="retry" data-wf="{{ t.workflow.id }}" title="重试 (仅 failed/cancelled)"><i class="fa fa-refresh"></i></button>
-                {% endif %}
-                {% if t.status == "success" and t.task_type == "ghost" %}
-                  <button class="gh-ost-act-btn rollback mini" data-act="rollback" data-wf="{{ t.workflow.id }}" title="回滚 (drop 影子表)"><i class="fa fa-undo"></i></button>
+                {# CUSTOM-MODIFIED: cancel / retry / rollback 按钮只 DBA/管理员可见 @ 2026-08-13 @ mavis #}
+                {# 关联: docs/changelogs/2026-08-13_gh-ost-action-endpoint-perm.md #}
+                {# 端点已加 change_ddlghosttask perm 守卫, 前端按钮按视角隐藏跟后端硬墙对齐 #}
+                {% if is_admin_or_dba %}
+                  {% if t.status == "queued" or t.status == "running" or t.status == "cut_over" or t.status == "precheck_failed" %}
+                    <button class="gh-ost-act-btn cancel mini" data-act="cancel" data-wf="{{ t.workflow.id }}" title="取消"><i class="fa fa-stop"></i></button>
+                  {% endif %}
+                  {% if t.status == "failed" or t.status == "cancelled" %}
+                    <button class="gh-ost-act-btn retry mini" data-act="retry" data-wf="{{ t.workflow.id }}" title="重试 (仅 failed/cancelled)"><i class="fa fa-refresh"></i></button>
+                  {% endif %}
+                  {% if t.status == "success" and t.task_type == "ghost" %}
+                    <button class="gh-ost-act-btn rollback mini" data-act="rollback" data-wf="{{ t.workflow.id }}" title="回滚 (drop 影子表)"><i class="fa fa-undo"></i></button>
+                  {% endif %}
                 {% endif %}
               {% else %}
                 <span class="gh-ost-muted" style="font-size:11px;">—</span>

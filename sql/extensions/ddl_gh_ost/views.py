@@ -348,7 +348,14 @@ def start(request: HttpRequest, workflow_id: int) -> JsonResponse:
 @login_required
 @require_POST
 def retry(request: HttpRequest, workflow_id: int) -> JsonResponse:
-    """重试 task：仅当 status in (failed, cancelled) 才能 retry。重新走 start 路径。"""
+    """重试 task：仅当 status in (failed, cancelled) 才能 retry。重新走 start 路径。
+
+    ## CUSTOM-MODIFIED: 端点加 perm 守卫 (change_ddlghosttask) @ 2026-08-13 @ mavis
+    ## 关联: docs/changelogs/2026-08-13_gh-ost-action-endpoint-perm.md
+    ## 业务: A 方案, 跟 view_ddlghosttask 同样套路, DBA 在 admin 后台分配,
+    ##      0 DB 改动, 端点是硬墙 (RD 怎么点都 403)。
+    """
+    _require_change_perm(request, "retry")
     task = DdlGhostTask.objects.filter(workflow_id=workflow_id).first()
     if not task:
         return JsonResponse({"ok": False, "error": "task 不存在"}, status=404)
@@ -416,10 +423,14 @@ def retry(request: HttpRequest, workflow_id: int) -> JsonResponse:
 def rollback(request: HttpRequest, workflow_id: int) -> JsonResponse:
     """DBA 手动回滚：drop 影子表 + 标 rolled_back。
 
+    ## CUSTOM-MODIFIED: 端点加 perm 守卫 (change_ddlghosttask) @ 2026-08-13 @ mavis
+    ## 关联: docs/changelogs/2026-08-13_gh-ost-action-endpoint-perm.md
+
     注意：cut-over 成功（status=success）后影子表是 _<table>_gho，
     实际表已经 rename 过了，回滚意味着 drop 影子表 + 改 status=rolled_back。
     但 cut-over 成功后影子表其实已经不在了，需要 drop 旧表（如果存在）。
     """
+    _require_change_perm(request, "rollback")
     task = DdlGhostTask.objects.filter(workflow_id=workflow_id).first()
     if not task:
         return JsonResponse({"ok": False, "error": "task 不存在"}, status=404)
@@ -477,7 +488,12 @@ def rollback(request: HttpRequest, workflow_id: int) -> JsonResponse:
 @login_required
 @require_POST
 def cancel(request: HttpRequest, workflow_id: int) -> JsonResponse:
-    """取消 task：SIGTERM gh-ost 进程 + 标 cancelled。"""
+    """取消 task：SIGTERM gh-ost 进程 + 标 cancelled。
+
+    ## CUSTOM-MODIFIED: 端点加 perm 守卫 (change_ddlghosttask) @ 2026-08-13 @ mavis
+    ## 关联: docs/changelogs/2026-08-13_gh-ost-action-endpoint-perm.md
+    """
+    _require_change_perm(request, "cancel")
     task = DdlGhostTask.objects.filter(workflow_id=workflow_id).first()
     if not task:
         return JsonResponse({"ok": False, "error": "task 不存在"}, status=404)
@@ -966,6 +982,47 @@ def _is_admin_or_dba(user) -> bool:
     if user.is_superuser:
         return True
     return user.groups.filter(name__in=("DBA", "DBA组长")).exists()
+
+
+# ===========================================================================
+# CUSTOM-MODIFIED: gh-ost 任务运维操作 perm 守卫 (change_ddlghosttask) @ 2026-08-13 @ mavis
+# 关联: docs/changelogs/2026-08-13_gh-ost-action-endpoint-perm.md
+# 业务: cancel / retry / rollback 3 个端点统一加 perm 守卫, 跟 view_ddlghosttask 同样套路。
+#       0 DB 改动, DBA 在 admin 后台勾选 "Can change gh-ost 任务" 即生效。
+# ===========================================================================
+def _require_change_perm(request, action: str = "") -> None:
+    """gh-ost 任务运维操作端点统一 perm 守卫。
+
+    调用方: ``cancel`` / ``retry`` / ``rollback`` 3 端点, 任何登录用户都能访问
+            但需要 ``ddl_gh_ost.change_ddlghosttask`` 权限才能执行。
+
+    行为: 没 perm → 抛 ``PermissionDenied`` (Django 默认 403 页面)。
+          有 perm → 直接返回, 调用方继续执行。
+
+    Args:
+        request: Django request
+        action: 端点动作名 (cancel / retry / rollback), 仅用于日志记录
+
+    设计原因:
+      - 跟 view_ddlghosttask 同样套路, admin 后台 4 个标准 perm 自动注册 (view/add/change/delete)
+      - 0 DB 改动, DBA 在 admin 后台 /admin/auth/group/<id>/change/ 勾选即生效
+      - superuser 自动通过 (Django has_perm 对 is_superuser 永远 True)
+      - 不写死 group name, 跟 view 守卫保持一致 (避免产品混淆)
+
+    与 _is_admin_or_dba 的区别:
+      - _is_admin_or_dba: 前端列表页"看全量 vs 看自己" 的角色判定, 跟 group 绑定
+      - _require_change_perm: 端点硬墙, 跟 perm 绑定
+      - 两者解耦: 列表页可以按角色给某些人看全量, 但端点永远需要 perm
+    """
+    if not request.user.has_perm("ddl_gh_ost.change_ddlghosttask"):
+        logger.warning(
+            "用户 %s 访问 gh-ost %s 端点被拒: 无 change_ddlghosttask 权限",
+            request.user.username, action or "unknown",
+        )
+        raise PermissionDenied(
+            "您没有 gh-ost 任务运维操作权限 (cancel/retry/rollback), "
+            "请联系 DBA 在 admin 后台权限组中分配 \"Can change gh-ost 任务\"。"
+        )
 
 
 # ===========================================================================
