@@ -519,30 +519,16 @@ def cancel(request):
         sql_workflow.save()
         ## CUSTOM-MODIFIED: v0.3.0-beta 拒绝/撤回时清理 DdlGhostTask @ 2026-08-11 @ mavis
         ## 业务规则: 审批拒绝/撤回 → 任何挂的 gh-ost task 都清掉 (避免脏数据),
-        ## 但 SqlWorkflow.enable_gh_ost 标记保留 (业务上"申请过"是事实, 后续可审计).
-        ## 关联 changelog: docs/changelogs/2026-08-11_gh-ost-approval-gating.md
-        if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):
-            try:
-                from sql.extensions.ddl_gh_ost.models import DdlGhostTask
-                # is_terminal 是 @property, 不能直接 filter, 用 status 集合
-                pending_tasks = DdlGhostTask.objects.filter(
-                    workflow=sql_workflow,
-                    status__in=("pending", "precheck_failed", "queued", "running", "cut_over"),
-                )
-                cleaned = 0
-                for t in pending_tasks:
-                    t.status = "cancelled"
-                    t.finished_at = timezone.now()
-                    t.error_message = (t.error_message or "") + f"\n[aborted] 工单被 {request.user.username} 拒绝/撤回"
-                    t.save()
-                    cleaned += 1
-                if cleaned:
-                    logger.info(
-                        "拒绝/撤回工单 #%s 时清理了 %s 个非终态 DdlGhostTask",
-                        sql_workflow.id, cleaned,
-                    )
-            except Exception:  # noqa: BLE001
-                logger.exception("清理 DdlGhostTask 失败: wf=%s", sql_workflow.id)
+        ## 但 SqlWorkflow.enable_gh_ost 标记保留 (业务上"申请过"是事实, 后续可审计)。
+        ## CUSTOM-MODIFIED: 抽公共 helper (cancel 视图 + OA callback 都用) @ 2026-08-13 @ mavis
+        ## 关联: docs/changelogs/2026-08-13_ghost-task-wf-abort-sync.md
+        ## 关联 commit: 8/13 (本 commit)
+        from sql.services.ghost_task_sync import cleanup_pending_ghost_tasks
+        cleanup_pending_ghost_tasks(
+            sql_workflow,
+            operator=request.user.username,
+            reason="拒绝/撤回",
+        )
     # 删除定时执行task
     if sql_workflow.status == "workflow_timingtask":
         del_schedule(f"sqlreview-timing-{workflow_id}")

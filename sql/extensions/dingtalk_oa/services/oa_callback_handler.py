@@ -332,6 +332,20 @@ def _apply_abort(ext, event: dict) -> dict:
             status="workflow_abort"
         )
 
+    ## CUSTOM-MODIFIED: 钉钉 OA 终止时清理 DdlGhostTask @ 2026-08-13 @ mavis
+    ## 业务背景: 8/13 用户反馈工单 #38 (OA 触发的 workflow_abort) 关联 DdlGhostTask 状态还是 queued,
+    ##          Archery 上游 cancel() 视图有清理逻辑 (8/11 commit 664058c 加的), 但 OA 回调
+    ##          走的是 _apply_abort 直接 .update(status='workflow_abort'), 绕过了清理。
+    ## 修法: 抽公共 helper 到 sql/services/ghost_task_sync.py, cancel() 视图 + OA callback 两处都调。
+    ## 关联: docs/changelogs/2026-08-13_ghost-task-wf-abort-sync.md
+    sql_workflow_aborted = SqlWorkflow.objects.get(id=audit_locked.workflow_id)
+    from sql.services.ghost_task_sync import cleanup_pending_ghost_tasks
+    cleanup_pending_ghost_tasks(
+        sql_workflow_aborted,
+        operator=actor_label["operator"],
+        reason=f"OA 终止: {remark or '(无备注)'}",
+    )
+
     return {
         "status": "applied",
         "audit_id": audit_locked.audit_id,
