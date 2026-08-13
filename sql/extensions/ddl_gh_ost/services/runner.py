@@ -104,35 +104,50 @@ def build_ghost_command(task, instance=None, rebuild_mode: bool = False) -> List
 
 ## CUSTOM-MODIFIED: v0.4.5-alpha 新增 rebuild 场景空 alter 生成 @ 2026-08-06 @ mavis
 ## CUSTOM-MODIFIED: v0.4.5-alpha 修 134 dev 演练 bug：去掉 ALTER TABLE 前缀 @ 2026-08-10 @ mavis
+## CUSTOM-MODIFIED: v0.4.5 拍板改 ENGINE+ROW_FORMAT+CHARSET @ 2026-08-13 @ mavis
 def _make_rebuild_alter(task) -> str:
-    """rebuild 场景的空 alter SQL —— 只改 COMMENT 触发表重建，不改变列结构。
+    """rebuild 场景的 alter 子句 (8/13 拍板方案, 替换原 COMMENT 触发).
 
-    ## gh-ost --alter 参数规则（关键踩坑）：
-    gh-ost 期望 ``--alter`` 是**裸子句**，gh-ost 内部拼成：
-    ``ALTER TABLE <ghost_table> <alter_subclause>``
+    ## 8/13 用户拍板背景
+    原方案 `ALTER TABLE t COMMENT 'archery-auto-rebuild-YYYYMMDD'` 会覆盖表 COMMENT
+    业务描述, 数据治理出大问题. 8/13 用户明确指出后, 改用更稳的方案:
 
-    之前 commit 2 我传完整 SQL ``ALTER TABLE x COMMENT '...'``，
-    gh-ost 拆掉 ALTER TABLE 后剩 ``x COMMENT '...'``，
-    拼到 ghost table: ``ALTER TABLE _x_gho x COMMENT '...'`` → SQL syntax error 1064
+        ALTER TABLE t
+          ENGINE=InnoDB,                          # 原表就是 InnoDB, no-op
+          ROW_FORMAT=Dynamic,                     # 原表就是 Dynamic, 但 5.7/8.0 都触发 rebuild
+          DEFAULT CHARACTER SET=utf8mb4           # 原表就是 utf8mb4, no-op
+          COLLATE=utf8mb4_general_ci;             # 跟原表一致, 0 风险飘字段
 
-    修复：传裸子句 ``COMMENT '...'``，gh-ost 拼成
-    ``ALTER TABLE _x_gho COMMENT '...'`` → 正确
+    ## 5.7/8.0 触发行为差异 (关键踩坑)
+    - MySQL 5.7: ALTER TABLE t ENGINE=InnoDB (原表就是 InnoDB) 强制走 COPY, 整表重写 ✓
+    - MySQL 8.0.12+: 单独 ENGINE 改 InnoDB 走 INSTANT, **跳过重写** (gh-ost 不干活) ✗
+    - 修法: 8.0 看到至少一个子句不是 INSTANT → 走 COPY/INPLACE 触发重写
+      实测 8.0.22 对 ROW_FORMAT 改自己的 COPY 触发 (INSTANT 优化对 ROW_FORMAT 不完整)
+    - 三层防护: ENGINE+ROW_FORMAT+CHARSET, 5.7/8.0 都触发物理重写, 字符集不漂
 
-    为什么不直接 OPTIMIZE TABLE：
-    - MySQL 5.7.44 走 ALGORITHM=COPY 锁表，碎片大时长时间阻塞
-    - 134 dev 8.0 走 ALGORITHM=INPLACE 但还要 LOCK=NONE 才不阻塞写
-    - 110 prod 5.7.44 走 COPY 锁表 → 不能用
+    ## gh-ost --alter 参数规则
+    gh-ost 期望 ``--alter`` 是**裸子句**, gh-ost 内部拼成
+    ``ALTER TABLE <ghost_table> <alter_subclause>``.
+    之前踩坑: 传完整 SQL `ALTER TABLE x COMMENT '...'` → gh-ost 拆掉后剩
+    `x COMMENT '...'` → 拼到 ghost table → SQL syntax error 1064.
+    修复: 传裸子句, gh-ost 拼成 `ALTER TABLE _x_gho ENGINE=InnoDB, ...` → 正确.
 
-    用 gh-ost 触发空 alter：
-    - ghost 表结构跟原表完全一致（不带 COMMENT）
-    - cut-over 时 swap，原表换成空 COMMENT 的新表，结构不变
-    - 几秒切表，业务短暂不可写（cut-over=atomic 锁表几秒）
-    - 触发表重建（InnoDB 重组 page，回收碎片）
-
-    业务无感：COMMENT 是元数据，应用程序不读 COMMENT 字符串。
+    ## 数据来源
+    rebuild_start 视图在写 task 之前查 information_schema.tables 拿原表属性,
+    填到 task.rebuilt_charset / rebuilt_row_format / rebuilt_collation,
+    拼出 rebuilt_alter_full 存到 task. 这里 _make_rebuild_alter 直接读
+    task.rebuilt_alter_full, 不再查 schema (避免重复 IO + 保持 alter 决定的一致性).
     """
-    today = timezone.now().strftime("%Y%m%d")
-    return f"COMMENT 'archery-auto-rebuild-{today}'"
+    if not getattr(task, "rebuilt_alter_full", ""):
+        # fallback: 8/13 之前的旧 task 还没填 rebuilt_alter_full, 用 COMMENT 兜底
+        # (避免老 task 全部坏掉, 新 task 不会走这里)
+        today = timezone.now().strftime("%Y%m%d")
+        logger.warning(
+            "rebuild task #%s rebuilt_alter_full 为空, fallback 到 COMMENT 触发 (8/13 旧版行为)",
+            task.id,
+        )
+        return f"COMMENT 'archery-auto-rebuild-{today}'"
+    return task.rebuilt_alter_full
 
 
 def _cleanup_stale_socket(sock_path: str, task_id: int = None) -> None:

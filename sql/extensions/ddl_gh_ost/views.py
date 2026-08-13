@@ -743,7 +743,15 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
 
     ## CUSTOM-MODIFIED: v0.4.5-alpha 改 409 拒绝为排队入队 @ 2026-08-06 @ mavis
     ## CUSTOM-MODIFIED: v0.4.5-alpha 修 queue 漏洞加 instance 字段 @ 2026-08-10 @ mavis
-    # 3. 写 task（直接入队，queue 自动推进）
+    ## CUSTOM-MODIFIED: v0.4.5 拍板改 ENGINE+ROW_FORMAT+CHARSET @ 2026-08-13 @ mavis
+    # 3. 查原表属性, 拼 alter 子句 (8/13 拍板)
+    # 业务: rebuild 任务触发时查 information_schema.tables 拿原表 ENGINE/ROW_FORMAT/CHARSET/COLLATION,
+    #       拼 ENGINE+ROW_FORMAT+CHARSET 形式的 alter (3 层防护确保 5.7/8.0 都触发物理重写,
+    #       字符集不漂, COMMENT 业务描述保留).
+    table_info = _fetch_table_info_for_rebuild(instance, db, table)
+    rebuild_alter = _build_rebuild_alter_clause(table_info)
+
+    # 4. 写 task（直接入队，queue 自动推进）
     # 同表已有 running/cut_over 任务时，本 task 进入 queued 状态等前序完成
     task = DdlGhostTask.objects.create(
         workflow=None,           # rebuild 不挂工单
@@ -757,10 +765,15 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
         created_by=request.user.username,
         max_load_threads_running=30,
         timeout_seconds=7200,
+        # 8/13 拍板: 5 字段记录"这次 rebuild 改了什么"
+        rebuilt_charset=table_info["charset"],
+        rebuilt_row_format=table_info["row_format"],
+        rebuilt_collation=table_info["collation"],
+        rebuilt_alter_full=rebuild_alter,
     )
     logger.info(
-        "rebuild task created: task_id=%s db=%s table=%s user=%s",
-        task.id, db, table, request.user.username,
+        "rebuild task created: task_id=%s db=%s table=%s user=%s alter=%s",
+        task.id, db, table, request.user.username, rebuild_alter,
     )
 
     # 4. 调 queue 推进 —— 如果同表无 running 任务，本 task 立即启动；否则排队等
@@ -1023,6 +1036,97 @@ def _require_change_perm(request, action: str = "") -> None:
             "您没有 gh-ost 任务运维操作权限 (cancel/retry/rollback), "
             "请联系 DBA 在 admin 后台权限组中分配 \"Can change gh-ost 任务\"。"
         )
+
+
+# ===========================================================================
+# CUSTOM-MODIFIED: v0.4.5 拍板 3 决策改 ENGINE+ROW_FORMAT+CHARSET @ 2026-08-13 @ mavis
+# 关联: docs/changelogs/2026-08-13_v0405-rebuilt-fields.md
+#       docs/designs/2026-08-13_v0405-ghost-rebuild-design.md §4
+# 业务: rebuild 任务触发时查 information_schema.tables 拿原表属性,
+#       拼 ENGINE+ROW_FORMAT+CHARSET 形式的 alter (3 层防护确保 5.7/8.0
+#       都触发物理重写, 字符集不漂, COMMENT 业务描述保留).
+# ===========================================================================
+def _fetch_table_info_for_rebuild(instance, db_name: str, table_name: str) -> dict:
+    """rebuild 场景专用: 查 information_schema.tables 拿原表 ENGINE/ROW_FORMAT/CHARSET/COLLATION.
+
+    Returns:
+        {
+            "engine": "InnoDB",
+            "row_format": "Dynamic",
+            "charset": "utf8mb4",                  # 从 TABLE_COLLATION 解析
+            "collation": "utf8mb4_general_ci",
+        }
+
+    Raises:
+        TableNotExistError: 表不存在
+    """
+    import pymysql
+    user, password = (
+        instance.get_username_password()
+        if hasattr(instance, "get_username_password")
+        else (instance.user, instance.password)
+    )
+    conn = pymysql.connect(
+        host=instance.host, port=instance.port, user=user, password=password,
+        database=db_name, connect_timeout=5, autocommit=True,
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ENGINE, ROW_FORMAT, TABLE_COLLATION "
+                "FROM information_schema.tables "
+                "WHERE table_schema=%s AND table_name=%s",
+                (db_name, table_name),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise TableNotExistForRebuildError(
+                    f"表 {db_name}.{table_name} 不存在或无权限"
+                )
+            engine, row_format, collation = row
+            # 从 TABLE_COLLATION 提取 charset
+            # utf8mb4_general_ci → utf8mb4
+            # utf8mb4_bin → utf8mb4
+            # latin1_swedish_ci → latin1
+            charset = collation.split("_")[0] if "_" in collation else collation
+            return {
+                "engine": engine,
+                "row_format": row_format,
+                "charset": charset,
+                "collation": collation,
+            }
+    finally:
+        conn.close()
+
+
+def _build_rebuild_alter_clause(table_info: dict) -> str:
+    """rebuild 场景的 alter 子句 (8/13 拍板方案).
+
+    设计 (3 层防护确保 5.7/8.0 都触发物理重写 + 字符集不漂):
+        ALTER TABLE t
+          ENGINE=InnoDB,                          # 原表就是 InnoDB, no-op
+          ROW_FORMAT=Dynamic,                     # 原表就是 Dynamic, 但 5.7/8.0 都触发 rebuild
+          DEFAULT CHARACTER SET=utf8mb4           # 原表就是 utf8mb4, no-op
+          COLLATE=utf8mb4_general_ci;             # 跟原表一致, 0 风险飘字段
+
+    8.0 INSTANT 优化:
+        - 单独 ENGINE 改 InnoDB (原表就是 InnoDB) 走 INSTANT, 跳过重写
+        - ROW_FORMAT 改自己: 8.0.22 走 COPY 触发 (INSTANT 优化对 ROW_FORMAT 不完整)
+        - 至少一个子句不是 INSTANT → 走 COPY/INPLACE 触发整表重写
+
+    不动 COMMENT 业务描述 (数据治理关键).
+    """
+    return (
+        f"ENGINE={table_info['engine']}, "
+        f"ROW_FORMAT={table_info['row_format']}, "
+        f"DEFAULT CHARACTER SET={table_info['charset']} "
+        f"COLLATE={table_info['collation']}"
+    )
+
+
+class TableNotExistForRebuildError(Exception):
+    """rebuild 目标表不存在."""
+    pass
 
 
 # ===========================================================================

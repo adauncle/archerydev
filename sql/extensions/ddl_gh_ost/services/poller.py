@@ -102,6 +102,13 @@ def _finalize_task(task, new_status: str, error_message: str = ""):
     task.finished_at = timezone.now()
     if error_message:
         task.error_message = (task.error_message or "") + "\n" + error_message
+    ## CUSTOM-MODIFIED: v0.4.5 拍板 3 决策加 rebuilt_at @ 2026-08-13 @ mavis
+    ## 关联: docs/changelogs/2026-08-13_v0405-rebuilt-fields.md
+    ## 业务: rebuild 任务在 success 时写 rebuilt_at (物理重写完成时间),
+    ##       列表页 ALTER 子句列显示 "rebuilt: YYYY-MM-DD HH:MM" 让 DBA 一眼看出
+    ##       什么时候完成的. ghost 任务的 rebuilt_at 保持 None (null=True).
+    if task.task_type == "rebuild" and new_status == "success" and not task.rebuilt_at:
+        task.rebuilt_at = timezone.now()
     if task.ghost_pid:
         # CUSTOM: SIGTERM 后 2s 兜底 SIGKILL, 避免 zombie 进程占 socket
         try:

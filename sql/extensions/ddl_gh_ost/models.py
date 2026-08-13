@@ -153,6 +153,34 @@ class DdlGhostTask(models.Model):
         "磁盘剩余（字节，预检时）", null=True, blank=True,
     )
 
+    # ===== rebuild 场景专属字段 (CUSTOM-MODIFIED: v0.4.5 拍板 3 决策 @ 2026-08-13 @ mavis)
+    # 关联: docs/changelogs/2026-08-13_v0405-rebuilt-fields.md
+    #       docs/designs/2026-08-13_v0405-ghost-rebuild-design.md §3.2
+    # 业务: rebuild 任务在 rebuild_start 时查 information_schema.tables 拿原表属性,
+    #       拼出 ENGINE+ROW_FORMAT+CHARSET 形式的 alter 子句 (3 层防护确保 5.7/8.0
+    #       都触发物理重写且字符集不漂), 5 字段记录"这次 rebuild 改了什么",
+    #       DBA 排查 / 列表页展示都用得上.
+    rebuilt_charset = models.CharField(
+        "原表 CHARSET", max_length=32, blank=True, null=True,
+        help_text="rebuild 场景: 原表 DEFAULT CHARSET (utf8mb4 等), 记录用",
+    )
+    rebuilt_row_format = models.CharField(
+        "原表 ROW_FORMAT", max_length=16, blank=True, null=True,
+        help_text="rebuild 场景: 原表 ROW_FORMAT (Dynamic/Compact 等), 记录用",
+    )
+    rebuilt_collation = models.CharField(
+        "原表 COLLATION", max_length=64, blank=True, null=True,
+        help_text="rebuild 场景: 原表 DEFAULT COLLATION (utf8mb4_general_ci 等), 记录用",
+    )
+    rebuilt_alter_full = models.TextField(
+        "rebuild 用的完整 alter 子句", blank=True,
+        help_text="rebuild 场景: 完整 alter 子句 (不带 ALTER TABLE t 前缀), 列表页 truncated 显示",
+    )
+    rebuilt_at = models.DateTimeField(
+        "rebuild 完成时间", null=True, blank=True,
+        help_text="rebuild 场景: 物理重写完成时间 (cut-over 成功时写)",
+    )
+
     # ===== 状态机 =====
     status = models.CharField(
         "状态", max_length=20, choices=STATUS_CHOICES,

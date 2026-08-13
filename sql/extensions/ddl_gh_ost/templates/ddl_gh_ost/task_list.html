@@ -151,6 +151,7 @@
           <th>状态</th>
           <th>工单 / DB.表</th>
           <th>提交人</th>
+          <th>ALTER 子句</th>
           <th>进度</th>
           <th>启动时间</th>
           <th>结束时间</th>
@@ -182,6 +183,23 @@
               <span style="font-size:10px;color:#c0c4cc;">@{{ t.workflow.engineer }}</span>
             {% else %}
               <span style="font-size:11px;">DBA 手动</span>
+            {% endif %}
+          </td>
+          <td class="gh-ost-muted" style="font-size:11px;max-width:300px;">
+            {# CUSTOM-MODIFIED: v0.4.5 拍板 3 决策加 ALTER 子句列 @ 2026-08-13 @ mavis #}
+            {# 关联: docs/changelogs/2026-08-13_v0405-rebuilt-fields.md #}
+            {# 业务: rebuild 场景显示 ENGINE+ROW_FORMAT+CHARSET 形式的 alter, #}
+            {#       ghost 场景显示原始 alter_statement; 都 truncated 防止列太宽 #}
+            {% if t.task_type == "rebuild" and t.rebuilt_alter_full %}
+              <code style="color:#c97b3f;background:#f6ede3;padding:1px 4px;border-radius:3px;">{{ t.rebuilt_alter_full|truncatechars:60 }}</code><br>
+              <span style="font-size:10px;color:#909399;">
+                {{ t.rebuilt_charset|default:"?" }} / {{ t.rebuilt_row_format|default:"?" }}<br>
+                rebuilt: {{ t.rebuilt_at|date:"Y-m-d H:i"|default:"—" }}
+              </span>
+            {% elif t.alter_statement %}
+              <code>{{ t.alter_statement|truncatechars:60 }}</code>
+            {% else %}
+              <span style="color:#c0c4cc;">—</span>
             {% endif %}
           </td>
           <td>
