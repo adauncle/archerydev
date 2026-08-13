@@ -859,33 +859,33 @@
             var summaryColor = high > 0 ? "#b06367" : (mid > 0 ? "#c9a23f" : "#5a8c6e");
             var summaryBg = high > 0 ? "rgba(176, 99, 103, 0.08)" : (mid > 0 ? "rgba(201, 162, 63, 0.08)" : "rgba(90, 140, 110, 0.08)");
             var badges = "";
-            if (high > 0) badges += '<span style="background:#b06367;color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px;">🟥 高 ' + high + '</span>';
-            if (mid > 0) badges += '<span style="background:#c9a23f;color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px;">🟧 中 ' + mid + '</span>';
-            if (low > 0) badges += '<span style="background:#5a8c6e;color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px;">🟩 低 ' + low + '</span>';
+            if (high > 0) badges += '<span style="background:#b06367;color:white;padding:3px 10px;border-radius:10px;font-size:13px;font-weight:600;margin-right:4px;">🟥 高 ' + high + '</span>';
+            if (mid > 0) badges += '<span style="background:#c9a23f;color:white;padding:3px 10px;border-radius:10px;font-size:13px;font-weight:600;margin-right:4px;">🟧 中 ' + mid + '</span>';
+            if (low > 0) badges += '<span style="background:#5a8c6e;color:white;padding:3px 10px;border-radius:10px;font-size:13px;font-weight:600;margin-right:4px;">🟩 低 ' + low + '</span>';
 
-            var tableHtml = '<div style="overflow-x:auto;"><table class="table table-bordered table-hover" style="margin:0;font-size:12px;"><thead><tr style="background:#fafafa;"><th style="padding:8px;width:60px;">操作</th><th style="padding:8px;width:140px;">字段</th><th style="padding:8px;width:80px;">属性</th><th style="padding:8px;">改前</th><th style="padding:8px;">改后</th><th style="padding:8px;width:60px;">风险</th><th style="padding:8px;">提示</th></tr></thead><tbody>';
+            var tableHtml = '<div style="overflow-x:auto;"><table class="table table-bordered table-hover" style="margin:0;font-size:14px;"><thead><tr style="background:#fafafa;"><th style="padding:10px;width:60px;">操作</th><th style="padding:10px;width:140px;">字段</th><th style="padding:10px;width:80px;">属性</th><th style="padding:10px;">改前</th><th style="padding:10px;">改后</th><th style="padding:10px;width:60px;">风险</th><th style="padding:10px;">提示</th></tr></thead><tbody>';
             $.each(data.columns || [], function (i, col) {
                 var opLabel = col.operation === "MODIFY" ? '<span class="label label-info">MODIFY</span>' :
                               col.operation === "ADD" ? '<span class="label label-success">ADD</span>' :
                               col.operation === "DROP" ? '<span class="label label-danger">DROP</span>' : col.operation;
                 if (!col.diffs || col.diffs.length === 0) {
-                    tableHtml += '<tr><td style="padding:8px;">' + opLabel + '</td><td style="padding:8px;font-weight:600;">' + escapeHtmlSimple(col.name) + '</td><td colspan="5" style="padding:8px;color:#909399;">' + (col.operation === "ADD" ? "新列, 无冲突" : "无变更") + '</td></tr>';
+                    tableHtml += '<tr><td style="padding:10px;">' + opLabel + '</td><td style="padding:10px;font-weight:600;">' + escapeHtmlSimple(col.name) + '</td><td colspan="5" style="padding:10px;color:#909399;">' + (col.operation === "ADD" ? "新列, 无冲突" : "无变更") + '</td></tr>';
                 } else {
                     var firstRow = true;
                     $.each(col.diffs, function (j, d) {
                         var riskColor = d.risk === "high" ? "#b06367" : (d.risk === "mid" ? "#c9a23f" : (d.risk === "low" ? "#5a8c6e" : "#909399"));
-                        var riskPill = '<span style="background:' + riskColor + ';color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + (d.risk === "high" ? "🟥 高" : d.risk === "mid" ? "🟧 中" : "🟩 低") + '</span>';
+                        var riskPill = '<span style="background:' + riskColor + ';color:white;padding:3px 10px;border-radius:10px;font-size:13px;font-weight:600;">' + (d.risk === "high" ? "🟥 高" : d.risk === "mid" ? "🟧 中" : "🟩 低") + '</span>';
                         tableHtml += '<tr>';
                         if (firstRow) {
-                            tableHtml += '<td style="padding:8px;vertical-align:top;" rowspan="' + col.diffs.length + '">' + opLabel + '</td>';
-                            tableHtml += '<td style="padding:8px;font-weight:600;vertical-align:top;" rowspan="' + col.diffs.length + '">' + escapeHtmlSimple(col.name) + '</td>';
+                            tableHtml += '<td style="padding:10px;vertical-align:top;" rowspan="' + col.diffs.length + '">' + opLabel + '</td>';
+                            tableHtml += '<td style="padding:10px;font-weight:600;vertical-align:top;" rowspan="' + col.diffs.length + '">' + escapeHtmlSimple(col.name) + '</td>';
                             firstRow = false;
                         }
-                        tableHtml += '<td style="padding:8px;">' + escapeHtmlSimple(d.field) + '</td>';
-                        tableHtml += '<td style="padding:8px;font-family:monospace;font-size:11px;"><span style="background:rgba(176,99,103,0.1);color:#b06367;text-decoration:line-through;padding:1px 4px;border-radius:3px;">' + escapeHtmlSimple(String(d.old)) + '</span></td>';
-                        tableHtml += '<td style="padding:8px;font-family:monospace;font-size:11px;"><span style="background:rgba(90,140,110,0.1);color:#5a8c6e;padding:1px 4px;border-radius:3px;">' + escapeHtmlSimple(String(d.new)) + '</span></td>';
-                        tableHtml += '<td style="padding:8px;">' + riskPill + '</td>';
-                        tableHtml += '<td style="padding:8px;color:#606266;font-size:11px;">' + escapeHtmlSimple(d.reason) + '</td>';
+                        tableHtml += '<td style="padding:10px;">' + escapeHtmlSimple(d.field) + '</td>';
+                        tableHtml += '<td style="padding:10px;font-family:monospace;font-size:13px;"><span style="background:rgba(176,99,103,0.1);color:#b06367;text-decoration:line-through;padding:2px 6px;border-radius:3px;">' + escapeHtmlSimple(String(d.old)) + '</span></td>';
+                        tableHtml += '<td style="padding:10px;font-family:monospace;font-size:13px;"><span style="background:rgba(90,140,110,0.1);color:#5a8c6e;padding:2px 6px;border-radius:3px;">' + escapeHtmlSimple(String(d.new)) + '</span></td>';
+                        tableHtml += '<td style="padding:10px;">' + riskPill + '</td>';
+                        tableHtml += '<td style="padding:10px;color:#606266;font-size:13px;">' + escapeHtmlSimple(d.reason) + '</td>';
                         tableHtml += '</tr>';
                     });
                 }
@@ -898,11 +898,11 @@
                 if (modifyCols.length > 0) {
                     fixHtml = '<div style="margin-top:14px;padding:12px 16px;background:rgba(47,111,94,0.04);border:1px solid rgba(47,111,94,0.2);border-radius:6px;">' +
                               '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
-                                '<div style="font-size:12px;font-weight:600;color:#2f6f5e;">💡 建议: 复制以下 SQL 直接替换 (已自动补全原 CHARSET + COLLATION)</div>' +
+                                '<div style="font-size:14px;font-weight:600;color:#2f6f5e;">💡 建议: 复制以下 SQL 直接替换 (已自动补全原 CHARSET + COLLATION)</div>' +
                                 '<button type="button" class="btn btn-xs btn-primary" onclick="copyColumnDiffFixDetail(this)"><i class="fa fa-copy"></i> 一键复制</button>' +
                               '</div>' +
                               modifyCols.map(function(c) {
-                                  return '<div style="margin-top:6px;padding:8px 10px;background:white;border:1px solid #e9e3d6;border-radius:4px;font-family:monospace;font-size:11px;color:#14171e;line-height:1.6;word-break:break-all;">' +
+                                  return '<div style="margin-top:6px;padding:8px 10px;background:white;border:1px solid #e9e3d6;border-radius:4px;font-family:monospace;font-size:13px;color:#14171e;line-height:1.6;word-break:break-all;">' +
                                          '<div style="font-weight:600;color:#606266;margin-bottom:4px;">' + escapeHtmlSimple(c.name) + '</div>' +
                                          '<div>' + escapeHtmlSimple(c.suggested_sql) + ';</div>' +
                                          '</div>';
@@ -912,7 +912,7 @@
             }
 
             $body.html(
-                '<div style="background:' + summaryBg + ';padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:13px;color:' + summaryColor + ';">' +
+                '<div style="background:' + summaryBg + ';padding:12px 16px;border-radius:6px;margin-bottom:14px;font-size:15px;color:' + summaryColor + ';">' +
                   escapeHtmlSimple(data.summary) + ' &nbsp; ' + badges +
                 '</div>' +
                 tableHtml + fixHtml

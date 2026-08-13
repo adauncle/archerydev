@@ -154,7 +154,9 @@ scripts/_restore_tasks.py
 scripts/_sync_views_progress.py
 scripts/_sync_ghost_sync.py
 scripts/_sync_why_tip.py
+scripts/_sync_column_diff_font.py
 scripts/_tmp_why_tip.tar.gz
+scripts/_tmp_column_diff_font.tar.gz
 scripts/_check_apply_abort.py
 scripts/_check_wf38_task46.py
 scripts/_find_perm_link.py
