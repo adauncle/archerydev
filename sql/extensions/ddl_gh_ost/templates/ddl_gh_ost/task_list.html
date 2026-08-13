@@ -229,10 +229,16 @@
     {% endif %}
   </div>
 
-  <p class="gh-ost-sub" style="margin-top:24px;">
-    <i class="fa fa-info-circle"></i>
-    操作走 AJAX 异步 (cancel/retry/rollback), 完成后自动刷新页面 · Django admin 后台完整版: <a href="/admin/ddl_gh_ost/ddlghosttask/">/admin/ddl_gh_ost/ddlghosttask/</a>
-  </p>
+  {# CUSTOM-MODIFIED: 底部 AJAX 提示 + Django admin 链接只 DBA/管理员可见 @ 2026-08-13 @ mavis #}
+  {# 关联: docs/changelogs/2026-08-13_gh-ost-admin-list-hide-bottom-tip.md #}
+  {# 原因: RD 提交人视角不需要看 cancel/retry/rollback 说明 (他没运维操作权), #}
+  {#      Django admin 后台链接是技术后台入口, 不该暴露给普通 RD 防止误入。 #}
+  {% if is_admin_or_dba %}
+    <p class="gh-ost-sub" style="margin-top:24px;">
+      <i class="fa fa-info-circle"></i>
+      操作走 AJAX 异步 (cancel/retry/rollback), 完成后自动刷新页面 · Django admin 后台完整版: <a href="/admin/ddl_gh_ost/ddlghosttask/">/admin/ddl_gh_ost/ddlghosttask/</a>
+    </p>
+  {% endif %}
 </div>
 
 <script>
