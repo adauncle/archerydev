@@ -156,9 +156,11 @@ scripts/_sync_ghost_sync.py
 scripts/_sync_why_tip.py
 scripts/_sync_column_diff_font.py
 scripts/_sync_sqlsubmit_big_table.py
+scripts/_sync_remove_dba_fallback.py
 scripts/_tmp_why_tip.tar.gz
 scripts/_tmp_column_diff_font.tar.gz
 scripts/_tmp_sqlsubmit_big_table.tar.gz
+scripts/_tmp_remove_dba_fallback.tar.gz
 scripts/_check_apply_abort.py
 scripts/_check_wf38_task46.py
 scripts/_find_perm_link.py
