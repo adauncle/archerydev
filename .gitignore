@@ -144,3 +144,14 @@ nohup.out
 *.crt
 secrets/
 credentials/
+
+# ========== Windows PowerShell 误用产生的设备名文件 (无法删除) ==========
+/NUL
+
+# ========== 演练临时脚本 (不 commit, 保留在 _archive/ 或本地) ==========
+scripts/_list_tasks.py
+scripts/_restore_tasks.py
+scripts/_sync_views_progress.py
+scripts/_archive_file_*
+scripts/_archive_progress_*
+scripts/_NUL_temp_*

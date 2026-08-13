@@ -155,11 +155,18 @@
         </div>
 
         <div class="actions">
-          {% if task.status == "queued" %}
-            <button class="btn btn-primary" id="startBtn">启动 gh-ost</button>
-          {% endif %}
-          {% if task.status in "running,cut_over,queued" %}
-            <button class="btn btn-danger" id="cancelBtn">取消迁移</button>
+          {# CUSTOM-MODIFIED: 启动 + 取消按钮加 is_admin_or_dba 守卫 (DBA 专属) @ 2026-08-13 @ mavis #}
+          {# 关联: docs/changelogs/2026-08-13_gh-ost-progress-page-button-perm.md #}
+          {# 业务: RD 视角 (oa_tester_1) 看进度面板不应该看到运维操作按钮 (start/cancel), #}
+          {#      跟 task_list.html 列表行 3 按钮 + admin_list 底部提示守卫保持一致。 #}
+          {# 后端端点也有 change_ddlghosttask 守卫, 这里是前端防御避免 RD 误点触发。 #}
+          {% if is_admin_or_dba %}
+            {% if task.status == "queued" %}
+              <button class="btn btn-primary" id="startBtn">启动 gh-ost</button>
+            {% endif %}
+            {% if task.status in "running,cut_over,queued" %}
+              <button class="btn btn-danger" id="cancelBtn">取消迁移</button>
+            {% endif %}
           {% endif %}
           <!-- CUSTOM-MODIFIED: v0.3.0-beta 修 admin URL (app_label=ddl_gh_ost) + target=_blank 绕过 X-Frame-Options
                + 仅 is_admin_user (is_superuser) 才显示"查看 admin 详情"按钮，避免普通用户点跳 admin 登录页

@@ -280,7 +280,15 @@ def start(request: HttpRequest, workflow_id: int) -> JsonResponse:
         3. 写 PID + started_at
         4. 启动 ``poller.start_poller`` daemon thread（3s 轮询）
         5. 返回 ok
+
+    ## CUSTOM-MODIFIED: 端点加 perm 守卫 (change_ddlghosttask) @ 2026-08-13 @ mavis
+    ## 关联: docs/changelogs/2026-08-13_gh-ost-action-endpoint-perm.md
+    ## 业务: A 方案, 跟 cancel/retry/rollback 同样套路, RD 没 perm 时返 403 JSON。
+    ##      进度面板"启动 gh-ost"按钮 AJAX 调用, 防止 RD 绕过前端守卫直接 fetch。
     """
+    perm_resp = _require_change_perm(request, "start")
+    if perm_resp is not None:
+        return perm_resp
     task = get_object_or_404(DdlGhostTask, workflow_id=workflow_id)
     if task.status != "queued":
         return JsonResponse({
@@ -355,7 +363,9 @@ def retry(request: HttpRequest, workflow_id: int) -> JsonResponse:
     ## 业务: A 方案, 跟 view_ddlghosttask 同样套路, DBA 在 admin 后台分配,
     ##      0 DB 改动, 端点是硬墙 (RD 怎么点都 403)。
     """
-    _require_change_perm(request, "retry")
+    perm_resp = _require_change_perm(request, "retry")
+    if perm_resp is not None:
+        return perm_resp
     task = DdlGhostTask.objects.filter(workflow_id=workflow_id).first()
     if not task:
         return JsonResponse({"ok": False, "error": "task 不存在"}, status=404)
@@ -430,7 +440,9 @@ def rollback(request: HttpRequest, workflow_id: int) -> JsonResponse:
     实际表已经 rename 过了，回滚意味着 drop 影子表 + 改 status=rolled_back。
     但 cut-over 成功后影子表其实已经不在了，需要 drop 旧表（如果存在）。
     """
-    _require_change_perm(request, "rollback")
+    perm_resp = _require_change_perm(request, "rollback")
+    if perm_resp is not None:
+        return perm_resp
     task = DdlGhostTask.objects.filter(workflow_id=workflow_id).first()
     if not task:
         return JsonResponse({"ok": False, "error": "task 不存在"}, status=404)
@@ -493,7 +505,9 @@ def cancel(request: HttpRequest, workflow_id: int) -> JsonResponse:
     ## CUSTOM-MODIFIED: 端点加 perm 守卫 (change_ddlghosttask) @ 2026-08-13 @ mavis
     ## 关联: docs/changelogs/2026-08-13_gh-ost-action-endpoint-perm.md
     """
-    _require_change_perm(request, "cancel")
+    perm_resp = _require_change_perm(request, "cancel")
+    if perm_resp is not None:
+        return perm_resp
     task = DdlGhostTask.objects.filter(workflow_id=workflow_id).first()
     if not task:
         return JsonResponse({"ok": False, "error": "task 不存在"}, status=404)
@@ -577,10 +591,16 @@ def progress_page(request: HttpRequest, workflow_id: int) -> HttpResponse:
     ## 仅 is_superuser 才显示（避免普通用户点跳 admin 登录页 UX 差）
     ## @ 2026-08-10 @ mavis
     is_admin_user = bool(request.user.is_authenticated and request.user.is_superuser)
+    ## CUSTOM-MODIFIED: progress.html 加 is_admin_or_dba 控制"启动 gh-ost" / "取消迁移" 按钮显隐 @ 2026-08-13 @ mavis
+    ## 关联: docs/changelogs/2026-08-13_gh-ost-progress-page-button-perm.md
+    ## 业务: 跟 task_list.html 列表行守卫保持一致, RD 视角 (oa_tester_1) 看进度面板不应该看到运维操作按钮。
+    ##      _is_admin_or_dba helper 跟 admin_list 视图共用 (DBA 跟 DBA 组长), 跟 _require_change_perm (perm 硬墙) 解耦。
+    is_admin_or_dba = _is_admin_or_dba(request.user)
     return render(request, "ddl_gh_ost/progress.html", {
         "workflow": workflow,
         "task": task,
         "is_admin_user": is_admin_user,
+        "is_admin_or_dba": is_admin_or_dba,
     })
 
 
@@ -1003,18 +1023,29 @@ def _is_admin_or_dba(user) -> bool:
 # 业务: cancel / retry / rollback 3 个端点统一加 perm 守卫, 跟 view_ddlghosttask 同样套路。
 #       0 DB 改动, DBA 在 admin 后台勾选 "Can change gh-ost 任务" 即生效。
 # ===========================================================================
-def _require_change_perm(request, action: str = "") -> None:
+def _require_change_perm(request, action: str = ""):
     """gh-ost 任务运维操作端点统一 perm 守卫。
 
-    调用方: ``cancel`` / ``retry`` / ``rollback`` 3 端点, 任何登录用户都能访问
+    调用方: ``start`` / ``cancel`` / ``retry`` / ``rollback`` 4 端点, 任何登录用户都能访问
             但需要 ``ddl_gh_ost.change_ddlghosttask`` 权限才能执行。
 
-    行为: 没 perm → 抛 ``PermissionDenied`` (Django 默认 403 页面)。
-          有 perm → 直接返回, 调用方继续执行。
+    ## CUSTOM-MODIFIED: 改 return JsonResponse (status=403) 替代 raise PermissionDenied @ 2026-08-13 @ mavis
+    ## 关联: docs/changelogs/2026-08-13_gh-ost-action-endpoint-perm.md (后续)
+    ## 业务: progress.html 进度面板"启动 gh-ost" / "取消迁移" 按钮 AJAX 调端点。
+    ##      RD 没 perm 时, raise PermissionDenied → Django middleware 返 403 HTML 错误页,
+    ##      前端 alert() 弹了整页 HTML 源码 ("<!DOCTYPE html>...") 而不是 JSON 错误。
+    ##      改成返 JsonResponse 让前端 alert 看到结构化错误信息。
+
+    行为: 没 perm → 返 ``JsonResponse({"ok": False, "error": "..."}, status=403)``
+          有 perm → 返 ``None``, 调用方继续执行。
+
+    Returns:
+        None: 有 perm, 调用方继续
+        JsonResponse (status=403): 没 perm, 调用方直接 return
 
     Args:
         request: Django request
-        action: 端点动作名 (cancel / retry / rollback), 仅用于日志记录
+        action: 端点动作名 (start / cancel / retry / rollback), 仅用于日志记录
 
     设计原因:
       - 跟 view_ddlghosttask 同样套路, admin 后台 4 个标准 perm 自动注册 (view/add/change/delete)
@@ -1032,10 +1063,17 @@ def _require_change_perm(request, action: str = "") -> None:
             "用户 %s 访问 gh-ost %s 端点被拒: 无 change_ddlghosttask 权限",
             request.user.username, action or "unknown",
         )
-        raise PermissionDenied(
-            "您没有 gh-ost 任务运维操作权限 (cancel/retry/rollback), "
-            "请联系 DBA 在 admin 后台权限组中分配 \"Can change gh-ost 任务\"。"
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": (
+                    f"您没有 gh-ost 任务 {action} 权限。"
+                    "请联系 DBA 在 admin 后台 /admin/auth/group/ 权限组中分配 \"Can change gh-ost 任务\"。"
+                ),
+            },
+            status=403,
         )
+    return None
 
 
 # ===========================================================================
