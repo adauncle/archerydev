@@ -5,6 +5,28 @@
     <div id="toolbar" class="btn-group right">
         <a type='button' id="btnSubmitRollback" class="btn btn-warning" href="/editsql/">提交回滚请求</a>
     </div>
+
+    {# CUSTOM-MODIFIED: gh-ost 任务标识 + warnings 提示 @ 2026-08-13 @ mavis #}
+    {# 关联: docs/changelogs/2026-08-13_ddl-rollback-parse.md #}
+    {#       docs/designs/2026-08-13_ddl-rollback-parse-design.md #}
+    {# 业务: A 方案 DDL 智能回滚 走通时, 显示 gh-ost tag (蓝色 label) #}
+    {#       B 方案有 warnings 时, 显示黄色警告框 (不支持的 DDL 类型) #}
+    <div id="gh-ost-tag" style="display:none;margin-bottom:14px;">
+        <span class="label label-info" style="font-size:12px;padding:5px 10px;">
+            <i class="fa fa-rocket"></i> gh-ost 走通的工单 · DDL 智能回滚
+        </span>
+    </div>
+    <div id="ddl-warnings" class="alert alert-warning"
+         style="display:none;margin-bottom:14px;padding:10px 14px;font-size:13px;line-height:1.6;">
+        <strong><i class="fa fa-info-circle"></i> 部分 DDL 类型暂不支持自动回滚:</strong>
+        <ul id="ddl-warnings-list" style="margin:6px 0 0 0;padding-left:20px;"></ul>
+        <div style="margin-top:6px;font-size:12px;color:#b88230;">
+            <i class="fa fa-lightbulb-o"></i>
+            提示: 这些 DDL 需要手动写回滚 (例如 RENAME TABLE / DROP CONSTRAINT),
+            可在 <code>提交回滚请求</code> 页面粘贴完整回滚 SQL.
+        </div>
+    </div>
+
     <table id="tb-rollback" data-toggle="table" class="table table-condensed"
            style="table-layout:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></table>
 {% endblock content %}
@@ -114,6 +136,25 @@
                         backup_sql += sql[1] + '\n'
                     }
                     sessionStorage.setItem('editSqlContent', backup_sql);
+
+                    // CUSTOM-MODIFIED: 显示 gh-ost tag + warnings @ 2026-08-13 @ mavis
+                    // A 方案: rows 非空 + 无 warnings → gh-ost tag 显示 (DDL 智能回滚 100% 走通)
+                    // B 方案: rows 非空 + 有 warnings → gh-ost tag + warnings 都显示
+                    //         (走通部分 DDL, 部分不支持)
+                    // 兜底: rows 为空 + 有 warnings → warnings 显示 (所有 DDL 都不支持)
+                    if (data.rows && data.rows.length > 0) {
+                        // 有数据, 走 A 或 A+B 路径
+                        $('#gh-ost-tag').show();
+                    }
+                    if (data.warnings && data.warnings.length > 0) {
+                        const list = $('#ddl-warnings-list');
+                        list.empty();
+                        data.warnings.forEach(function (w) {
+                            // 用 text() 防 XSS, 然后包装成 <li>
+                            list.append('<li>' + $('<div>').text(w).html() + '</li>');
+                        });
+                        $('#ddl-warnings').show();
+                    }
                 }
             },
             onLoadError: onLoadErrorCallback,

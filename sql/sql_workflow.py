@@ -204,12 +204,33 @@ def detail_content(request):
 
 
 def backup_sql(request):
-    """获取回滚语句"""
+    """获取回滚语句 (A+B 双路径: DDL 智能回滚 优先, 失败降级 DML).
+
+    ## CUSTOM-MODIFIED: gh-ost 任务回滚支持 @ 2026-08-13 @ mavis
+    ## 关联: docs/changelogs/2026-08-13_ddl-rollback-parse.md
+    ##       docs/designs/2026-08-13_ddl-rollback-parse-design.md
+    ## 业务: gh-ost 走通的工单 (execute_result 是 schema-level DDL), goinception
+    ##       backup_dbname 查不到 (只支持 DML 行级), 走原路径 rows=[]. 加 A 方案
+    ##       DDL 智能回滚 (解析原始 ALTER 拼逆向 SQL), B 方案兜底 (不支持的 DDL
+    ##       类型返回 warnings 提示).
+    """
     workflow_id = request.GET.get("workflow_id")
     if not can_rollback(request.user, workflow_id):
         raise PermissionDenied
     workflow = get_object_or_404(SqlWorkflow, pk=workflow_id)
 
+    # A 方案: 优先尝试 DDL 智能回滚 (gh-ost 任务)
+    # 任何异常 catch, 降级到 DML 路径 (保证端点永远返回)
+    try:
+        from sql.services.ddl_rollback import generate_ddl_rollback, _should_use_ddl_rollback
+        if _should_use_ddl_rollback(workflow):
+            result = generate_ddl_rollback(workflow)
+            return HttpResponse(json.dumps(result), content_type="application/json")
+    except Exception as exc:  # noqa: BLE001
+        # A 方案抛异常 (导入失败 / 函数报错), 降级到 DML
+        logger.warning("DDL 智能回滚失败, 降级到 DML 路径: %s", exc)
+
+    # DML 回滚 (普通工单 或 A 降级)
     try:
         query_engine = get_engine(instance=workflow.instance)
         list_backup_sql = query_engine.get_rollback(workflow=workflow)
