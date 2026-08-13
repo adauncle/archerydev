@@ -862,6 +862,12 @@ def admin_list(request: HttpRequest) -> HttpResponse:
           勾上"Can view gh-ost 任务"即可分配, 无需改代码 / 无需 migration。
           没有 perm 的用户: 菜单不显示 + 直接访问 URL 返回 403。
 
+    可见性 (C 方案延伸, 2026-08-13):
+      - ``is_superuser`` 或属于 ``DBA / DBA组长`` 组 → 看全量 (运维视角)
+      - 其他有 perm 的用户 (RD 组长 / 高级 RD 等) → 只看自己提交的 task
+        (走 ``workflow__engineer == request.user.username`` 过滤)
+      - 4 张状态统计卡跟随列表范围 (DBA 看全量, RD 看自己的)
+
     Query params:
         - task_type: "ghost" | "rebuild" | "" (全部)
         - status: "active" | "success" | "failed" | "cancelled" | "" (全部)
@@ -876,6 +882,9 @@ def admin_list(request: HttpRequest) -> HttpResponse:
             request.user.username,
         )
         raise PermissionDenied("您没有查看 gh-ost 任务管理列表的权限, 请联系 DBA 在 admin 后台权限组中分配。")
+
+    # 0.5 角色判定 (DBA 视角 vs 提交人视角)
+    is_admin_or_dba = _is_admin_or_dba(request.user)
 
     # 1. 拿筛选参数
     filter_type = request.GET.get("task_type", "").strip()
@@ -902,16 +911,25 @@ def admin_list(request: HttpRequest) -> HttpResponse:
             | Q(target_table__icontains=filter_q)
         )
 
+    # 2.5 提交人过滤 (C 方案延伸: 非 DBA 视角只看自己)
+    #    ghost 场景 task.workflow 有 engineer; rebuild 场景 workflow=NULL,
+    #    对 RD 来说 rebuild 看不到任何 task (他本来也不该管 rebuild)。
+    if not is_admin_or_dba:
+        qs = qs.filter(workflow__engineer=request.user.username)
+
     # 3. 拿全部 (生产场景 task 量不大, 一次性渲染简单, 真多了再分页)
     tasks = list(qs[:200])  # 限 200 防爆
 
-    # 4. 状态统计
-    all_count = DdlGhostTask.objects.count()
-    active_count = DdlGhostTask.objects.filter(
+    # 4. 状态统计 (DBA 看全量, RD 看自己的 — 跟列表范围一致)
+    stat_qs = DdlGhostTask.objects.all()
+    if not is_admin_or_dba:
+        stat_qs = stat_qs.filter(workflow__engineer=request.user.username)
+    all_count = stat_qs.count()
+    active_count = stat_qs.filter(
         status__in=("pending", "precheck_failed", "queued", "running", "cut_over", "connecting", "copying")
     ).count()
-    success_count = DdlGhostTask.objects.filter(status="success").count()
-    failed_count = DdlGhostTask.objects.filter(status__in=("failed", "rolled_back")).count()
+    success_count = stat_qs.filter(status="success").count()
+    failed_count = stat_qs.filter(status__in=("failed", "rolled_back")).count()
 
     return render(request, "ddl_gh_ost/task_list.html", {
         "tasks": tasks,
@@ -922,7 +940,32 @@ def admin_list(request: HttpRequest) -> HttpResponse:
         "filter_type": filter_type,
         "filter_status": filter_status,
         "filter_q": filter_q,
+        "is_admin_or_dba": is_admin_or_dba,
     })
+
+
+# ===========================================================================
+# CUSTOM-MODIFIED: 任务列表页可见性角色判定 @ 2026-08-13 @ mavis
+# 关联: docs/changelogs/2026-08-13_gh-ost-admin-list-scope.md
+# 业务: DBA 视角看全量, 普通用户 (RD 等) 只看自己提交的 task。
+#       替代 hardcode `is_superuser`, 走 group name 白名单 (DBA / DBA组长),
+#       跟 Archery 上游 workflow_audit_setting 审批组命名保持一致。
+# ===========================================================================
+def _is_admin_or_dba(user) -> bool:
+    """判定用户是否"运维视角" — 看 gh-ost 任务全量。
+
+    True:  superuser 或属于 ``DBA`` / ``DBA组长`` 组 → 看全量
+    False: 其他用户 → 只看自己提交的 task (workflow.engineer == user.username)
+
+    设计原因: Archery 上游没有统一的 "is_dba" 字段, 审批组 (workflow_audit_setting)
+    用 group.id 配, 这里走 group.name 简单白名单。后续若需要更细粒度 (按部门),
+    改这里 + task_list.html 头部提示即可, 不影响 perm 守卫。
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user.groups.filter(name__in=("DBA", "DBA组长")).exists()
 
 
 # ===========================================================================

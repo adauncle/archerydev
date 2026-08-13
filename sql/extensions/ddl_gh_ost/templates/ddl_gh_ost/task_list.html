@@ -84,7 +84,19 @@
 
 <div class="gh-ost-page">
   <h1 style="font-size: 22px; margin: 0 0 6px;">gh-ost 任务管理</h1>
-  <p class="gh-ost-sub">DBA 运维入口 · 取消/重试/回滚无锁 DDL 任务 · 共 {{ total }} 条</p>
+  {% if is_admin_or_dba %}
+    <p class="gh-ost-sub">DBA 运维入口 · 取消/重试/回滚无锁 DDL 任务 · 共 {{ total }} 条 (全量)</p>
+  {% else %}
+    <p class="gh-ost-sub" style="color:#E6A23C;">
+      <i class="fa fa-info-circle"></i> 您当前以"提交人"视角查看 · 仅显示您自己提交的 gh-ost 任务 · 共 {{ total }} 条
+      <a href="javascript:;" onclick="document.getElementById('gh-ost-scope-tip').style.display='block';this.style.display='none';" style="margin-left:6px;font-size:12px;">为什么?</a>
+    </p>
+    <div id="gh-ost-scope-tip" style="display:none;background:#fdf6ec;border:1px solid #faecd8;border-radius:6px;padding:10px 14px;margin:0 0 16px;font-size:12px;color:#b88230;line-height:1.7;">
+      任务管理列表是 DBA 运维入口, 只 DBA / DBA 组长 / 超级管理员能看全量。<br>
+      您有 <code>view_ddlghosttask</code> 权限, 但属于普通角色, 所以只能查看自己提交的工单 (workflow.engineer = 您的用户名)。<br>
+      如需查看全量, 请联系 DBA 把你加到 <code>DBA</code> 或 <code>DBA组长</code> 组 (<a href="/admin/auth/group/" target="_blank">权限组管理</a>)。
+    </div>
+  {% endif %}
 
   <!-- 状态统计卡 -->
   <div class="gh-ost-stats">
@@ -138,6 +150,7 @@
           <th>类型</th>
           <th>状态</th>
           <th>工单 / DB.表</th>
+          <th>提交人</th>
           <th>进度</th>
           <th>启动时间</th>
           <th>结束时间</th>
@@ -159,6 +172,16 @@
               <span class="gh-ost-muted" style="font-size:11px;">{{ t.workflow.db_name }}.{{ t.workflow.table_name|default:"—" }}</span>
             {% else %}
               <span class="gh-ost-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="gh-ost-muted" style="font-size:12px;">
+            {% if t.workflow %}
+              {% if t.workflow.engineer_display %}
+                {{ t.workflow.engineer_display }}<br>
+              {% endif %}
+              <span style="font-size:10px;color:#c0c4cc;">@{{ t.workflow.engineer }}</span>
+            {% else %}
+              <span style="font-size:11px;">DBA 手动</span>
             {% endif %}
           </td>
           <td>
