@@ -1,0 +1,18 @@
+=== 110 prod sqladvisor config backup (2026-08-18 18:19) ===
+修复 bug: 110 prod /slowquery_advisor/ 报 [Errno 2] No such file or directory: '/opt/archery/src/plugins/sqladvisor'
+根因: v1.10.0 docker 时代 admin 后台配的 sqladvisor 路径, 8/05 切 v1.14.0 裸机后没改
+修法: B 方案 — UPDATE sql_config SET value='' WHERE item='sqladvisor'
+
+回滚 SQL (如果需要恢复原值, 在 admin 后台手动配):
+- 进 110 prod admin 后台 http://prodarchery.ahggwl.com:9123/admin/sql/config/1940/change/
+- item: sqladvisor
+- value: <原加密字符串, 见下>
+- description: <留空>
+
+回滚 value (加密存储, Archery 上游 django-cryptography 加密):
+  q8e6-_vUJSOu1mDqHKuKD50fEFljmKzQHV_zlYmII2N5fE2MkhmzjPVSKFaA2hK0
+  (id=1940 清空前原值, 加密的, 恢复时直接粘到 admin 后台 value 字段)
+
+回滚后:
+- 业务用户点 SQL 优化 → 仍报 500 找不到路径 (因为 110 prod 仍没装 sqladvisor 二进制)
+- 需要 DBA 装 sqladvisor 二进制后, 再用 admin 后台配真实路径
