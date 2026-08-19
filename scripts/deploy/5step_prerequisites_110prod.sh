@@ -201,3 +201,45 @@ fi
 sqladvisor_after=$(mysql --defaults-file=/root/.my.cnf -D archery -N -e "SELECT LENGTH(value) FROM sql_config WHERE item='sqladvisor';" 2>/dev/null)
 echo ""
 echo "验证: sqladvisor value_len=${sqladvisor_after} (期望 0)"
+
+# === 步骤 7: 清空 soar 历史配置 (8/19 用户报 bug) ===
+echo ""
+echo "=== 步骤 7: 清空 110 prod soar 历史配置 (8/19 bug 修复) ==="
+echo "目的: 8/19 09:32 业务用户点 SOAR 区域报 500 错"
+echo "      '[Errno 2] No such file or directory: /opt/archery/src/plugins/soar'"
+echo "      110 prod v1.10.0 docker 时代 admin 后台配的 soar 路径"
+echo "      8/05 切 v1.14.0 裸机后没改, 二进制也没装"
+echo "      修法: 清空 soar item value, 业务用户点 SOAR 返 '请配置' 友好提示"
+echo ""
+echo "  ⚠️  重要: 跟 sqladvisor 同根因, 推 110 当天顺手清空"
+echo "  ⚠️  真实修复 (装 soar 二进制 + 改配置) DBA 推完后手动做, 不在本脚本范围"
+echo ""
+
+# 备份当前 value
+soar_current=$(mysql --defaults-file=/root/.my.cnf -D archery -N -e "SELECT value FROM sql_config WHERE item='soar';" 2>/dev/null)
+if [[ -n "${soar_current}" ]]; then
+  warn "soar item 当前有 value (len=${#soar_current}), 准备清空"
+  echo "  原 value (加密): ${soar_current}"
+  # 备份到 /tmp
+  cat > /tmp/soar_backup_110prod_value.txt <<EOF
+110 prod soar value (清空前备份)
+timestamp: $(date '+%Y-%m-%d %H:%M:%S')
+item: soar
+value (加密): ${soar_current}
+rollback: 在 admin 后台 /admin/sql/config/<id>/change/ 把 value 粘回去
+EOF
+  echo "  备份写到: /tmp/soar_backup_110prod_value.txt"
+
+  # 清空
+  mysql --defaults-file=/root/.my.cnf -D archery -e "
+UPDATE sql_config SET value = '' WHERE item = 'soar';
+"
+  ok "soar value 已清空 (id=1941, len 0)"
+else
+  ok "soar item value 已为空 (无需操作)"
+fi
+
+# 验证
+soar_after=$(mysql --defaults-file=/root/.my.cnf -D archery -N -e "SELECT LENGTH(value) FROM sql_config WHERE item='soar';" 2>/dev/null)
+echo ""
+echo "验证: soar value_len=${soar_after} (期望 0)"
