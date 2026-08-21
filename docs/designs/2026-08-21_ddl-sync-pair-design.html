@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>DDL 跨库同步 · 业务库 ↔ 历史库 详细设计 · Archery v0.5.0</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --card: #ffffff;
+      --line: #e9e3d6;
+      --line-soft: #f0eadf;
+      --ink: #14171e;
+      --ink-mid: #3a4256;
+      --ink-soft: #7c7a72;
+      --primary: #2f6f5e;
+      --primary-soft: rgba(47,111,94,.08);
+      --warn: #c97b3f;
+      --warn-soft: rgba(201,123,63,.08);
+      --danger: #b06367;
+      --danger-soft: rgba(176,99,103,.08);
+      --good: #2f6f5e;
+      --good-soft: rgba(47,111,94,.1);
+      --blue: #3b4b6b;
+      --blue-soft: rgba(59,75,107,.06);
+      --bridge: #5b6e9a;
+      --bridge-soft: rgba(91,110,154,.08);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,.04);
+      --shadow-md: 0 4px 16px -2px rgba(0,0,0,.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: "";
+      position: fixed; inset: 0;
+      background: radial-gradient(circle at 0% 0%, rgba(47,111,94,.05), transparent 40%),
+                  radial-gradient(circle at 100% 100%, rgba(91,110,154,.05), transparent 40%);
+      pointer-events: none; z-index: -1;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 56px 32px 80px; }
+    .doc-head { padding-bottom: 24px; border-bottom: 1px solid var(--line); margin-bottom: 48px; }
+    .doc-eyebrow { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 12px; font-weight: 500; display: flex; align-items: center; gap: 10px; }
+    .doc-eyebrow .mark { font-size: 18px; }
+    h1 { font-family: 'DM Serif Display', serif; font-size: 38px; font-weight: 400; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.01em; }
+    h1 .v { color: var(--primary); font-style: italic; }
+    h1 .bridge-icon { font-size: 32px; vertical-align: middle; margin: 0 6px; color: var(--bridge); }
+    .doc-sub { color: var(--ink-soft); font-size: 14px; }
+    .doc-meta { display: flex; gap: 20px; margin-top: 14px; font-size: 12px; color: var(--ink-soft); flex-wrap: wrap; }
+    .doc-meta b { color: var(--ink); font-weight: 500; }
+
+    .toc { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 26px; margin-bottom: 56px; }
+    .toc h3 { margin: 0 0 12px; font-size: 13px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+    .toc ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; }
+    .toc li { font-size: 14px; }
+    .toc a { color: var(--ink); text-decoration: none; }
+    .toc a:hover { color: var(--primary); }
+    .toc .num { color: var(--primary); font-weight: 600; margin-right: 8px; font-variant-numeric: tabular-nums; }
+
+    h2 { font-family: 'DM Serif Display', serif; font-size: 26px; font-weight: 400; margin: 64px 0 20px; letter-spacing: -0.005em; padding-top: 16px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+    h2 .h2-num { font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 600; color: var(--primary); background: var(--primary-soft); padding: 4px 10px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+    h3 { font-size: 18px; font-weight: 600; margin: 32px 0 12px; color: var(--ink); }
+    h4 { font-size: 14px; font-weight: 600; margin: 18px 0 8px; color: var(--ink); }
+
+    p { margin: 0 0 14px; color: var(--ink-mid); }
+    p.lead { font-size: 16px; color: var(--ink); }
+    strong { color: var(--ink); font-weight: 600; }
+    code { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: var(--line-soft); padding: 1px 6px; border-radius: 4px; color: var(--ink); }
+
+    .callout { padding: 18px 22px; border-radius: 12px; margin: 18px 0; display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--line); }
+    .callout .icon { flex-shrink: 0; margin-top: 2px; font-size: 20px; }
+    .callout p { margin: 0; }
+    .callout.warn { background: var(--warn-soft); border-color: rgba(201,123,63,.2); }
+    .callout.danger { background: var(--danger-soft); border-color: rgba(176,99,103,.2); }
+    .callout.good { background: var(--good-soft); border-color: rgba(47,111,94,.2); }
+    .callout.info { background: var(--blue-soft); border-color: rgba(59,75,107,.18); }
+    .callout.bridge { background: var(--bridge-soft); border-color: rgba(91,110,154,.2); }
+
+    .flow { display: grid; gap: 0; margin: 28px 0; align-items: stretch; }
+    .flow-3 { grid-template-columns: repeat(3, 1fr); }
+    .flow-4 { grid-template-columns: repeat(4, 1fr); }
+    .flow-5 { grid-template-columns: repeat(5, 1fr); }
+    .flow-step { background: var(--card); border: 1px solid var(--line); padding: 20px 14px; text-align: center; position: relative; }
+    .flow-step:first-child { border-radius: 12px 0 0 12px; }
+    .flow-step:last-child { border-radius: 0 12px 12px 0; }
+    .flow-step .step-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-soft); font-weight: 500; margin-bottom: 8px; }
+    .flow-step .step-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .flow-step .step-detail { font-size: 12px; color: var(--ink-soft); margin-top: 6px; line-height: 1.4; }
+    .flow-step.active { background: var(--primary-soft); border-color: var(--primary); z-index: 2; }
+    .flow-step.active .step-name { color: var(--primary); }
+
+    .ui-mock { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin: 24px 0; box-shadow: var(--shadow-sm); }
+    .ui-mock-head { background: #fafaf7; border-bottom: 1px solid var(--line); padding: 12px 18px; display: flex; align-items: center; gap: 8px; }
+    .ui-mock-dot { width: 10px; height: 10px; border-radius: 50%; background: #ddd; }
+    .ui-mock-dot.r { background: #ed6a5e; }
+    .ui-mock-dot.y { background: #f5bf4f; }
+    .ui-mock-dot.g { background: #62c554; }
+    .ui-mock-url { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-soft); margin-left: 12px; }
+    .ui-mock-body { padding: 20px 24px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.7; }
+    .ui-mock-body .l { color: var(--ink-soft); }
+    .ui-mock-body .k { color: var(--primary); font-weight: 600; }
+    .ui-mock-body .s { color: #2f6f5e; }
+    .ui-mock-body .badge { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; }
+    .ui-mock-body .badge-blue { background: rgba(59,75,107,.12); color: var(--blue); }
+    .ui-mock-body .badge-green { background: var(--good-soft); color: var(--good); }
+    .ui-mock-body .badge-warn { background: var(--warn-soft); color: var(--warn); }
+    .ui-mock-body .badge-red { background: var(--danger-soft); color: var(--danger); }
+    .ui-mock-body .badge-gray { background: var(--line-soft); color: var(--ink-soft); }
+    .ui-mock-body .badge-bridge { background: var(--bridge-soft); color: var(--bridge); }
+    .ui-mock-body .row { display: flex; gap: 16px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+    .ui-mock-body .row:last-child { border-bottom: 0; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); margin: 20px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+    th { background: #fafaf7; font-weight: 600; color: var(--ink); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    tr:last-child td { border-bottom: 0; }
+    tr:hover td { background: var(--primary-soft); }
+    td.mono { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+
+    .tag { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; }
+    .tag-green { background: var(--good-soft); color: var(--good); }
+    .tag-warn { background: var(--warn-soft); color: var(--warn); }
+    .tag-red { background: var(--danger-soft); color: var(--danger); }
+    .tag-blue { background: var(--blue-soft); color: var(--blue); }
+    .tag-gray { background: var(--line-soft); color: var(--ink-soft); }
+    .tag-bridge { background: var(--bridge-soft); color: var(--bridge); }
+
+    pre.code { background: #14171e; color: #e9e3d6; padding: 18px 22px; border-radius: 12px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.65; overflow-x: auto; margin: 16px 0; }
+    pre.code .k { color: #c97b3f; }
+    pre.code .s { color: #8aaa85; }
+    pre.code .c { color: #6a6a5e; font-style: italic; }
+    pre.code .n { color: #b4a583; }
+    pre.code .p { color: #c8a4a4; }
+
+    .er-diagram { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px 28px; margin: 24px 0; }
+    .er-title { font-size: 13px; color: var(--ink-soft); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .er-table { display: inline-block; background: #fafaf7; border: 2px solid var(--primary); border-radius: 8px; padding: 10px 14px; margin: 4px; vertical-align: top; min-width: 200px; }
+    .er-table h5 { margin: 0 0 6px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--primary); }
+    .er-table .field { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--ink-mid); padding: 1px 0; }
+    .er-table .pk { color: var(--primary); font-weight: 600; }
+    .er-table .fk { color: var(--blue); }
+    .er-rel { display: flex; align-items: center; justify-content: center; padding: 8px 0; font-size: 12px; color: var(--ink-soft); }
+    .er-rel-line { flex: 1; height: 2px; background: var(--line); position: relative; }
+    .er-rel-line::before, .er-rel-line::after { content: ""; position: absolute; top: -3px; width: 0; height: 0; border-style: solid; }
+    .er-rel-line::before { right: 0; border-width: 3px 0 3px 6px; border-color: transparent transparent transparent var(--primary); }
+    .er-rel-line .label { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); background: var(--card); padding: 0 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--primary); white-space: nowrap; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+
+    .feature-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+    .feature-card .feat-icon { font-size: 24px; margin-bottom: 8px; }
+    .feature-card h4 { margin: 0 0 6px; font-size: 14px; }
+    .feature-card p { font-size: 12.5px; color: var(--ink-soft); margin: 0; }
+
+    .status-step { display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-radius: 8px; background: var(--line-soft); margin: 6px 0; }
+    .status-step.done { background: var(--good-soft); }
+    .status-step.running { background: var(--blue-soft); }
+    .status-step.failed { background: var(--danger-soft); }
+    .status-step .icon { font-size: 18px; }
+
+    .footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="doc-head">
+      <div class="doc-eyebrow"><span class="mark">🔗</span><span>Archery v0.5.0 · 二次开发设计稿</span></div>
+      <h1>DDL 跨库同步 <span class="bridge-icon">⇄</span> 业务库 <span class="v">↔</span> 历史库 <span class="v">详细设计</span></h1>
+      <div class="doc-sub">解决"业务库 DDL 变更容易遗漏同步到历史库"的痛点 — DBA 配库对白名单,Archery 自动判断 + 自动建历史库 DDL 工单,业务 RD 啥都不用管。</div>
+      <div class="doc-meta">
+        <span><b>作者</b> mavis</span>
+        <span><b>日期</b> 2026-08-21</span>
+        <span><b>版本</b> v0.5.0 详细设计</span>
+        <span><b>粒度</b> 可直接动手写代码</span>
+        <span><b>配套</b> <a href="2026-08-21_ddl-sync-pair-design.md" style="color: var(--primary);">Markdown 版</a></span>
+      </div>
+    </div>
+
+    <div class="toc">
+      <h3>目录</h3>
+      <ol>
+        <li><a href="#principle"><span class="num">01</span>设计原则</a></li>
+        <li><a href="#scenario"><span class="num">02</span>业务场景</a></li>
+        <li><a href="#ui"><span class="num">03</span>产品界面 (5 个核心页面)</a></li>
+        <li><a href="#permission"><span class="num">04</span>权限模型</a></li>
+        <li><a href="#schema"><span class="num">05</span>数据模型 (3 张表)</a></li>
+        <li><a href="#url"><span class="num">06</span>URL 路由</a></li>
+        <li><a href="#integration"><span class="num">07</span>联动点 (v0.4.5 / v0.3.0 / v0.2.0)</a></li>
+        <li><a href="#phase"><span class="num">08</span>实施阶段 (短期 C → 中期 B)</a></li>
+        <li><a href="#risk"><span class="num">09</span>风险与验证</a></li>
+        <li><a href="#lesson"><span class="num">10</span>跟 8/19 教训对照</a></li>
+      </ol>
+    </div>
+
+    <!-- ============== 01 设计原则 ============== -->
+    <h2 id="principle"><span class="h2-num">01</span>设计原则</h2>
+
+    <p class="lead">跟之前 5 个二次开发项目 (gh-ost / DDL 智能回滚 / OA / RaccoonX / v0.4.5 rebuild) 一致,走"扩展 + 复用 + 不重写"路线。</p>
+
+    <div class="grid-3">
+      <div class="feature-card">
+        <div class="feat-icon">🧩</div>
+        <h4>二次开发,不动上游</h4>
+        <p>新建 <code>sql/extensions/ddl_sync/</code> extension,跟 <code>ddl_gh_ost/</code> / <code>audit_drivers/</code> 同级。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🔌</div>
+        <h4>复用现有 SQL 工单</h4>
+        <p>历史库 DDL 工单直接复用 <code>SqlWorkflow</code> 表 + <code>audit_drivers</code> 审批,0 业务代码改动。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">📋</div>
+        <h4>DBA 配库对,RD 不用管</h4>
+        <p>DBA 在 Archery 后台配"业务库 ↔ 历史库 白名单表清单",业务 RD 提工单 Archery 自动判断。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🔐</div>
+        <h4>权限跟 gh-ost 任务一致</h4>
+        <p>4 个标准 perm,<code>{% if perms %}</code> 条件渲染,跟 <code>c80c1ad</code> (8/12) 一套机制。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">♻️</div>
+        <h4>复用 Archery 已有</h4>
+        <p>SqlWorkflow / Instance / audit_drivers / dingtalk_oa / Q2 schedule / mirage-field 加密。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🛡️</div>
+        <h4>跟 5 个二次开发联动</h4>
+        <p>v0.4.5 智能回滚 + v0.3.0 gh-ost + v0.3.x 大表防呆 + v0.2.0 钉钉 OA 全部联动。</p>
+      </div>
+    </div>
+
+    <div class="callout bridge">
+      <span class="icon">🔗</span>
+      <p><strong>核心思路 (8/21 拍板)</strong>: 历史库只同步<strong>部分表</strong> (不是全量), 业务 RD 不知道"要不要同步"。解法 — DBA 在 Archery 后台配"业务库 ↔ 历史库 白名单表清单", 业务 RD 提 DDL 时 Archery 自动查表, 在白名单 → 自动建历史库 DDL 工单, 不在 → 走原流程不联动,UI 提示清晰。</p>
+    </div>
+
+    <!-- ============== 02 业务场景 ============== -->
+    <h2 id="scenario"><span class="h2-num">02</span>业务场景</h2>
+
+    <h3>2.1 真实痛点</h3>
+    <p>业务库 (源) 和历史库 (归档) 通过时间戳同步数据,但 DDL 不同步。常见 DDL 类型对应的处理:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>DDL 类型</th><th>历史库是否要同步</th><th>漏同步后果</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">ADD COLUMN</td><td><span class="tag tag-red">必须</span></td><td>时间戳同步跑历史库报 <code>Unknown column 'xxx'</code>, 同步断</td></tr>
+          <tr><td class="mono">MODIFY COLUMN (改类型/长度)</td><td><span class="tag tag-red">必须</span></td><td>同步超长字段报错 / 类型转换报错</td></tr>
+          <tr><td class="mono">CHANGE COLUMN (重命名+改类型)</td><td><span class="tag tag-red">必须</span></td><td>历史库字段对不上, 同步逻辑出错</td></tr>
+          <tr><td class="mono">RENAME TABLE</td><td><span class="tag tag-red">必须</span></td><td>同步任务找不到原表</td></tr>
+          <tr><td class="mono">DROP COLUMN</td><td><span class="tag tag-warn">可选</span></td><td>历史数据保留, 后续清理时再同步</td></tr>
+          <tr><td class="mono">ADD INDEX</td><td><span class="tag tag-gray">通常不用</span></td><td>历史库数据少, 索引意义不大</td></tr>
+          <tr><td class="mono">DROP INDEX</td><td><span class="tag tag-gray">通常不用</span></td><td>同上</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>2.2 4 个角色 + 2 个新角色</h3>
+
+    <div class="grid-2">
+      <div class="feature-card">
+        <div class="feat-icon">👨‍💻</div>
+        <h4>业务 RD</h4>
+        <p>提 DDL, <strong>不用判断要不要同步</strong>。Archery 提工单时自动查库对配置, 工单详情页提示"本表已/未配置进历史库"。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🛠️</div>
+        <h4>DBA (业务库)</h4>
+        <p>配<strong>库对白名单</strong> (业务库 ↔ 历史库 + 同步表清单), 审业务库 DDL 工单。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">📚</div>
+        <h4>DBA (历史库) <span class="tag tag-bridge">新增角色</span></h4>
+        <p>审<strong>历史库 DDL 工单</strong>, 看库对巡检结果, 修复历史库 schema 不一致。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">📊</div>
+        <h4>业务 leader</h4>
+        <p>看自己业务库 DDL 同步状态, 工单页能看到"业务库完成 / 历史库完成"两个状态。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">⚙️</div>
+        <h4>admin</h4>
+        <p>在 Django admin 后台给权限组勾 perm (4 个 perm 4 个判定)。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🔁</div>
+        <h4>历史库 DDL 审批人</h4>
+        <p><strong>同业务库 DDL 审批人</strong> (8/21 拍板), 简化流程, 跟现有 3 级审批一致。</p>
+      </div>
+    </div>
+
+    <!-- ============== 03 产品界面 ============== -->
+    <h2 id="ui"><span class="h2-num">03</span>产品界面 (5 个核心页面)</h2>
+
+    <h3>3.1 库对管理列表 (<code>/ddl_sync/pair_list/</code>, DBA 专属)</h3>
+    <p>跟 "gh-ost 任务" / "数据库巡检" 并列, 条件渲染 (有 <code>view_ddlsyncpair</code> perm 才显示)。</p>
+
+    <div class="ui-mock">
+      <div class="ui-mock-head">
+        <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+        <span class="ui-mock-url">archery.local/ddl_sync/pair_list/</span>
+      </div>
+      <div class="ui-mock-body">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+  <div style="font-size:18px;font-weight:600;color:var(--ink);">🔗 DDL 同步库对管理</div>
+  <div class="badge badge-blue" style="padding:6px 12px;">+ 新建库对</div>
+</div>
+<div class="row"><span class="l">配对名</span><span class="l">业务库</span><span class="l">历史库</span><span class="l">模式</span><span class="l">同步表数</span><span class="l">状态</span><span class="l">操作</span></div>
+<div class="row"><span>accesscard 库对</span><span>hly_accesscard@134</span><span class="badge badge-bridge">⇄</span><span>hly_history@X</span><span>白名单</span><span>3 / 12</span><span class="badge badge-green">启用</span><span>✏️ 📋 📊</span></div>
+<div class="row"><span>log 库对</span><span>hly_log@134</span><span class="badge badge-bridge">⇄</span><span>hly_log_hist@X</span><span>白名单</span><span>5 / 8</span><span class="badge badge-green">启用</span><span>✏️ 📋 📊</span></div>
+<div class="l" style="margin-top:6px;">...</div>
+      </div>
+    </div>
+
+    <h3>3.2 库对详情 (<code>/ddl_sync/pair/&lt;id&gt;/detail/</code>)</h3>
+    <p>显示库对配置 + 同步表清单 + 最近同步历史。</p>
+
+    <div class="ui-mock">
+      <div class="ui-mock-head">
+        <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+        <span class="ui-mock-url">archery.local/ddl_sync/pair/3/detail/</span>
+      </div>
+      <div class="ui-mock-body">
+<div style="font-size:15px;font-weight:600;color:var(--ink);">accesscard 库对 <span class="badge badge-bridge">⇄</span> 白名单模式</div>
+<div class="l" style="margin:4px 0 14px;">业务库: hly_accesscard (172.20.2.134:3306)  ·  历史库: hly_history (172.20.2.X:3306)</div>
+
+<div style="font-size:13px;font-weight:600;color:var(--ink);margin:14px 0 8px;">同步表清单 (3 / 12)</div>
+<div class="row"><span>accesscard_black_detail</span><span class="badge badge-green">同步</span><span>字段 35 个</span><span>✏️ 🗑️</span></div>
+<div class="row"><span>accesscard_log</span><span class="badge badge-green">同步</span><span>字段 12 个</span><span>✏️ 🗑️</span></div>
+<div class="row"><span>accesscard_audit</span><span class="badge badge-green">同步</span><span>字段 8 个</span><span>✏️ 🗑️</span></div>
+<div class="l" style="margin-top:6px;">... 还有 9 张表未配置同步 (按需添加)</div>
+<div class="badge badge-blue" style="margin-top:10px;padding:4px 10px;">+ 添加同步表</div>
+
+<div style="font-size:13px;font-weight:600;color:var(--ink);margin:18px 0 8px;">最近 5 次同步历史</div>
+<div class="row"><span class="l">#12345 业务库工单</span><span class="l">2026-08-21 19:30</span><span class="badge badge-green">已完成</span><span>历史库 #12346 执行成功</span></div>
+<div class="row"><span class="l">#12280 业务库工单</span><span class="l">2026-08-19 14:12</span><span class="badge badge-green">已完成</span><span>历史库 #12281 执行成功</span></div>
+<div class="l" style="margin-top:6px;">...</div>
+
+<div class="badge badge-bridge" style="margin-top:14px;padding:4px 10px;">🔍 立即跑巡检 (C 方案兜底)</div>
+      </div>
+    </div>
+
+    <h3>3.3 业务库 DDL 工单详情 (核心 UX 改造)</h3>
+    <p>工单详情页增加"历史库联动"子状态,业务 RD 一眼看到"本表要不要同步"。</p>
+
+    <div class="ui-mock">
+      <div class="ui-mock-head">
+        <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+        <span class="ui-mock-url">archery.local/sqlworkflow/detail/12345/</span>
+      </div>
+      <div class="ui-mock-body">
+<div style="font-size:15px;font-weight:600;color:var(--ink);">SQL 工单 #12345 <span class="badge badge-bridge">DDL 跨库同步</span></div>
+<div class="l" style="margin:4px 0 12px;">业务 RD @张三  ·  提交时间 2026-08-21 19:00</div>
+
+<pre style="background:#14171e;color:#e9e3d6;padding:10px 14px;border-radius:6px;font-size:12px;">ALTER TABLE <span style="color:#c97b3f;">accesscard_black_detail</span> ADD COLUMN <span style="color:#c97b3f;">card_serial</span> VARCHAR(64) DEFAULT NULL;</pre>
+
+<div style="font-size:13px;font-weight:600;color:var(--ink);margin:14px 0 8px;">执行状态</div>
+<div class="status-step done">
+  <span class="icon">✅</span>
+  <div>
+    <div style="font-size:13px;font-weight:600;">业务库 (hly_accesscard@134)</div>
+    <div class="l">执行完成  2026-08-21 19:30  ·  影响行数 0  ·  耗时 2.3s</div>
+  </div>
+</div>
+<div class="status-step running">
+  <span class="icon">🔄</span>
+  <div>
+    <div style="font-size:13px;font-weight:600;">历史库 (hly_history@X) <span class="badge badge-bridge">⇄ 联动</span></div>
+    <div class="l">DDL 工单 #12346 审核中  ·  DBA @李四 待审  ·  <a style="color:var(--primary);">查看 →</a></div>
+  </div>
+</div>
+
+<div style="background:var(--bridge-soft);padding:10px 14px;border-radius:6px;margin-top:14px;border:1px solid rgba(91,110,154,.2);">
+  <span style="font-size:14px;">💡</span>
+  <span style="font-size:12.5px;color:var(--bridge);">本表 <code>accesscard_black_detail</code> 已配置进历史库同步 (accesscard 库对 · 白名单)。<br/>业务库审批通过后, Archery 自动生成历史库 DDL 工单, 走同一审批人审批。</span>
+</div>
+      </div>
+    </div>
+
+    <h3>3.4 历史库 DDL 工单列表 (DBA 兜底视角)</h3>
+
+    <div class="ui-mock">
+      <div class="ui-mock-head">
+        <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+        <span class="ui-mock-url">archery.local/ddl_sync/history_workflows/</span>
+      </div>
+      <div class="ui-mock-body">
+<div style="font-size:18px;font-weight:600;color:var(--ink);margin-bottom:14px;">🔗 历史库 DDL 工单 <span class="badge badge-bridge">由业务库联动生成</span></div>
+<div class="row"><span class="l">工单</span><span class="l">业务库</span><span class="l">表</span><span class="l">时间</span><span class="l">状态</span><span class="l">原工单</span></div>
+<div class="row"><span>#12346</span><span>accesscard</span><span>accesscard_black_detail</span><span>8/21 19:30</span><span class="badge badge-warn">审核中</span><span><a style="color:var(--primary);">#12345</a></span></div>
+<div class="row"><span>#12281</span><span>accesscard</span><span>accesscard_log</span><span>8/19 14:12</span><span class="badge badge-green">已完成</span><span><a style="color:var(--primary);">#12280</a></span></div>
+<div class="row"><span>#12100</span><span>log</span><span>accesscard_log_archive</span><span>8/15 10:00</span><span class="badge badge-red">失败</span><span><a style="color:var(--primary);">#12099</a></span></div>
+<div class="l" style="margin-top:6px;">...</div>
+      </div>
+    </div>
+
+    <h3>3.5 库对巡检结果 (C 方案兜底)</h3>
+    <p>库对配置 + 同步表清单对比, 找出漏同步的 schema 差异。</p>
+
+    <div class="ui-mock">
+      <div class="ui-mock-head">
+        <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+        <span class="ui-mock-url">archery.local/ddl_sync/inspect/result/3/</span>
+      </div>
+      <div class="ui-mock-body">
+<div style="font-size:15px;font-weight:600;color:var(--ink);">accesscard 库对 · 巡检结果</div>
+<div class="l" style="margin:4px 0 12px;">巡检时间: 2026-08-21 20:00  ·  对比 3 张同步表</div>
+
+<div style="font-size:13px;font-weight:600;color:var(--danger);margin:14px 0 8px;">🔴 1 张表 schema 不一致</div>
+<div class="row"><span>accesscard_black_detail</span><span class="badge badge-red">5 列缺失</span><span class="badge badge-bridge">card_serial (8/21 漏同步)</span><span class="badge badge-warn">idx_xxx (8/15 漏同步)</span><span><a style="color:var(--primary);">生成补 DDL →</a></span></div>
+<div class="l" style="margin:6px 0 12px;">详情: 业务库新增 5 个字段 / 历史库 0 个 — 业务库 DDL 未联动到历史库, 需要补 DDL 工单。</div>
+
+<div style="font-size:13px;font-weight:600;color:var(--good);margin:14px 0 8px;">🟢 2 张表 schema 一致</div>
+<div class="l" style="margin:6px 0 12px;">accesscard_log · accesscard_audit — 同步正常, 无需修复。</div>
+
+<div style="background:var(--warn-soft);padding:10px 14px;border-radius:6px;margin-top:14px;border:1px solid rgba(201,123,63,.2);">
+  <span style="font-size:14px;">⚠️</span>
+  <span style="font-size:12.5px;color:var(--warn);">此巡检由 DBA @张三 在 8/21 20:00 手动触发, 建议配定时任务 (每天凌晨跑) + 不一致推钉钉给历史库 DBA。</span>
+</div>
+      </div>
+    </div>
+
+    <!-- ============== 04 权限模型 ============== -->
+    <h2 id="permission"><span class="h2-num">04</span>权限模型</h2>
+
+    <p class="lead">跟 8/12 gh-ost 任务管理列表页 (commit <code>c80c1ad</code>) + RaccoonX 接入 (commit <code>ddba8f9</code>) 一套机制, <strong>0 业务代码改动做权限</strong> — 纯靠 Django admin 自动注册 perm。</p>
+
+    <h3>4.1 4 个 perm 全部注册</h3>
+    <p>Django admin 会自动给 <code>DdlSyncPair</code> model 注册这 4 个标准 perm:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Perm</th><th>用途</th><th>谁有 (默认)</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">view_ddlsyncpair</td><td>看库对管理菜单 + 库对列表 + 库对详情 + 巡检</td><td>DBA + admin</td></tr>
+          <tr><td class="mono">add_ddlsyncpair</td><td>新建库对 (配业务库 ↔ 历史库)</td><td>仅 DBA + admin</td></tr>
+          <tr><td class="mono">change_ddlsyncpair</td><td>编辑库对 / 添加删除同步表 / 启用禁用</td><td>仅 DBA + admin</td></tr>
+          <tr><td class="mono">delete_ddlsyncpair</td><td>删除库对</td><td>仅 DBA + admin</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout good">
+      <span class="icon">✓</span>
+      <p><strong>8/21 拍板</strong>: 4 个 perm 全部注册, 业务 RD <strong>默认不能</strong>看到库对管理菜单 (不需要看), 库对管理菜单仅 DBA 看。8/13 教训: 默认权限最小化。</p>
+    </div>
+
+    <h3>4.2 菜单条件渲染 (base.html)</h3>
+    <pre class="code">{% if perms.<span class="k">ddl_sync</span>.view_ddlsyncpair %}
+  &lt;li class="nav-item"&gt;
+    &lt;a href="{% url '<span class="k">ddl_sync:pair_list</span>' %}"&gt;
+      🔗 DDL 同步管理
+    &lt;/a&gt;
+  &lt;/li&gt;
+{% endif %}</pre>
+
+    <h3>4.3 页面装饰器 (views.py)</h3>
+    <pre class="code"><span class="k">from</span> django.contrib.auth.decorators <span class="k">import</span> permission_required
+
+@permission_required(<span class="s">"ddl_sync.view_ddlsyncpair"</span>)
+<span class="k">def</span> pair_list(request): ...
+@permission_required(<span class="s">"ddl_sync.view_ddlsyncpair"</span>)
+<span class="k">def</span> pair_detail(request, pair_id): ...
+@permission_required(<span class="s">"ddl_sync.add_ddlsyncpair"</span>)
+<span class="k">def</span> pair_new(request): ...
+@permission_required(<span class="s">"ddl_sync.change_ddlsyncpair"</span>)
+<span class="k">def</span> pair_edit(request, pair_id): ...
+
+<span class="c"># 历史库 DDL 工单本身用现有 SqlWorkflow, 走 audit_drivers 审批</span>
+<span class="c"># 不需要单独 perm — 跟业务库 DDL 工单共享 SqlWorkflow perm</span></pre>
+
+    <h3>4.4 业务 RD 工单页提示 (无库对 perm 也看得到)</h3>
+    <p>业务 RD 提 DDL 时, Archery 自动查库对配置, 工单详情页显示"本表已/未配置进历史库同步"。这个提示<strong>不需要 perm 守卫</strong>, 所有登录用户看自己工单都能看到。</p>
+
+    <h3>4.5 DBA 在 admin 后台配置权限</h3>
+    <pre class="code">Django admin → 认证和授权 → 组
+  ├─ <span class="s">"DBA"</span> 组:       权限 → 勾选 ddl_sync 4 个 perm ✓
+  ├─ <span class="s">"DBA组长"</span> 组:   跟 DBA 一样
+  └─ <span class="s">"业务RD"</span> 组:   权限 → 不勾 ddl_sync (业务 RD 不需要看库对配置)</pre>
+
+    <!-- ============== 05 数据模型 ============== -->
+    <h2 id="schema"><span class="h2-num">05</span>数据模型 (3 张表)</h2>
+
+    <div class="er-diagram">
+      <div class="er-title">ER Diagram · 3 张表关系</div>
+      <div style="text-align:center;">
+        <div class="er-table">
+          <h5>ext_ddl_sync_pair</h5>
+          <div class="field pk">🔑 id (PK)</div>
+          <div class="field fk">→ source_instance_id (FK, Archery Instance)</div>
+          <div class="field">source_db</div>
+          <div class="field fk">→ target_instance_id (FK)</div>
+          <div class="field">target_db</div>
+          <div class="field">sync_mode (whitelist/blacklist)</div>
+          <div class="field">enabled</div>
+          <div class="field">name, created_by, created_at</div>
+          <div class="l" style="margin-top:4px;">↳ unique(source_instance, source_db)</div>
+        </div>
+        <div class="er-table">
+          <h5>ext_ddl_sync_table</h5>
+          <div class="field pk">🔑 id (PK)</div>
+          <div class="field fk">→ pair_id (FK)</div>
+          <div class="field">table_name</div>
+          <div class="field">transform_rule (JSON)</div>
+          <div class="field">created_at</div>
+          <div class="l" style="margin-top:4px;">↳ unique(pair, table_name)</div>
+        </div>
+        <div class="er-table">
+          <h5>ext_ddl_sync_history</h5>
+          <div class="field pk">🔑 id (PK)</div>
+          <div class="field fk">→ pair_id (FK)</div>
+          <div class="field fk">→ source_workflow_id (FK, SqlWorkflow)</div>
+          <div class="field fk">→ target_workflow_id (FK, SqlWorkflow)</div>
+          <div class="field">table_name, ddl_text</div>
+          <div class="field">sync_status</div>
+          <div class="field">created_at, finished_at</div>
+        </div>
+      </div>
+      <div class="er-rel" style="margin-top:14px;">
+        <span>pair 1:N table (一个库对多个同步表)</span>
+      </div>
+      <div class="er-rel">
+        <span>pair 1:N history (一个库对多条同步历史, 审计用)</span>
+      </div>
+    </div>
+
+    <h3>5.1 <code>ext_ddl_sync_pair</code> (库对配置)</h3>
+    <pre class="code"><span class="k">class</span> DdlSyncPair(models.Model):
+    <span class="s">"""业务库 ↔ 历史库 同步关系 (DBA 配)
+
+    业务键: (source_instance, source_db) 唯一
+    """</span>
+    SYNC_MODE_CHOICES = [
+        (<span class="s">"whitelist"</span>, <span class="s">"白名单"</span>),  <span class="c"># DBA 显式配要同步的表 (8/21 拍板)</span>
+        (<span class="s">"blacklist"</span>, <span class="s">"黑名单"</span>),  <span class="c"># 默认全同步, DBA 排除不要的</span>
+    ]
+
+    id = models.AutoField(primary_key=<span class="k">True</span>)
+    name = models.CharField(max_length=<span class="n">128</span>)  <span class="c"># 配对名, 如 "accesscard 库对"</span>
+
+    <span class="c"># 业务库</span>
+    source_instance = models.ForeignKey(Instance, on_delete=models.CASCADE, related_name=<span class="s">"sync_pair_source"</span>)
+    source_db = models.CharField(max_length=<span class="n">64</span>)
+
+    <span class="c"># 历史库</span>
+    target_instance = models.ForeignKey(Instance, on_delete=models.CASCADE, related_name=<span class="s">"sync_pair_target"</span>)
+    target_db = models.CharField(max_length=<span class="n">64</span>)
+
+    sync_mode = models.CharField(max_length=<span class="n">16</span>, choices=SYNC_MODE_CHOICES, default=<span class="s">"whitelist"</span>)
+    enabled = models.BooleanField(default=<span class="k">True</span>)
+
+    <span class="c"># 元数据</span>
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>)
+    updated_at = models.DateTimeField(auto_now=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_ddl_sync_pair"</span>
+        unique_together = [(<span class="s">"source_instance"</span>, <span class="s">"source_db"</span>)]</pre>
+
+    <h3>5.2 <code>ext_ddl_sync_table</code> (同步表清单)</h3>
+    <pre class="code"><span class="k">class</span> DdlSyncTable(models.Model):
+    <span class="s">"""业务库下要同步的表 (DBA 配)
+
+    跟 ddl_sync_pair 多对一, 一个库对可配多张同步表
+    """</span>
+    id = models.AutoField(primary_key=<span class="k">True</span>)
+    pair = models.ForeignKey(DdlSyncPair, on_delete=models.CASCADE, related_name=<span class="s">"tables"</span>)
+    table_name = models.CharField(max_length=<span class="n">128</span>)
+
+    <span class="c"># 可选: 历史库 DDL 调整规则 (Phase 2 扩展, Phase 1 默认空)</span>
+    <span class="c"># 例如: {"skip_columns": ["temp_flag"], "rename_columns": {"xxx": "yyy"}}</span>
+    transform_rule = models.JSONField(default=dict)
+
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_ddl_sync_table"</span>
+        unique_together = [(<span class="s">"pair"</span>, <span class="s">"table_name"</span>)]
+        indexes = [
+            models.Index(fields=[<span class="s">"pair"</span>, <span class="s">"table_name"</span>]),
+        ]</pre>
+
+    <h3>5.3 <code>ext_ddl_sync_history</code> (同步历史审计)</h3>
+    <pre class="code"><span class="k">class</span> DdlSyncHistory(models.Model):
+    <span class="s">"""同步历史审计 (DBA 看, 出问题追溯)
+
+    业务库 DDL 工单执行成功后 + 自动建历史库 DDL 工单 + 历史库执行成功/失败
+    """</span>
+    SYNC_STATUS_CHOICES = [
+        (<span class="s">"pending"</span>, <span class="s">"待发起"</span>),  <span class="c"># 业务库执行中, 还没建历史库工单</span>
+        (<span class="s">"created"</span>, <span class="s">"已发起"</span>),  <span class="c"># 历史库 DDL 工单已建, 待审</span>
+        (<span class="s">"success"</span>, <span class="s">"成功"</span>),   <span class="c"># 历史库 DDL 执行成功</span>
+        (<span class="s">"failed"</span>, <span class="s">"失败"</span>),    <span class="c"># 历史库 DDL 失败, 需人工修复</span>
+        (<span class="s">"skipped"</span>, <span class="s">"跳过"</span>),   <span class="c"># 业务库 DDL 类型不需要同步 (DROP INDEX 等)</span>
+    ]
+
+    id = models.AutoField(primary_key=<span class="k">True</span>)
+    pair = models.ForeignKey(DdlSyncPair, on_delete=models.CASCADE, related_name=<span class="s">"history"</span>)
+    source_workflow = models.ForeignKey(SqlWorkflow, on_delete=models.PROTECT, related_name=<span class="s">"sync_source"</span>)
+    target_workflow = models.ForeignKey(SqlWorkflow, on_delete=models.SET_NULL, null=<span class="k">True</span>, blank=<span class="k">True</span>, related_name=<span class="s">"sync_target"</span>)
+
+    table_name = models.CharField(max_length=<span class="n">128</span>)
+    ddl_text = models.TextField()  <span class="c"># 原始 DDL (业务库)</span>
+    sync_status = models.CharField(max_length=<span class="n">16</span>, choices=SYNC_STATUS_CHOICES, default=<span class="s">"pending"</span>)
+
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>)
+    finished_at = models.DateTimeField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_ddl_sync_history"</span>
+        indexes = [
+            models.Index(fields=[<span class="s">"pair"</span>, <span class="s">"-created_at"</span>]),
+            models.Index(fields=[<span class="s">"sync_status"</span>, <span class="s">"-created_at"</span>]),
+        ]</pre>
+
+    <div class="callout info">
+      <span class="icon">📦</span>
+      <p><strong>3 张表 migration 计划</strong>:
+      <code>0001_initial.py</code> (pair) →
+      <code>0002_ddlsynctable.py</code> →
+      <code>0003_ddlsynchistory.py</code>。
+      推 110 时通过 5 步必做补一条 <code>migrate_ext_ddl_sync</code>, 5.7/8.0 兼容 (跟 ddl_gh_ost 4 个 migration 8/18 演练一致)。</p>
+    </div>
+
+    <!-- ============== 06 URL 路由 ============== -->
+    <h2 id="url"><span class="h2-num">06</span>URL 路由</h2>
+
+    <pre class="code"><span class="c"># sql/extensions/ddl_sync/urls.py</span>
+<span class="k">from</span> django.urls <span class="k">import</span> path
+<span class="k">from</span> . <span class="k">import</span> views
+
+app_name = <span class="s">"ddl_sync"</span>
+
+urlpatterns = [
+    <span class="c"># 库对管理 (DBA 专属)</span>
+    path(<span class="s">"pair_list/"</span>, views.pair_list, name=<span class="s">"pair_list"</span>),
+    path(<span class="s">"pair/new/"</span>, views.pair_new, name=<span class="s">"pair_new"</span>),
+    path(<span class="s">"pair/&lt;int:pair_id&gt;/edit/"</span>, views.pair_edit, name=<span class="s">"pair_edit"</span>),
+    path(<span class="s">"pair/&lt;int:pair_id&gt;/delete/"</span>, views.pair_delete, name=<span class="s">"pair_delete"</span>),
+    path(<span class="s">"pair/&lt;int:pair_id&gt;/detail/"</span>, views.pair_detail, name=<span class="s">"pair_detail"</span>),
+
+    <span class="c"># 同步表管理 (DBA 专属)</span>
+    path(<span class="s">"pair/&lt;int:pair_id&gt;/table/add/"</span>, views.table_add, name=<span class="s">"table_add"</span>),
+    path(<span class="s">"pair/&lt;int:pair_id&gt;/table/&lt;int:table_id&gt;/delete/"</span>, views.table_delete, name=<span class="s">"table_delete"</span>),
+
+    <span class="c"># 历史库 DDL 工单列表 (DBA 兜底视角)</span>
+    path(<span class="s">"history_workflows/"</span>, views.history_workflows, name=<span class="s">"history_workflows"</span>),
+
+    <span class="c"># 库对巡检 (C 方案兜底)</span>
+    path(<span class="s">"inspect/run/"</span>, views.inspect_run, name=<span class="s">"inspect_run"</span>),
+    path(<span class="s">"inspect/result/&lt;int:pair_id&gt;/"</span>, views.inspect_result, name=<span class="s">"inspect_result"</span>),
+
+    <span class="c"># AJAX 端点 (前端用)</span>
+    path(<span class="s">"api/check_table_sync/"</span>, views.api_check_table_sync, name=<span class="s">"api_check_table_sync"</span>),
+]</pre>
+
+    <pre class="code"><span class="c"># archery/urls.py  (include 段)</span>
+<span class="k">if</span> <span class="n">getattr</span>(settings, <span class="s">"CUSTOM_DDL_SYNC_ENABLED"</span>, <span class="k">False</span>):
+    urlpatterns += [
+        path(<span class="s">"ddl_sync/"</span>, <span class="n">include</span>((<span class="s">"sql.extensions.ddl_sync.urls"</span>, <span class="s">"ddl_sync"</span>))),
+    ]</pre>
+
+    <!-- ============== 07 联动点 ============== -->
+    <h2 id="integration"><span class="h2-num">07</span>联动点 (v0.4.5 / v0.3.0 / v0.2.0)</h2>
+
+    <p class="lead">这个功能不是孤立的, 跟 Archery 现有 5 个二次开发全部联动 — 这是为什么能在 2 周内出活的原因。</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>已有功能</th><th>联动方式</th><th>业务价值</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>v0.4.5 DDL 智能回滚</strong> (commit <code>e54a663</code>)</td>
+            <td>历史库 DDL 工单也走智能回滚 (ADD COLUMN 逆向 DROP COLUMN, MODIFY COLUMN 逆向回原值)</td>
+            <td>历史库 DDL 失败能自动回滚, 减少人工修复</td>
+          </tr>
+          <tr>
+            <td><strong>v0.3.0 gh-ost</strong> (commit <code>cd2ce88</code>)</td>
+            <td>历史库 DDL 如果是大表 (检测跟业务库一样, 走 <code>ext_ddl_ghost_task</code> 大表判定), 自动套 gh-ost 避免锁表</td>
+            <td>历史库大表 DDL 也能无锁执行</td>
+          </tr>
+          <tr>
+            <td><strong>v0.3.x 大表 DDL 防呆</strong> (commit <code>374d990</code>)</td>
+            <td>历史库 DDL 提单时也走大表防呆 (大表 → 提示 gh-ost / 立即执行 / 终止)</td>
+            <td>历史库大表 DDL 不会一不小心直接执行锁表</td>
+          </tr>
+          <tr>
+            <td><strong>v0.2.0 钉钉 OA</strong> (commit <code>d5f88d1</code>)</td>
+            <td>历史库 DDL 工单审批人跟业务库一样 (走同一 audit driver), 审批消息推钉钉</td>
+            <td>DBA 不用切系统, 钉钉里就能审</td>
+          </tr>
+          <tr>
+            <td><strong>audit_drivers 3 级审批</strong></td>
+            <td>历史库 DDL 工单走 ext_approval_flow 配置的审批流 (默认 DBA 单审, 可配多级)</td>
+            <td>跟业务库 DDL 一致的安全审批</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>7.1 跟 v0.4.5 DDL 智能回滚联动 (核心)</h3>
+    <p>历史库 DDL 工单走 <code>SqlWorkflow</code> 现有流程, 自动调用 v0.4.5 的智能回滚服务:</p>
+
+    <pre class="code"><span class="c"># sql/extensions/ddl_sync/services/sync_trigger.py (核心逻辑)</span>
+<span class="k">def</span> on_source_workflow_executed(source_workflow):
+    <span class="s">"""业务库 DDL 工单执行成功后触发 (signal)"""</span>
+
+    <span class="c"># 1. 解析 DDL 拿到目标表名 + 数据库名</span>
+    table_name = _parse_first_table(source_workflow.sql_content)
+    source_db = source_workflow.db_name
+
+    <span class="c"># 2. 查库对配置</span>
+    pair = DdlSyncPair.objects.<span class="n">filter</span>(
+        source_instance=source_workflow.instance,
+        source_db=source_db,
+        enabled=<span class="k">True</span>,
+    ).<span class="n">first</span>()
+    <span class="k">if not</span> pair:
+        <span class="k">return</span>  <span class="c"># 没配库对, 不联动</span>
+
+    <span class="c"># 3. 查表是否在白名单 (黑名单模式: 默认同步, 不在黑名单)</span>
+    <span class="k">if</span> pair.sync_mode == <span class="s">"whitelist"</span>:
+        is_synced = pair.tables.<span class="n">filter</span>(table_name=table_name).<span class="n">exists</span>()
+    <span class="k">else</span>:  <span class="c"># blacklist</span>
+        is_synced = <span class="k">not</span> pair.tables.<span class="n">filter</span>(table_name=table_name).<span class="n">exists</span>()
+
+    <span class="k">if not</span> is_synced:
+        <span class="c"># 写 history (状态=skipped), 留痕</span>
+        DdlSyncHistory.objects.<span class="n">create</span>(
+            pair=pair, source_workflow=source_workflow,
+            table_name=table_name, ddl_text=source_workflow.sql_content,
+            sync_status=<span class="s">"skipped"</span>,
+        )
+        <span class="k">return</span>
+
+    <span class="c"># 4. 解析 DDL 类型, 决定要不要同步 (DROP INDEX / ADD INDEX 通常不用)</span>
+    <span class="k">if</span> <span class="k">not</span> _should_sync_ddl(source_workflow.sql_content):
+        DdlSyncHistory.objects.<span class="n">create</span>(
+            pair=pair, source_workflow=source_workflow,
+            table_name=table_name, ddl_text=source_workflow.sql_content,
+            sync_status=<span class="s">"skipped"</span>,
+        )
+        <span class="k">return</span>
+
+    <span class="c"># 5. 自动建历史库 DDL 工单 (跟业务库同一个 SqlWorkflow 表)</span>
+    target_workflow = _create_target_workflow(source_workflow, pair)
+    DdlSyncHistory.objects.<span class="n">create</span>(
+        pair=pair, source_workflow=source_workflow, target_workflow=target_workflow,
+        table_name=table_name, ddl_text=source_workflow.sql_content,
+        sync_status=<span class="s">"created"</span>,
+    )</pre>
+
+    <h3>7.2 跟 v0.3.0 gh-ost 联动</h3>
+    <p>历史库 DDL 提交时, 跟业务库一样走大表判定 (复用 v0.3.0 <code>ext_ddl_ghost_task</code> 大表阈值):</p>
+    <ul>
+      <li>历史库表行数 &gt; 100 万 (跟业务库一样) → 提示走 gh-ost</li>
+      <li>历史库 DDL 也走 DdlGhostTask 异步执行, 不阻塞 SQL 提交流</li>
+      <li>跟 v0.4.5 rebuild 联动: 历史库 DDL 执行完成后, 物理页重写 + DATA_FREE 归零</li>
+    </ul>
+
+    <h3>7.3 跟 audit_drivers 联动</h3>
+    <p>历史库 DDL 工单跟业务库 DDL 工单<strong>走同一个 audit_driver 配置</strong> (ext_approval_flow 表里的 audit_auth_groups):</p>
+    <ul>
+      <li>8/21 拍板: <strong>同审批人</strong>, 简化流程, 跟现有 3 级审批一致</li>
+      <li>历史库 DDL 走 <code>workflow_type = "ddl_sync_history"</code> (新枚举值), audit_drivers 看这个值决定审批流</li>
+      <li>Phase 2 评估: 是否要给历史库 DDL 单独配审批组 (历史库 DBA 跟业务库 DBA 不同)</li>
+    </ul>
+
+    <h3>7.4 跟 v0.2.0 钉钉 OA 联动</h3>
+    <p>历史库 DDL 工单审批消息推钉钉, 复用现有 dingtalk_oa driver:</p>
+    <ul>
+      <li>审批人 (业务库 DDL 审批人) 直接收到钉钉通知</li>
+      <li>消息含"业务库工单 #xxx 已完成, 历史库工单 #xxx 待审"</li>
+      <li>DBA 一键审批, 不用切 Archery 界面</li>
+    </ul>
+
+    <!-- ============== 08 实施阶段 ============== -->
+    <h2 id="phase"><span class="h2-num">08</span>实施阶段 (短期 C → 中期 B)</h2>
+
+    <div class="flow flow-3">
+      <div class="flow-step active">
+        <div class="step-num">SHORT</div>
+        <div class="step-name">短期 · C 巡检兜底</div>
+        <div class="step-detail">8/22~8/28<br/>1 周<br/>schema 巡检<br/>DBA 手动触发</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">MID</div>
+        <div class="step-name">中期 · B 工单联动</div>
+        <div class="step-detail">8/29~9/11<br/>2 周<br/>库对管理 + 自动建工单<br/>业务 RD 零感知</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">LONG</div>
+        <div class="step-name">长期 · A 评估</div>
+        <div class="step-detail">后续<br/>评估 Archery 直连历史库<br/>全自动同步</div>
+      </div>
+    </div>
+
+    <h3>短期 (C 方案) — Schema 巡检兜底 · 1 周</h3>
+    <p><strong>目标</strong>: 业务库改了 DDL 但漏同步历史库 → Archery 后置发现 + 推钉钉报警</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>模块</th><th>内容</th><th>工作量</th></tr></thead>
+        <tbody>
+          <tr><td>3 张表 migration</td><td>pair / table / history (5.7/8.0 兼容)</td><td>半天</td></tr>
+          <tr><td>库对管理 views + 模板</td><td>pair_list / new / edit / detail (5 个页面)</td><td>1.5 天</td></tr>
+          <tr><td>巡检服务 (核心)</td><td>遍历库对同步表清单, 对比 schema, 生成 diff 报告</td><td>1.5 天</td></tr>
+          <tr><td>巡检结果页</td><td>显示不一致表 + 缺失列 + 一键生成补 DDL 工单</td><td>1 天</td></tr>
+          <tr><td>钉钉通知</td><td>不一致推钉钉 (复用 v0.2.0 dingtalk_oa driver)</td><td>半天</td></tr>
+          <tr><td>权限细分</td><td>4 个 perm + 菜单条件渲染</td><td>半天</td></tr>
+          <tr><td>DBA 演练</td><td>配 1 个库对, 跑巡检, 验证报告</td><td>1 天</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><strong>短期验证标准</strong>: DBA 配 1 个库对 (业务库 + 历史库 + 3 张同步表), 手动跑巡检, 报告正确显示 schema diff, 一键生成补 DDL 工单走完流程。</p>
+
+    <h3>中期 (B 方案) — 工单联动 · 2 周</h3>
+    <p><strong>目标</strong>: 业务库 DDL 工单审批通过 → Archery 自动建历史库 DDL 工单 → DBA 审核 → 执行</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>模块</th><th>内容</th><th>工作量</th></tr></thead>
+        <tbody>
+          <tr><td>DDL 解析服务</td><td>从 SqlWorkflow.sql_content 提取表名 + DDL 类型</td><td>1 天</td></tr>
+          <tr><td>库对查表逻辑</td><td>查 (source_instance, source_db, table_name) 是否在白名单</td><td>半天</td></tr>
+          <tr><td>DDL 类型过滤</td><td>ADD/MODIFY/CHANGE/RENAME 必同步, DROP INDEX/ADD INDEX 通常跳过</td><td>半天</td></tr>
+          <tr><td>自动建历史库工单</td><td>复制业务库工单, 改 instance/db_name, 走 audit_drivers 审批</td><td>2 天</td></tr>
+          <tr><td>业务库工单状态联动</td><td>工单页增加"历史库联动"子状态, 跳历史库工单</td><td>1 天</td></tr>
+          <tr><td>历史库 DDL 智能回滚联动</td><td>复用 v0.4.5 <code>_reverse_single_op</code>, 适配历史库 DDL</td><td>1.5 天</td></tr>
+          <tr><td>历史库 gh-ost 联动</td><td>大表 DDL 走 gh-ost, 复用 v0.3.0 runner</td><td>1.5 天</td></tr>
+          <tr><td>大表防呆复用</td><td>历史库 DDL 也走 v0.3.x 大表 alert</td><td>半天</td></tr>
+          <tr><td>业务 RD 业务验收</td><td>真提 DDL 测全流程, 验证零感知</td><td>1 天</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><strong>中期验证标准</strong>: 业务 RD 提 DDL → 自动建历史库 DDL 工单 → DBA 审核 → 执行成功 → 业务库工单关闭。业务 RD 不用手动同步, 不用关心要不要同步, 工单页有清晰提示。</p>
+
+    <h3>长期 (A 方案) — Archery 自动同步 · 后续评估</h3>
+    <p>等中期跑通后再评估, 看是否需要"Archery 直连历史库"全自动执行 (绕过工单流程):</p>
+    <ul>
+      <li>优点: 业务 RD 审批通过后, 历史库 DDL 立即执行, 0 等待</li>
+      <li>缺点: 风险高, DDL 错历史库也错, 跟业务库 + 历史库 DDL 差异有关</li>
+      <li>触发条件: 业务库跟历史库 DDL 100% 一致 (不需要 transform_rule)</li>
+    </ul>
+
+    <!-- ============== 09 风险与验证 ============== -->
+    <h2 id="risk"><span class="h2-num">09</span>风险与验证</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>风险</th><th>等级</th><th>应对</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>业务库跟历史库 DDL 不一致</strong></td>
+            <td><span class="tag tag-red">高</span></td>
+            <td>transform_rule 字段预留 (Phase 1 不用, Phase 2 扩展), DBA 配白名单时标记</td>
+          </tr>
+          <tr>
+            <td><strong>历史库 DDL 失败业务库已成功</strong></td>
+            <td><span class="tag tag-red">高</span></td>
+            <td>8/21 拍板: 业务库失败 → 历史库工单<strong>不发起</strong>; 业务库成功 + 历史库失败 → 推钉钉报警 + 巡检兜底 (C 方案)</td>
+          </tr>
+          <tr>
+            <td><strong>历史库 DDL 锁表影响同步</strong></td>
+            <td><span class="tag tag-warn">中</span></td>
+            <td>跟 v0.3.0 gh-ost 联动, 大表走 gh-ost 避免锁表 (复用大表判定)</td>
+          </tr>
+          <tr>
+            <td><strong>历史库 DBA 不是业务库 DBA</strong></td>
+            <td><span class="tag tag-warn">中</span></td>
+            <td>8/21 拍板: 同审批人 (跟业务库 DDL 一致); Phase 2 评估是否要给历史库 DDL 单独配审批组</td>
+          </tr>
+          <tr>
+            <td><strong>DBA 配错库对 (业务库/历史库搞反)</strong></td>
+            <td><span class="tag tag-warn">中</span></td>
+            <td>新建库对时, Archery 提示"业务库 vs 历史库", 配错会立即连一下验证</td>
+          </tr>
+          <tr>
+            <td><strong>巡检误报 (schema 一致但元数据不同)</strong></td>
+            <td><span class="tag tag-gray">低</span></td>
+            <td>巡检只对比<strong>白名单表</strong>的<strong>列定义</strong>, 忽略 CHARSET/COLLATE 等次要差异 (跟 ddl_gh_ost 字段 diff 端点一致)</td>
+          </tr>
+          <tr>
+            <td><strong>DBA 误改库对白名单</strong></td>
+            <td><span class="tag tag-gray">低</span></td>
+            <td>4 个 perm 4 个判定, 业务 RD 默认不能看, 跟 gh-ost 任务管理一致</td>
+          </tr>
+          <tr>
+            <td><strong>历史库实例被删除</strong></td>
+            <td><span class="tag tag-gray">低</span></td>
+            <td>cascade 删除会同步删库对 (DBA 配库对时要小心), 禁用需要手动 archive</td>
+          </tr>
+          <tr>
+            <td><strong>DBA 配错白名单 (该同步的没配, 不该同步的配了)</strong></td>
+            <td><span class="tag tag-gray">低</span></td>
+            <td>巡检兜底 (C 方案), 一键生成补 DDL 工单</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>每个 Phase 验证标准</h3>
+    <ul>
+      <li><strong>短期 C (巡检)</strong>: DBA 配 1 个库对, 跑巡检拿到正确 diff 报告, 一键生成补 DDL 工单走完流程</li>
+      <li><strong>中期 B (工单联动)</strong>: 业务 RD 提 DDL → 自动建历史库 DDL 工单 → DBA 审核 → 执行成功 → 业务库工单关闭</li>
+      <li><strong>长期 A (评估)</strong>: 业务库/历史库 DDL 100% 一致时, 全自动同步, 0 人工介入</li>
+    </ul>
+
+    <!-- ============== 10 教训对照 ============== -->
+    <h2 id="lesson"><span class="h2-num">10</span>跟 8/19 教训对照</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>8/19 教训</th><th>本次设计应对</th></tr></thead>
+        <tbody>
+          <tr><td>SQLAdvisor 装上但跑不出 add index</td><td>短期 C (巡检) 先验证 schema diff 报告内容, 真能找出漏同步才往下做</td></tr>
+          <tr><td>SOAR 工具装到 /usr/local/bin/ 报 permission denied</td><td>历史库实例用 <code>archery</code> user 连 (跟 Archery 一致), 避免 8/19 权限坑</td></tr>
+          <tr><td>业务 SQL 出境合规风险</td><td>历史库 DDL 不需要 AI, 纯 schema 同步, 跟 8/19 一样保守</td></tr>
+          <tr><td>8/18 教训 1.10.0 → 1.14.0 切换历史 bug</td><td>3 张表 migration 5.7/8.0 兼容演练 (推 110 前)</td></tr>
+          <tr><td>8/12 gh-ost 任务管理 perm 细分 (commit c80c1ad)</td><td>复用同一套机制, 4 个标准 perm + 业务 RD 默认不能 (8/13 教训)</td></tr>
+          <tr><td>8/13 教训 默认权限最小化</td><td>业务 RD 不勾库对管理 perm, 仅 DBA 可见</td></tr>
+          <tr><td>8/12 教训 Archery password 在内存明文</td><td>历史库连接跟现有 SQL 工单一致, 接受这个风险</td></tr>
+          <tr><td>8/18 教训 django-mirage-field 加密</td><td>历史库实例 password 走 Archery 现有加密机制 (跟其他实例一致)</td></tr>
+          <tr><td>8/19 教训 errno 7 (Argument list too long)</td><td>历史库 DDL 也是 SQL 工单, 复用现有 sql_optimize.py / goinception, 走现有限制</td></tr>
+          <tr><td>8/17 教训 Dashboard 优雅降级</td><td>巡检结果页 (库对 diff) 跟 RaccoonX 巡检任务页风格一致, 失败时友好提示</td></tr>
+          <tr><td>8/17 教训 5 步必做 idempotent</td><td>5 步必做补一条 <code>migrate_ext_ddl_sync</code>, 推 110 当天可重复跑</td></tr>
+          <tr><td>8/12 教训 gh-ost 任务管理菜单并列</td><td>新菜单 "🔗 DDL 同步管理" 跟 "gh-ost 任务" / "数据库巡检" 并列, 风格统一</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>跟推 110 prod 的关系</h3>
+    <p>跟 RaccoonX 接入 (8/21 commit <code>ddba8f9</code>) 一样, 5 步必做补一条:</p>
+
+    <pre class="code"><span class="c"># 步骤 11: 推 110 当天跑 ddl_sync 迁移</span>
+ssh 110 <span class="s">'cd /opt/archery && python manage.py migrate sql_extensions_ddl_sync'</span>
+<span class="c"># - 创建 3 张表 (5.7/8.0 兼容)</span>
+<span class="c"># - 幂等, 已建跳过</span>
+
+<span class="c"># 步骤 12: DBA 在 110 prod 配库对</span>
+<span class="c"># - 跟 134 dev 一样, 业务库 ↔ 历史库 + 同步表清单</span>
+<span class="c"># - 配 1 次, 之后增删实例手动重跑</span></pre>
+
+    <!-- ============== Footer ============== -->
+    <div class="footer">
+      <p>🔗 DDL 跨库同步 · Archery v0.5.0 详细设计稿 · mavis · 2026-08-21</p>
+      <p style="margin-top:6px;">配套: <a href="2026-08-21_ddl-sync-pair-design.md" style="color:var(--primary);">Markdown 版</a> · <a href="troubleshooting.md" style="color:var(--primary);">troubleshooting.md</a> · <a href="customization.md" style="color:var(--primary);">customization.md</a></p>
+    </div>
+  </div>
+</body>
+</html>
