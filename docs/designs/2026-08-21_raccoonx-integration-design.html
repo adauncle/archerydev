@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>数据库巡检 · RaccoonX 浣巡接入详细设计 · Archery v0.5.0</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --card: #ffffff;
+      --line: #e9e3d6;
+      --line-soft: #f0eadf;
+      --ink: #14171e;
+      --ink-mid: #3a4256;
+      --ink-soft: #7c7a72;
+      --primary: #2f6f5e;
+      --primary-soft: rgba(47,111,94,.08);
+      --warn: #c97b3f;
+      --warn-soft: rgba(201,123,63,.08);
+      --danger: #b06367;
+      --danger-soft: rgba(176,99,103,.08);
+      --good: #2f6f5e;
+      --good-soft: rgba(47,111,94,.1);
+      --blue: #3b4b6b;
+      --blue-soft: rgba(59,75,107,.06);
+      --raccoon: #6f4e37;
+      --raccoon-soft: rgba(111,78,55,.08);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,.04);
+      --shadow-md: 0 4px 16px -2px rgba(0,0,0,.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: "";
+      position: fixed; inset: 0;
+      background: radial-gradient(circle at 0% 0%, rgba(47,111,94,.05), transparent 40%),
+                  radial-gradient(circle at 100% 100%, rgba(111,78,55,.05), transparent 40%);
+      pointer-events: none; z-index: -1;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 56px 32px 80px; }
+    .doc-head { padding-bottom: 24px; border-bottom: 1px solid var(--line); margin-bottom: 48px; }
+    .doc-eyebrow { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 12px; font-weight: 500; display: flex; align-items: center; gap: 10px; }
+    .doc-eyebrow .raccoon-mark { font-size: 18px; }
+    h1 { font-family: 'DM Serif Display', serif; font-size: 38px; font-weight: 400; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.01em; }
+    h1 .v { color: var(--primary); font-style: italic; }
+    h1 .raccoon { font-size: 32px; vertical-align: middle; margin: 0 8px; }
+    .doc-sub { color: var(--ink-soft); font-size: 14px; }
+    .doc-meta { display: flex; gap: 20px; margin-top: 14px; font-size: 12px; color: var(--ink-soft); flex-wrap: wrap; }
+    .doc-meta b { color: var(--ink); font-weight: 500; }
+
+    .toc { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 26px; margin-bottom: 56px; }
+    .toc h3 { margin: 0 0 12px; font-size: 13px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+    .toc ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; }
+    .toc li { font-size: 14px; }
+    .toc a { color: var(--ink); text-decoration: none; }
+    .toc a:hover { color: var(--primary); }
+    .toc .num { color: var(--primary); font-weight: 600; margin-right: 8px; font-variant-numeric: tabular-nums; }
+
+    h2 { font-family: 'DM Serif Display', serif; font-size: 26px; font-weight: 400; margin: 64px 0 20px; letter-spacing: -0.005em; padding-top: 16px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+    h2 .h2-num { font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 600; color: var(--primary); background: var(--primary-soft); padding: 4px 10px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+    h3 { font-size: 18px; font-weight: 600; margin: 32px 0 12px; color: var(--ink); }
+    h4 { font-size: 14px; font-weight: 600; margin: 18px 0 8px; color: var(--ink); }
+
+    p { margin: 0 0 14px; color: var(--ink-mid); }
+    p.lead { font-size: 16px; color: var(--ink); }
+    strong { color: var(--ink); font-weight: 600; }
+    code { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: var(--line-soft); padding: 1px 6px; border-radius: 4px; color: var(--ink); }
+
+    .callout { padding: 18px 22px; border-radius: 12px; margin: 18px 0; display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--line); }
+    .callout .icon { flex-shrink: 0; margin-top: 2px; font-size: 20px; }
+    .callout p { margin: 0; }
+    .callout.warn { background: var(--warn-soft); border-color: rgba(201,123,63,.2); }
+    .callout.danger { background: var(--danger-soft); border-color: rgba(176,99,103,.2); }
+    .callout.good { background: var(--good-soft); border-color: rgba(47,111,94,.2); }
+    .callout.info { background: var(--blue-soft); border-color: rgba(59,75,107,.18); }
+    .callout.raccoon { background: var(--raccoon-soft); border-color: rgba(111,78,55,.2); }
+
+    .flow { display: grid; gap: 0; margin: 28px 0; align-items: stretch; }
+    .flow-3 { grid-template-columns: repeat(3, 1fr); }
+    .flow-4 { grid-template-columns: repeat(4, 1fr); }
+    .flow-5 { grid-template-columns: repeat(5, 1fr); }
+    .flow-7 { grid-template-columns: repeat(7, 1fr); }
+    .flow-step { background: var(--card); border: 1px solid var(--line); padding: 20px 14px; text-align: center; position: relative; }
+    .flow-step:first-child { border-radius: 12px 0 0 12px; }
+    .flow-step:last-child { border-radius: 0 12px 12px 0; }
+    .flow-step .step-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-soft); font-weight: 500; margin-bottom: 8px; }
+    .flow-step .step-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .flow-step .step-detail { font-size: 12px; color: var(--ink-soft); margin-top: 6px; line-height: 1.4; }
+    .flow-step.active { background: var(--primary-soft); border-color: var(--primary); z-index: 2; }
+    .flow-step.active .step-name { color: var(--primary); }
+
+    .ui-mock { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin: 24px 0; box-shadow: var(--shadow-sm); }
+    .ui-mock-head { background: #fafaf7; border-bottom: 1px solid var(--line); padding: 12px 18px; display: flex; align-items: center; gap: 8px; }
+    .ui-mock-dot { width: 10px; height: 10px; border-radius: 50%; background: #ddd; }
+    .ui-mock-dot.r { background: #ed6a5e; }
+    .ui-mock-dot.y { background: #f5bf4f; }
+    .ui-mock-dot.g { background: #62c554; }
+    .ui-mock-url { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-soft); margin-left: 12px; }
+    .ui-mock-body { padding: 20px 24px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.7; }
+    .ui-mock-body .l { color: var(--ink-soft); }
+    .ui-mock-body .k { color: var(--primary); font-weight: 600; }
+    .ui-mock-body .s { color: #2f6f5e; }
+    .ui-mock-body .badge { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; }
+    .ui-mock-body .badge-blue { background: rgba(59,75,107,.12); color: var(--blue); }
+    .ui-mock-body .badge-green { background: var(--good-soft); color: var(--good); }
+    .ui-mock-body .badge-warn { background: var(--warn-soft); color: var(--warn); }
+    .ui-mock-body .badge-red { background: var(--danger-soft); color: var(--danger); }
+    .ui-mock-body .badge-gray { background: var(--line-soft); color: var(--ink-soft); }
+    .ui-mock-body .row { display: flex; gap: 16px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+    .ui-mock-body .row:last-child { border-bottom: 0; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); margin: 20px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+    th { background: #fafaf7; font-weight: 600; color: var(--ink); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    tr:last-child td { border-bottom: 0; }
+    tr:hover td { background: var(--primary-soft); }
+    td.mono { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+
+    .tag { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; }
+    .tag-green { background: var(--good-soft); color: var(--good); }
+    .tag-warn { background: var(--warn-soft); color: var(--warn); }
+    .tag-red { background: var(--danger-soft); color: var(--danger); }
+    .tag-blue { background: var(--blue-soft); color: var(--blue); }
+    .tag-gray { background: var(--line-soft); color: var(--ink-soft); }
+    .tag-raccoon { background: var(--raccoon-soft); color: var(--raccoon); }
+
+    pre.code { background: #14171e; color: #e9e3d6; padding: 18px 22px; border-radius: 12px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.65; overflow-x: auto; margin: 16px 0; }
+    pre.code .k { color: #c97b3f; }
+    pre.code .s { color: #8aaa85; }
+    pre.code .c { color: #6a6a5e; font-style: italic; }
+    pre.code .n { color: #b4a583; }
+    pre.code .p { color: #c8a4a4; }
+
+    .er-diagram { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px 28px; margin: 24px 0; }
+    .er-title { font-size: 13px; color: var(--ink-soft); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .er-table { display: inline-block; background: #fafaf7; border: 2px solid var(--primary); border-radius: 8px; padding: 10px 14px; margin: 4px; vertical-align: top; min-width: 200px; }
+    .er-table h5 { margin: 0 0 6px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--primary); }
+    .er-table .field { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--ink-mid); padding: 1px 0; }
+    .er-table .pk { color: var(--primary); font-weight: 600; }
+    .er-table .fk { color: var(--blue); }
+    .er-rel { display: flex; align-items: center; justify-content: center; padding: 8px 0; font-size: 12px; color: var(--ink-soft); }
+    .er-rel-line { flex: 1; height: 2px; background: var(--line); position: relative; }
+    .er-rel-line::before, .er-rel-line::after { content: ""; position: absolute; top: -3px; width: 0; height: 0; border-style: solid; }
+    .er-rel-line::before { right: 0; border-width: 3px 0 3px 6px; border-color: transparent transparent transparent var(--primary); }
+    .er-rel-line .label { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); background: var(--card); padding: 0 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--primary); white-space: nowrap; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+
+    .feature-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+    .feature-card .feat-icon { font-size: 24px; margin-bottom: 8px; }
+    .feature-card h4 { margin: 0 0 6px; font-size: 14px; }
+    .feature-card p { font-size: 12.5px; color: var(--ink-soft); margin: 0; }
+
+    .footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); text-align: center; }
+
+    .risk-card { display: flex; gap: 14px; padding: 14px 18px; border-radius: 10px; border: 1px solid var(--line); margin: 10px 0; }
+    .risk-card .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+    .risk-card .dot.high { background: var(--danger); }
+    .risk-card .dot.medium { background: var(--warn); }
+    .risk-card .dot.low { background: var(--good); }
+    .risk-card .meta { flex: 1; }
+    .risk-card .meta .title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+    .risk-card .meta .desc { font-size: 12.5px; color: var(--ink-soft); }
+    .risk-card .meta .sql { background: #14171e; color: #8aaa85; padding: 6px 10px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; margin-top: 6px; display: inline-block; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="doc-head">
+      <div class="doc-eyebrow"><span class="raccoon-mark">🦝</span><span>Archery v0.5.0 · 二次开发设计稿</span></div>
+      <h1>数据库巡检 <span class="raccoon">🦝</span> RaccoonX 浣巡接入 <span class="v">详细设计</span></h1>
+      <div class="doc-sub">让 Archery 平台本身具备数据库巡检能力,业务用户和 DBA 不用跳出 Archery 即可一键体检。</div>
+      <div class="doc-meta">
+        <span><b>作者</b> mavis</span>
+        <span><b>日期</b> 2026-08-21</span>
+        <span><b>版本</b> v0.5.0-alpha 详细设计</span>
+        <span><b>粒度</b> 可直接动手写代码</span>
+        <span><b>配套</b> <a href="2026-08-21_raccoonx-integration-design.md" style="color: var(--primary);">Markdown 版</a></span>
+      </div>
+    </div>
+
+    <div class="toc">
+      <h3>目录</h3>
+      <ol>
+        <li><a href="#principle"><span class="num">01</span>设计原则</a></li>
+        <li><a href="#scenario"><span class="num">02</span>业务场景</a></li>
+        <li><a href="#ui"><span class="num">03</span>产品界面 (6 个核心页面)</a></li>
+        <li><a href="#permission"><span class="num">04</span>权限模型</a></li>
+        <li><a href="#schema"><span class="num">05</span>数据模型 (4 张表)</a></li>
+        <li><a href="#url"><span class="num">06</span>URL 路由</a></li>
+        <li><a href="#integration"><span class="num">07</span>RaccoonX 集成</a></li>
+        <li><a href="#phase"><span class="num">08</span>实施阶段 (Phase 0~2)</a></li>
+        <li><a href="#risk"><span class="num">09</span>风险与验证</a></li>
+        <li><a href="#deploy110"><span class="num">10</span>跟推 110 prod 的关系</a></li>
+      </ol>
+    </div>
+
+    <!-- ============== 01 设计原则 ============== -->
+    <h2 id="principle"><span class="h2-num">01</span>设计原则</h2>
+
+    <p class="lead">跟之前 5 个二次开发项目 (gh-ost / DDL 智能回滚 / OA / 归档 / v0.4.5 rebuild) 一致,走"扩展 + 复用 + 不重写"路线。</p>
+
+    <div class="grid-3">
+      <div class="feature-card">
+        <div class="feat-icon">🧩</div>
+        <h4>二次开发,不动上游</h4>
+        <p>新建 <code>sql/extensions/sql_inspect/</code> extension,跟 <code>ddl_gh_ost/</code> 同级。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🔌</div>
+        <h4>driver 模式</h4>
+        <p>跟 <code>audit_drivers/</code> 一样,RaccoonX 是 "remote datasource" driver。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🔐</div>
+        <h4>权限跟 gh-ost 任务一致</h4>
+        <p>4 个标准 perm,<code>{% if perms %}</code> 条件渲染,<code>_is_inspect_admin()</code> 判定。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">♻️</div>
+        <h4>复用 Archery 已有</h4>
+        <p>instancepermission / sql_instance / Q2 schedule / mirage-field 加密 / dingtalk_oa driver。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🎯</div>
+        <h4>8/19 教训落地</h4>
+        <p>默认关 AI (8/19 数据出境教训) + 工具装 <code>/opt/archery/bin/</code> (8/19 权限教训)。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🛡️</div>
+        <h4>跟推 110 并行不冲突</h4>
+        <p>RaccoonX 跟 Archery 一起推 110,5 步必做补 3 条。</p>
+      </div>
+    </div>
+
+    <div class="callout raccoon">
+      <span class="icon">🦝</span>
+      <p><strong>核心定位调整 (8/20 拍板)</strong>: 之前把 "慢 SQL 联动" 当主菜、"巡检" 当配菜,顺序反了。Archery 平台本身<strong>具备巡检能力</strong>才是核心,慢 SQL 联动 / 工单闭环 放后续 Phase。</p>
+    </div>
+
+    <!-- ============== 02 业务场景 ============== -->
+    <h2 id="scenario"><span class="h2-num">02</span>业务场景</h2>
+
+    <p>从 4 个角色视角看 Archery 接入 RaccoonX 后能干嘛:</p>
+
+    <div class="grid-2">
+      <div class="feature-card">
+        <div class="feat-icon">👨‍💻</div>
+        <h4>业务 RD</h4>
+        <p>提 SQL 工单前想知道"我的库健康吗" → 一键巡检 → 看风险卡 → 决定要不要先优化 (缺失索引 / 慢 SQL / 锁等待)。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🛠️</div>
+        <h4>DBA</h4>
+        <p>兜底定期巡检所有业务库 → 看趋势看板 → 配定时任务 → 处理高风险 → 推钉钉通知 (复用 v0.2.0 OA driver)。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">📊</div>
+        <h4>业务 leader</h4>
+        <p>看自己业务库健康趋势 → 健康分分布 → 跟其他业务库对比 → 给老板汇报有数据。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">⚙️</div>
+        <h4>admin</h4>
+        <p>在 Django admin 后台给权限组勾 perm (4 个 perm 4 个判定) → 业务 RD 默认不能, DBA 手动给,跟 8/13 拍板一致。</p>
+      </div>
+    </div>
+
+    <!-- ============== 03 产品界面 ============== -->
+    <h2 id="ui"><span class="h2-num">03</span>产品界面 (6 个核心页面)</h2>
+
+    <h3>3.1 Archery 侧边栏菜单 (新增)</h3>
+    <p>跟 "SQL 审核" / "查询" / "gh-ost 任务" 并列,条件渲染 (有 <code>view_inspecttask</code> perm 才显示)。</p>
+
+    <div class="ui-mock">
+      <div class="ui-mock-head">
+        <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+        <span class="ui-mock-url">archery.local  ·  侧边栏导航</span>
+      </div>
+      <div class="ui-mock-body">
+<div class="l">▾ SQL 审核</div>
+<div class="l">▾ SQL 查询</div>
+<div class="l">▸ gh-ost 任务  <span class="badge badge-gray">8/12 上线</span></div>
+<div class="l">─────────────</div>
+<div class="k">▾ 🏥 数据库巡检  <span class="badge badge-green">NEW</span></div>
+  ├ <span class="s">▸ 任务列表</span>
+  ├ <span class="s">▸ 一键巡检</span>
+  ├ <span class="s">▸ 定时配置</span> <span class="badge badge-blue">DBA</span>
+  └ <span class="s">▸ 趋势看板</span> <span class="badge badge-blue">DBA</span>
+<div class="l">▾ 数据管理</div>
+<div class="l">▾ 系统管理</div>
+      </div>
+    </div>
+
+    <h3>3.2 巡检任务列表 (<code>/sql_inspect/task_list/</code>)</h3>
+    <p>业务 RD 看到自己有 <code>instancepermission</code> 的库;DBA 看全公司所有库。</p>
+
+    <div class="ui-mock">
+      <div class="ui-mock-head">
+        <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+        <span class="ui-mock-url">archery.local/sql_inspect/task_list/</span>
+      </div>
+      <div class="ui-mock-body">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+  <div style="font-size:18px;font-weight:600;color:var(--ink);">数据库巡检</div>
+  <div class="badge badge-green" style="padding:6px 12px;">+ 一键巡检</div>
+</div>
+<div class="row"><span class="l">实例</span><span class="l">库</span><span class="l">时间</span><span class="l">健康分</span><span class="l">风险</span><span class="l">操作</span></div>
+<div class="row"><span>业务库</span><span>oa</span><span>8/20 19:00</span><span style="color:var(--danger);font-weight:600;">75</span><span class="badge badge-red">3高5中</span><span>📄详情  📥报告  🔄重跑</span></div>
+<div class="row"><span>业务库</span><span>log</span><span>8/20 18:00</span><span style="color:var(--warn);font-weight:600;">88</span><span class="badge badge-warn">1中</span><span>📄详情  📥报告  🔄重跑</span></div>
+<div class="row"><span>业务库</span><span>card</span><span>8/20 17:00</span><span style="color:var(--good);font-weight:600;">92</span><span class="badge badge-green">-</span><span>📄详情  📥报告  🔄重跑</span></div>
+<div class="row"><span style="color:var(--ink-soft);">...</span><span></span><span></span><span></span><span></span><span></span></div>
+<div class="l" style="margin-top:14px;">过滤: [实例▼] [库▼] [时间▼] [状态▼] [健康分▼] [风险▼]</div>
+      </div>
+    </div>
+
+    <h3>3.3 巡检详情 (<code>/sql_inspect/detail/&lt;task_id&gt;/</code>)</h3>
+    <p>核心页面 — 风险卡 + 趋势 + 报告下载。第一阶段只有 "📋 复制 SQL",工单联动放 Phase 3。</p>
+
+    <div class="ui-mock">
+      <div class="ui-mock-head">
+        <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+        <span class="ui-mock-url">archery.local/sql_inspect/detail/42/</span>
+      </div>
+      <div class="ui-mock-body">
+<div style="font-size:15px;font-weight:600;color:var(--ink);">业务库 / oa  <span class="l">·</span>  健康分 <span style="color:var(--danger);">75</span>  <span class="l">·</span>  巡检时间 8/20 19:00</div>
+<div class="l" style="margin:4px 0 14px;">RaccoonX Task ID: rcnx_xyz  ·  巡检耗时 12s</div>
+
+<div style="font-size:13px;font-weight:600;color:var(--danger);margin:14px 0 8px;">🔴 高风险 (3 条)</div>
+
+<div class="risk-card">
+  <span class="dot high"></span>
+  <div class="meta">
+    <div class="title">缺失索引: oa.log 表 create_time 列</div>
+    <div class="desc">影响: 全表扫描,506267 行,平均耗时 3.2s,日均触发 1.2k 次</div>
+    <div class="sql">CREATE INDEX idx_ct ON oa.log(create_time);</div>
+    <div style="margin-top:8px;font-size:12px;">[📋 复制 SQL]  <span class="l">[🛠️ 提交 DDL 工单 - Phase 3]</span></div>
+  </div>
+</div>
+
+<div class="risk-card">
+  <span class="dot high"></span>
+  <div class="meta">
+    <div class="title">表空间占用高: oa.order_detail 表 DATA_FREE 38GB</div>
+    <div class="desc">碎片率 42%,建议执行 OPTIMIZE TABLE 或 v0.4.5 gh-ost rebuild</div>
+    <div style="margin-top:8px;font-size:12px;">[📋 复制 SQL]  <span class="l">[🛠️ 提交 rebuild 工单 - Phase 3]</span></div>
+  </div>
+</div>
+
+<div class="l" style="margin:14px 0 6px;">🟡 中风险 (5 条) ...  🟢 低风险 (2 条) ...</div>
+
+<div style="font-size:13px;font-weight:600;color:var(--ink);margin:18px 0 8px;">📊 健康分趋势 (7 天)</div>
+<div class="l">80 → 75 → 72 → 70 → 75 → 78 → 75   <span class="l">(折线图, Archery 端聚合)</span></div>
+
+<div style="margin-top:18px;font-size:12.5px;">
+  📥 <a style="color:var(--primary);">下载完整 Word 报告 (RaccoonX /share/&lt;id&gt; 免登录链接)</a>
+</div>
+      </div>
+    </div>
+
+    <h3>3.4 一键巡检弹窗 (<code>/sql_inspect/start/</code>)</h3>
+
+    <div class="ui-mock">
+      <div class="ui-mock-head">
+        <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+        <span class="ui-mock-url">archery.local/sql_inspect/start/  ·  弹窗</span>
+      </div>
+      <div class="ui-mock-body">
+<div style="font-size:16px;font-weight:600;color:var(--ink);margin-bottom:14px;">一键巡检</div>
+<div class="l">实例:    [业务库 ............................. ▼]</div>
+<div class="l">库:      [oa / log / card ................. ▼]</div>
+<div class="l">模板:    [MySQL 标准巡检 ................... ▼]</div>
+<div class="l">深度:    [○ 基础 (1min)  ● 标准 (3min)  ○ 深度 (8min)]</div>
+<div class="l">AI:      [○ 启用  ● 禁用]  <span class="l">← 8/19 教训,默认关</span></div>
+<br/>
+<div style="display:flex;gap:10px;justify-content:flex-end;">
+  <span class="badge badge-gray" style="padding:6px 14px;">取消</span>
+  <span class="badge badge-green" style="padding:6px 14px;">开始巡检</span>
+</div>
+<br/>
+<div class="l">↑ 点"开始巡检" → 跳任务列表,任务状态"排期中" → 后台异步调 RaccoonX → 状态变"巡检中" → 完成变"已完成"</div>
+      </div>
+    </div>
+
+    <h3>3.5 定时配置 (<code>/sql_inspect/schedule/</code>, 仅 DBA)</h3>
+    <p>复用 Django Q2 schedule 框架,跟 v0.4.5 rebuild 定时任务风格一致。</p>
+
+    <div class="ui-mock">
+      <div class="ui-mock-head">
+        <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+        <span class="ui-mock-url">archery.local/sql_inspect/schedule/</span>
+      </div>
+      <div class="ui-mock-body">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+  <div style="font-size:18px;font-weight:600;color:var(--ink);">定时巡检配置</div>
+  <div class="badge badge-green" style="padding:6px 12px;">+ 新建定时</div>
+</div>
+<div class="row"><span class="l">名称</span><span class="l">实例</span><span class="l">cron</span><span class="l">模板</span><span class="l">操作</span></div>
+<div class="row"><span>业务库日检</span><span>3 个</span><span>0 3 * * *</span><span>MySQL 标准</span><span>✏️编辑  🗑️删除  ▶️立即跑</span></div>
+<div class="row"><span>业务库周检</span><span>全量</span><span>0 2 * * 0</span><span>MySQL 深度</span><span>✏️编辑  🗑️删除  ▶️立即跑</span></div>
+<div class="l" style="margin-top:8px;">...</div>
+      </div>
+    </div>
+
+    <h3>3.6 趋势看板 (<code>/sql_inspect/dashboard/</code>, 仅 DBA)</h3>
+    <p>DBA 兜底视角,全公司库健康总览。</p>
+
+    <div class="ui-mock">
+      <div class="ui-mock-head">
+        <span class="ui-mock-dot r"></span><span class="ui-mock-dot y"></span><span class="ui-mock-dot g"></span>
+        <span class="ui-mock-url">archery.local/sql_inspect/dashboard/</span>
+      </div>
+      <div class="ui-mock-body">
+<div style="font-size:18px;font-weight:600;color:var(--ink);margin-bottom:14px;">数据库巡检 · 全公司总览</div>
+
+<div class="l" style="margin-bottom:6px;">健康分分布:</div>
+<div>🟢 优秀 (&gt;90): <b>5 个</b>   🟡 一般 (70-90): <b>8 个</b>   🔴 差 (&lt;70): <b>2 个</b></div>
+
+<div class="l" style="margin:18px 0 6px;">Top 10 高风险库 (按风险数降序):</div>
+<div class="row"><span>1.</span><span>业务库 / oa</span><span class="badge badge-red">3高5中</span><span style="color:var(--danger);font-weight:600;">75</span></div>
+<div class="row"><span>2.</span><span>业务库 / log</span><span class="badge badge-red">2高3中</span><span style="color:var(--danger);font-weight:600;">80</span></div>
+<div class="row"><span>3.</span><span>业务库 / card</span><span class="badge badge-warn">1高2中</span><span style="color:var(--warn);font-weight:600;">85</span></div>
+<div class="l" style="margin-top:6px;">...</div>
+
+<div class="l" style="margin:18px 0 6px;">30 天健康分趋势 (折线图,所有库平均):</div>
+<div class="l">80  78  75  73  70  72  75  ...  (折线图占位,实际由 ECharts 渲染)</div>
+      </div>
+    </div>
+
+    <!-- ============== 04 权限模型 ============== -->
+    <h2 id="permission"><span class="h2-num">04</span>权限模型</h2>
+
+    <p class="lead">跟 8/12 gh-ost 任务管理列表页 (commit <code>c80c1ad</code>) 一套机制,0 业务代码改动做权限 — 纯靠 Django admin 自动注册 perm。</p>
+
+    <h3>4.1 4 个 perm 全部注册 (8/20 拍板)</h3>
+    <p>Django admin 会自动给 <code>InspectTask</code> model 注册这 4 个标准 perm:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Perm</th><th>用途</th><th>谁有 (默认)</th><th>8/20 拍板</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">view_inspecttask</td><td>看菜单 + 列表 + 详情</td><td>业务 RD + DBA + admin</td><td>DBA 手动勾</td></tr>
+          <tr><td class="mono">add_inspecttask</td><td>一键巡检 (发起)</td><td>业务 RD + DBA + admin</td><td>DBA 手动勾</td></tr>
+          <tr><td class="mono">change_inspecttask</td><td>定时配置 + 取消/重试 + 编辑</td><td>仅 DBA + admin</td><td>仅 DBA + admin</td></tr>
+          <tr><td class="mono">delete_inspecttask</td><td>删除巡检任务 (清理历史)</td><td>仅 DBA + admin</td><td>仅 DBA + admin</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout good">
+      <span class="icon">✓</span>
+      <p><strong>8/20 拍板 4 条</strong>: ① 4 个 perm 全部注册 ② 默认业务 RD 不能, DBA 手动勾 ③ 复用 Archery <code>instancepermission</code> 表做实例隔离 ④ 业务 RD 默认不勾, DBA 手动给 (8/13 教训: 默认权限最小化)</p>
+    </div>
+
+    <h3>4.2 菜单条件渲染 (base.html)</h3>
+    <p>跟 gh-ost 任务管理一样,在 Archery 侧边栏 <code>base.html</code> 加:</p>
+
+    <pre class="code"><span class="c"># sql/templates/base.html (菜单区)</span>
+{% if perms.<span class="k">sql_inspect</span>.view_inspecttask %}
+  &lt;li class="nav-item"&gt;
+    &lt;a href="{% url '<span class="k">sql_inspect:task_list</span>' %}"&gt;
+      🏥 数据库巡检
+    &lt;/a&gt;
+  &lt;/li&gt;
+{% endif %}</pre>
+
+    <h3>4.3 页面装饰器 (views.py)</h3>
+    <pre class="code"><span class="k">from</span> django.contrib.auth.decorators <span class="k">import</span> permission_required
+
+@permission_required(<span class="s">"sql_inspect.view_inspecttask"</span>)
+<span class="k">def</span> task_list(request): <span class="c"># 任务列表</span>
+    ...
+
+@permission_required(<span class="s">"sql_inspect.view_inspecttask"</span>)
+<span class="k">def</span> task_detail(request, task_id): <span class="c"># 巡检详情</span>
+    ...
+
+@permission_required(<span class="s">"sql_inspect.add_inspecttask"</span>)
+<span class="k">def</span> task_start(request): <span class="c"># 一键巡检</span>
+    ...
+
+@permission_required(<span class="s">"sql_inspect.change_inspecttask"</span>)
+<span class="k">def</span> schedule_config(request): <span class="c"># 定时配置</span>
+    ...</pre>
+
+    <h3>4.4 实例级隔离 (业务 RD 自动只看自己库)</h3>
+    <p>跟 8/12 gh-ost 任务管理一致 (commit <code>c80c1ad</code>):</p>
+
+    <pre class="code"><span class="k">def</span> _is_inspect_admin(user):
+    <span class="s">"""DBA / DBA组长 / superuser 走全量,其他走 instance 权限过滤"""</span>
+    <span class="k">return</span> user.is_superuser <span class="k">or</span> user.groups.<span class="n">filter</span>(
+        name__in=(<span class="s">"DBA"</span>, <span class="s">"DBA组长"</span>)
+    ).<span class="n">exists</span>()
+
+<span class="k">def</span> task_list_queryset(user):
+    qs = InspectTask.objects.select_related(<span class="s">"instance"</span>, <span class="s">"db_name"</span>)
+    <span class="k">if</span> _is_inspect_admin(user):
+        <span class="k">return</span> qs  <span class="c"># DBA 全量</span>
+    <span class="c"># 业务 RD: 复用 Archery instancepermission 表 (跟其他业务页面一致)</span>
+    <span class="k">return</span> qs.<span class="n">filter</span>(
+        instance__in=user.instancepermission_set.<span class="n">values_list</span>(<span class="s">"instance_id"</span>)
+    )</pre>
+
+    <h3>4.5 DBA 在 admin 后台配置权限</h3>
+    <p>0 业务代码改动 — DBA 在 admin 后台点几下鼠标就分完了:</p>
+
+    <pre class="code">Django admin → 认证和授权 → 组
+  ├─ <span class="s">"DBA"</span> 组:      权限 → 勾选 sql_inspect 4 个 perm ✓
+  ├─ <span class="s">"DBA组长"</span> 组:  跟 DBA 一样
+  └─ <span class="s">"业务RD"</span> 组:  权限 → 不勾 sql_inspect (默认不能, 8/13 教训)
+                                          → DBA 手动给特定业务 RD 勾 view + add</pre>
+
+    <h3>4.6 跟 gh-ost 任务管理一致的好处</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>维度</th><th>一致</th><th>业务价值</th></tr></thead>
+        <tbody>
+          <tr><td>菜单渲染</td><td><code>{% if perms %}</code> 条件</td><td>业务 RD 没勾看不到菜单, 跟现有菜单风格统一</td></tr>
+          <tr><td>页面装饰</td><td><code>@permission_required</code></td><td>没 perm 直接 302 跳登录或 403</td></tr>
+          <tr><td>实例隔离</td><td><code>_is_inspect_admin()</code></td><td>DBA 全量, 业务 RD 自动按 instance 权限过滤</td></tr>
+          <tr><td>权限粒度</td><td>4 个标准 perm</td><td>跟 gh-ost / 系统用户/组 一致, 不用学新概念</td></tr>
+          <tr><td>DBA 操作</td><td>admin 后台点鼠标</td><td>不用 DBA 改代码, 不用重启服务</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============== 05 数据模型 ============== -->
+    <h2 id="schema"><span class="h2-num">05</span>数据模型 (4 张表)</h2>
+
+    <div class="er-diagram">
+      <div class="er-title">ER Diagram · 4 张表关系</div>
+      <div style="text-align:center;">
+        <div class="er-table">
+          <h5>ext_inspect_task</h5>
+          <div class="field pk">🔑 id (PK)</div>
+          <div class="field fk">→ instance_id (FK)</div>
+          <div class="field">db_name, template</div>
+          <div class="field">raccoonx_task_id</div>
+          <div class="field">status, health_score</div>
+          <div class="field">risk_high/medium/low</div>
+          <div class="field">created_by, created_at</div>
+        </div>
+        <div class="er-table">
+          <h5>ext_inspect_finding</h5>
+          <div class="field pk">🔑 id (PK)</div>
+          <div class="field fk">→ task_id (FK)</div>
+          <div class="field">level, category</div>
+          <div class="field">title, description</div>
+          <div class="field">suggested_sql</div>
+          <div class="field">affected_rows</div>
+          <div class="field">extra (JSON)</div>
+        </div>
+        <div class="er-table">
+          <h5>ext_inspect_datasource_map</h5>
+          <div class="field pk">🔑 id (PK)</div>
+          <div class="field fk">→ archery_instance_id (FK, 1:1)</div>
+          <div class="field">raccoonx_datasource_id</div>
+          <div class="field">raccoonx_datasource_name</div>
+          <div class="field">last_synced_at</div>
+          <div class="field">sync_status</div>
+        </div>
+        <div class="er-table">
+          <h5>ext_inspect_schedule</h5>
+          <div class="field pk">🔑 id (PK)</div>
+          <div class="field fk">↔ instances (M2M)</div>
+          <div class="field">name, template</div>
+          <div class="field">cron_expression</div>
+          <div class="field">notify_*_risk</div>
+          <div class="field">enabled, last_run_at</div>
+        </div>
+      </div>
+      <div class="er-rel" style="margin-top:14px;">
+        <span>task 1:N finding (一个巡检任务多条风险)</span>
+      </div>
+      <div class="er-rel">
+        <span>archery_instance 1:1 datasource_map (跟 RaccoonX 数据源映射)</span>
+      </div>
+    </div>
+
+    <h3>5.1 <code>ext_inspect_task</code> (巡检任务)</h3>
+    <pre class="code"><span class="k">class</span> InspectTask(models.Model):
+    STATUS_CHOICES = [
+        (<span class="s">"queued"</span>, <span class="s">"排期中"</span>),
+        (<span class="s">"running"</span>, <span class="s">"巡检中"</span>),
+        (<span class="s">"success"</span>, <span class="s">"已完成"</span>),
+        (<span class="s">"failed"</span>, <span class="s">"失败"</span>),
+        (<span class="s">"cancelled"</span>, <span class="s">"已取消"</span>),
+    ]
+
+    id = models.AutoField(primary_key=<span class="k">True</span>)
+    instance = models.ForeignKey(Instance, on_delete=models.CASCADE)  <span class="c"># Archery 数据源</span>
+    db_name = models.CharField(max_length=<span class="n">64</span>)
+    template = models.CharField(max_length=<span class="n">32</span>, default=<span class="s">"mysql_standard"</span>)  <span class="c"># 巡检模板</span>
+
+    <span class="c"># RaccoonX 端</span>
+    raccoonx_task_id = models.CharField(max_length=<span class="n">64</span>, blank=<span class="k">True</span>)
+    raccoonx_datasource_id = models.IntegerField()  <span class="c"># RaccoonX 数据源 ID</span>
+    raccoonx_share_url = models.URLField(blank=<span class="k">True</span>)  <span class="c"># Word 报告分享链接</span>
+
+    <span class="c"># 结果</span>
+    status = models.CharField(max_length=<span class="n">16</span>, choices=STATUS_CHOICES, default=<span class="s">"queued"</span>)
+    health_score = models.IntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)  <span class="c"># 健康分 0-100</span>
+    risk_high = models.IntegerField(default=<span class="n">0</span>)
+    risk_medium = models.IntegerField(default=<span class="n">0</span>)
+    risk_low = models.IntegerField(default=<span class="n">0</span>)
+    duration_seconds = models.IntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    error_message = models.TextField(blank=<span class="k">True</span>)  <span class="c"># 失败原因</span>
+
+    <span class="c"># 元数据</span>
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>)
+    finished_at = models.DateTimeField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_inspect_task"</span>
+        indexes = [
+            models.Index(fields=[<span class="s">"instance"</span>, <span class="s">"db_name"</span>, <span class="s">"-created_at"</span>]),
+            models.Index(fields=[<span class="s">"status"</span>, <span class="s">"-created_at"</span>]),
+        ]</pre>
+
+    <h3>5.2 <code>ext_inspect_finding</code> (风险条目)</h3>
+    <pre class="code"><span class="k">class</span> InspectFinding(models.Model):
+    LEVEL_CHOICES = [
+        (<span class="s">"high"</span>, <span class="s">"高"</span>),
+        (<span class="s">"medium"</span>, <span class="s">"中"</span>),
+        (<span class="s">"low"</span>, <span class="s">"低"</span>),
+    ]
+
+    id = models.AutoField(primary_key=<span class="k">True</span>)
+    task = models.ForeignKey(InspectTask, on_delete=models.CASCADE, related_name=<span class="s">"findings"</span>)
+    level = models.CharField(max_length=<span class="n">8</span>, choices=LEVEL_CHOICES)
+    category = models.CharField(max_length=<span class="n">64</span>)  <span class="c"># 缺失索引 / 慢 SQL / 锁等待 / ...</span>
+    title = models.CharField(max_length=<span class="n">256</span>)  <span class="c"># 标题</span>
+    description = models.TextField()  <span class="c"># 详情</span>
+    suggested_sql = models.TextField(blank=<span class="k">True</span>)  <span class="c"># 建议 SQL (如有)</span>
+    affected_rows = models.IntegerField(null=<span class="k">True</span>, blank=<span class="k">True</span>)  <span class="c"># 影响行数</span>
+    extra = models.JSONField(default=dict)  <span class="c"># 原始 RaccoonX 数据 (json 字段)</span>
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_inspect_finding"</span>
+        indexes = [
+            models.Index(fields=[<span class="s">"task"</span>, <span class="s">"level"</span>]),
+        ]</pre>
+
+    <h3>5.3 <code>ext_inspect_datasource_map</code> (数据源映射)</h3>
+    <pre class="code"><span class="k">class</span> InspectDatasourceMap(models.Model):
+    <span class="s">"""Archery instance ↔ RaccoonX datasource 一对一映射
+
+    避免双维护: Archery 已有 sql_instance 表, RaccoonX 也有数据源,
+    启动时一次性脚本同步, 后续 Archery 增删实例时手动重跑。
+    """</span>
+    id = models.AutoField(primary_key=<span class="k">True</span>)
+    archery_instance = models.OneToOneField(Instance, on_delete=models.CASCADE)
+    raccoonx_datasource_id = models.IntegerField()  <span class="c"># RaccoonX 端 ID</span>
+    raccoonx_datasource_name = models.CharField(max_length=<span class="n">128</span>)  <span class="c"># 冗余存名字</span>
+    last_synced_at = models.DateTimeField(auto_now=<span class="k">True</span>)  <span class="c"># 最近同步时间</span>
+    sync_status = models.CharField(max_length=<span class="n">16</span>, default=<span class="s">"ok"</span>)  <span class="c"># ok / failed</span>
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_inspect_datasource_map"</span></pre>
+
+    <h3>5.4 <code>ext_inspect_schedule</code> (定时任务)</h3>
+    <pre class="code"><span class="k">class</span> InspectSchedule(models.Model):
+    id = models.AutoField(primary_key=<span class="k">True</span>)
+    name = models.CharField(max_length=<span class="n">128</span>)
+    instances = models.ManyToManyField(Instance)  <span class="c"># 多对多, 定时跑多实例</span>
+    template = models.CharField(max_length=<span class="n">32</span>, default=<span class="s">"mysql_standard"</span>)
+    cron_expression = models.CharField(max_length=<span class="n">64</span>)  <span class="c"># "0 3 * * *"</span>
+    notify_high_risk = models.BooleanField(default=<span class="k">True</span>)  <span class="c"># 高风险推钉钉</span>
+    notify_daily_report = models.BooleanField(default=<span class="k">True</span>)  <span class="c"># 日报</span>
+
+    enabled = models.BooleanField(default=<span class="k">True</span>)
+    last_run_at = models.DateTimeField(null=<span class="k">True</span>, blank=<span class="k">True</span>)
+    last_run_task = models.ForeignKey(InspectTask, null=<span class="k">True</span>, blank=<span class="k">True</span>, on_delete=models.SET_NULL)
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=<span class="k">True</span>)
+
+    <span class="k">class</span> Meta:
+        db_table = <span class="s">"ext_inspect_schedule"</span></pre>
+
+    <div class="callout info">
+      <span class="icon">📦</span>
+      <p><strong>4 张表 migration 计划</strong>:
+      <code>0001_initial.py</code> (task + finding) →
+      <code>0002_datasource_map.py</code> →
+      <code>0003_schedule.py</code>。
+      推 110 时通过 5 步必做补一条 <code>migrate_ext_inspect</code>,5.7/8.0 兼容 (跟 ddl_gh_ost 4 个 migration 8/18 演练一致)。</p>
+    </div>
+
+    <!-- ============== 06 URL 路由 ============== -->
+    <h2 id="url"><span class="h2-num">06</span>URL 路由</h2>
+
+    <p>跟 <code>ddl_gh_ost/urls.py</code> 风格一致,在 <code>archery/urls.py</code> 里按需 include。</p>
+
+    <pre class="code"><span class="c"># sql/extensions/sql_inspect/urls.py</span>
+<span class="k">from</span> django.urls <span class="k">import</span> path
+<span class="k">from</span> . <span class="k">import</span> views
+
+app_name = <span class="s">"sql_inspect"</span>
+
+urlpatterns = [
+    <span class="c"># 核心页面</span>
+    path(<span class="s">"task_list/"</span>, views.task_list, name=<span class="s">"task_list"</span>),
+    path(<span class="s">"detail/&lt;int:task_id&gt;/"</span>, views.task_detail, name=<span class="s">"task_detail"</span>),
+    path(<span class="s">"start/"</span>, views.task_start, name=<span class="s">"task_start"</span>),
+    path(<span class="s">"cancel/&lt;int:task_id&gt;/"</span>, views.task_cancel, name=<span class="s">"task_cancel"</span>),
+    path(<span class="s">"rerun/&lt;int:task_id&gt;/"</span>, views.task_rerun, name=<span class="s">"task_rerun"</span>),
+
+    <span class="c"># 定时配置 (DBA 专属)</span>
+    path(<span class="s">"schedule/"</span>, views.schedule_list, name=<span class="s">"schedule_list"</span>),
+    path(<span class="s">"schedule/new/"</span>, views.schedule_new, name=<span class="s">"schedule_new"</span>),
+    path(<span class="s">"schedule/&lt;int:schedule_id&gt;/edit/"</span>, views.schedule_edit, name=<span class="s">"schedule_edit"</span>),
+    path(<span class="s">"schedule/&lt;int:schedule_id&gt;/delete/"</span>, views.schedule_delete, name=<span class="s">"schedule_delete"</span>),
+    path(<span class="s">"schedule/&lt;int:schedule_id&gt;/run/"</span>, views.schedule_run, name=<span class="s">"schedule_run"</span>),
+
+    <span class="c"># 趋势看板 (DBA 专属)</span>
+    path(<span class="s">"dashboard/"</span>, views.dashboard, name=<span class="s">"dashboard"</span>),
+
+    <span class="c"># AJAX 端点 (前端轮询用)</span>
+    path(<span class="s">"api/task_status/&lt;int:task_id&gt;/"</span>, views.api_task_status, name=<span class="s">"api_task_status"</span>),
+    path(<span class="s">"api/datasource_sync/"</span>, views.api_datasource_sync, name=<span class="s">"api_datasource_sync"</span>),
+]</pre>
+
+    <pre class="code"><span class="c"># archery/urls.py  (include 段)</span>
+<span class="k">if</span> <span class="n">getattr</span>(settings, <span class="s">"CUSTOM_INSPECT_ENABLED"</span>, <span class="k">False</span>):
+    urlpatterns += [
+        path(<span class="s">"sql_inspect/"</span>, <span class="n">include</span>((<span class="s">"sql.extensions.sql_inspect.urls"</span>, <span class="s">"sql_inspect"</span>))),
+    ]</pre>
+
+    <!-- ============== 07 RaccoonX 集成 ============== -->
+    <h2 id="integration"><span class="h2-num">07</span>RaccoonX 集成</h2>
+
+    <h3>7.1 部署 (134 dev 跟 Archery 一起,推 110 时同步)</h3>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>项</th><th>134 dev</th><th>110 prod (推 110 时同步)</th></tr></thead>
+        <tbody>
+          <tr><td>位置</td><td><code>/opt/raccoonx/</code> (跟 <code>/opt/archery/</code> 同级)</td><td>同 (5 步必做补)</td></tr>
+          <tr><td>部署</td><td>源码 (Python 3.10 venv + systemd)</td><td>同</td></tr>
+          <tr><td>端口</td><td>5003 (跟 gh-ost 4000 / goinception 4000 不冲突)</td><td>同</td></tr>
+          <tr><td>数据存储</td><td>SQLite (RaccoonX 默认)</td><td>同</td></tr>
+          <tr><td>报告</td><td><code>/var/lib/raccoonx/reports/</code> (volume)</td><td>同</td></tr>
+          <tr><td>加密</td><td>API Key 存 RaccoonX Fernet 加密</td><td>同</td></tr>
+          <tr><td>AI 模式</td><td><code>ai_mode = disabled</code> (8/19 教训)</td><td>同</td></tr>
+          <tr><td>用户</td><td><code>archery</code> (跟 Archery 一致, 避免 8/19 权限坑)</td><td>同</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>systemd unit (跟 goinception 一样套路)</h4>
+    <pre class="code">[Unit]
+Description=RaccoonX Database Inspection
+After=network.target
+
+[Service]
+Type=simple
+User=archery
+WorkingDirectory=/opt/raccoonx
+ExecStart=/opt/raccoonx/venv/bin/python web_ui.py
+Restart=on-failure
+RestartSec=5
+Environment=<span class="s">"PATH=/opt/raccoonx/venv/bin"</span>
+
+[Install]
+WantedBy=multi-user.target</pre>
+
+    <h4>nginx 反代 (跟 goinception 一样)</h4>
+    <pre class="code"><span class="c"># /etc/nginx/conf.d/archery.conf</span>
+location /raccoonx/ {
+    proxy_pass http://127.0.0.1:5003/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}</pre>
+
+    <h3>7.2 数据源映射 (一次性同步)</h3>
+    <p>避免双维护 — 启动时跑一次性脚本,后续 Archery 增删实例时手动重跑。</p>
+
+    <pre class="code"><span class="c"># sql/extensions/sql_inspect/management/commands/sync_raccoonx_datasources.py</span>
+<span class="k">class</span> Command(BaseCommand):
+    <span class="s">"""同步 Archery sql_instance → RaccoonX datasource
+
+    启动时跑一次, 后续 Archery instance 增删时手动重跑。
+    """</span>
+    <span class="k">def</span> handle(self, *args, **options):
+        raccoonx = RaccoonXClient(api_key=settings.RACCOONX_API_KEY)
+
+        <span class="k">for</span> instance <span class="k">in</span> Instance.objects.<span class="n">filter</span>(type=<span class="s">"master"</span>):
+            <span class="c"># 1. Archery 端解加密密码 (django-mirage-field)</span>
+            password = decrypt_password(instance.password)
+
+            <span class="c"># 2. RaccoonX 端创建数据源 (幂等)</span>
+            ds = raccoonx.upsert_datasource(
+                name=<span class="s">f"archery_{instance.host}_{instance.port}"</span>,
+                db_type=<span class="s">"mysql"</span>,
+                host=instance.host,
+                port=instance.port,
+                user=instance.user,
+                password=password,
+            )
+
+            <span class="c"># 3. Archery 端存映射</span>
+            InspectDatasourceMap.objects.update_or_create(
+                archery_instance=instance,
+                defaults={{
+                    <span class="s">"raccoonx_datasource_id"</span>: ds[<span class="s">"id"</span>],
+                    <span class="s">"raccoonx_datasource_name"</span>: ds[<span class="s">"name"</span>],
+                    <span class="s">"sync_status"</span>: <span class="s">"ok"</span>,
+                }}
+            )</pre>
+
+    <h3>7.3 API 客户端 (Archery 端, 4 个核心端点)</h3>
+    <pre class="code"><span class="c"># sql/extensions/sql_inspect/services/raccoonx_client.py</span>
+<span class="k">class</span> RaccoonXClient:
+    <span class="s">"""RaccoonX REST API 客户端 (4 个核心端点)"""</span>
+
+    <span class="k">def</span> __init__(self):
+        self.base_url = settings.RACCOONX_API_URL  <span class="c"># http://127.0.0.1:5003</span>
+        self.api_key = settings.RACCOONX_API_KEY  <span class="c"># admin API Key (RaccoonX Fernet 加密存库)</span>
+
+    <span class="k">def</span> _request(self, method, path, **kwargs):
+        headers = {{<span class="s">"X-API-Key"</span>: self.api_key, <span class="s">"Content-Type"</span>: <span class="s">"application/json"</span>}}
+        resp = requests.request(method, <span class="s">f"{{self.base_url}}{{path}}"</span>,
+                                headers=headers, timeout=<span class="n">30</span>, **kwargs)
+        resp.raise_for_status()
+        <span class="k">return</span> resp.json() <span class="k">if</span> resp.text <span class="k">else</span> {{}}
+
+    <span class="k">def</span> trigger_inspect(self, datasource_id, template, db_name, mode=<span class="s">"async"</span>):
+        <span class="s">"""创建巡检任务 (异步, 返 task_id)"""</span>
+        <span class="k">return</span> self._request(<span class="s">"POST"</span>, <span class="s">"/api/v1/inspect"</span>, json={{
+            <span class="s">"datasource_id"</span>: datasource_id,
+            <span class="s">"template"</span>: template,
+            <span class="s">"db_name"</span>: db_name,
+            <span class="s">"mode"</span>: mode,
+        }})
+
+    <span class="k">def</span> get_task(self, task_id):
+        <span class="s">"""查任务状态 + 结果"""</span>
+        <span class="k">return</span> self._request(<span class="s">"GET"</span>, <span class="s">f"/api/v1/inspect/{{task_id}}"</span>)
+
+    <span class="k">def</span> list_recent_tasks(self, limit=<span class="n">50</span>):
+        <span class="s">"""列最近 N 个任务 (看板用)"""</span>
+        <span class="k">return</span> self._request(<span class="s">"GET"</span>, <span class="s">f"/api/v1/inspects?limit={{limit}}"</span>)
+
+    <span class="k">def</span> get_share_url(self, task_id):
+        <span class="s">"""拿 Word 报告免登录分享 URL"""</span>
+        task = self.get_task(task_id)
+        <span class="k">return</span> task.<span class="n">get</span>(<span class="s">"share_url"</span>, <span class="s">""</span>)</pre>
+
+    <h3>7.4 凭据传递 (Archery 解 → RaccoonX 加)</h3>
+
+    <h4>Archery 端 (用 <code>django-mirage-field</code> 解密,跟 gh-ost 业务一致)</h4>
+    <pre class="code"><span class="c"># sql/extensions/sql_inspect/services/credentials.py</span>
+<span class="k">from</span> common.utils.aes_decryptor <span class="k">import</span> AESDecryptor  <span class="c"># Archery 上游的解加密 helper</span>
+
+<span class="k">def</span> _get_instance_creds(instance):
+    <span class="s">"""解 Archery instance 表加密密码 (跟 gh-ost 业务用法一致)"""</span>
+    <span class="k">return</span> {{
+        <span class="s">"host"</span>: instance.host,
+        <span class="s">"port"</span>: instance.port,
+        <span class="s">"user"</span>: instance.user,
+        <span class="s">"password"</span>: AESDecryptor().decrypt(instance.password),
+    }}</pre>
+
+    <h4>RaccoonX 端: 拿到明文密码后, 自己 Fernet 加密存库</h4>
+    <p>跟 RaccoonX 内部一致 (8/18 教训: 配字段用 <code>SysConfig().set(key, value)</code> 自动加密, 不要 SQL UPDATE 明文)。</p>
+
+    <div class="callout warn">
+      <span class="icon">⚠</span>
+      <p><strong>风险</strong>: 密码在 Archery 进程内存里明文存在 → 跟 gh-ost 业务一样, 接受这个风险 (跟 8/13 gh-ost 任务管理一致)。后续可考虑用 RaccoonX 的 SSH 凭据 + Vault 兜底。</p>
+    </div>
+
+    <h3>7.5 报告解析 (RaccoonX 返 JSON → Archery 存 finding)</h3>
+    <p>RaccoonX <code>/api/v1/inspect/&lt;id&gt;</code> 返 JSON (含 findings 列表),Archery 端:</p>
+
+    <pre class="code"><span class="c"># sql/extensions/sql_inspect/services/result_parser.py</span>
+<span class="k">def</span> _parse_raccoonx_result(task_data, archery_task):
+    <span class="s">"""RaccoonX 任务结果 → Archery InspectFinding 列表"""</span>
+    findings = task_data.<span class="n">get</span>(<span class="s">"findings"</span>, [])
+    <span class="k">for</span> f <span class="k">in</span> findings:
+        InspectFinding.objects.<span class="n">create</span>(
+            task=archery_task,
+            level=f[<span class="s">"severity"</span>],  <span class="c"># high/medium/low</span>
+            category=f[<span class="s">"category"</span>],  <span class="c"># 缺失索引/慢 SQL/...</span>
+            title=f[<span class="s">"title"</span>],
+            description=f[<span class="s">"description"</span>],
+            suggested_sql=f.<span class="n">get</span>(<span class="s">"suggestion"</span>, <span class="s">""</span>),
+            affected_rows=f.<span class="n">get</span>(<span class="s">"affected_rows"</span>),
+            extra=f,  <span class="c"># 原始数据存 json 字段</span>
+        )
+
+    <span class="c"># 更新 task 统计</span>
+    archery_task.health_score = task_data.<span class="n">get</span>(<span class="s">"health_score"</span>)
+    archery_task.risk_high = <span class="n">sum</span>(<span class="n">1</span> <span class="k">for</span> f <span class="k">in</span> findings <span class="k">if</span> f[<span class="s">"severity"</span>] == <span class="s">"high"</span>)
+    archery_task.risk_medium = <span class="n">sum</span>(<span class="n">1</span> <span class="k">for</span> f <span class="k">in</span> findings <span class="k">if</span> f[<span class="s">"severity"</span>] == <span class="s">"medium"</span>)
+    archery_task.risk_low = <span class="n">sum</span>(<span class="n">1</span> <span class="k">for</span> f <span class="k">in</span> findings <span class="k">if</span> f[<span class="s">"severity"</span>] == <span class="s">"low"</span>)
+    archery_task.raccoonx_share_url = task_data.<span class="n">get</span>(<span class="s">"share_url"</span>, <span class="s">""</span>)
+    archery_task.save()</pre>
+
+    <h3>7.6 异步任务执行 (避免阻塞 HTTP 请求)</h3>
+    <p>跟 gh-ost 任务管理一样, 用后台线程跑 RaccoonX 巡检 + 轮询, 不阻塞 HTTP:</p>
+
+    <pre class="code"><span class="c"># sql/extensions/sql_inspect/services/runner.py</span>
+<span class="k">import</span> threading
+<span class="k">from</span> django_q.tasks <span class="k">import</span> async_task
+
+<span class="k">def</span> start_inspect_task(archery_task_id, datasource_id, template, db_name):
+    <span class="s">"""Archery 端异步调 RaccoonX (用 django_q2, 跟 v0.4.5 rebuild 一样)"""</span>
+    <span class="c"># 1. 调 RaccoonX 创建巡检</span>
+    raccoonx = RaccoonXClient()
+    rc_result = raccoonx.trigger_inspect(datasource_id, template, db_name)
+
+    <span class="c"># 2. 更新 Archery 端 task 状态</span>
+    task = InspectTask.objects.<span class="n">get</span>(id=archery_task_id)
+    task.raccoonx_task_id = rc_result[<span class="s">"task_id"</span>]
+    task.status = <span class="s">"running"</span>
+    task.save()
+
+    <span class="c"># 3. 启动 polling (后台线程)</span>
+    t = threading.Thread(
+        target=_poll_raccoonx_task,
+        args=(archery_task_id, rc_result[<span class="s">"task_id"</span>]),
+        daemon=<span class="k">True</span>,
+    )
+    t.start()
+
+<span class="k">def</span> _poll_raccoonx_task(archery_task_id, raccoonx_task_id):
+    <span class="s">"""后台轮询 RaccoonX 任务状态 (3s 间隔)"""</span>
+    <span class="k">import</span> time
+    raccoonx = RaccoonXClient()
+    <span class="k">for</span> _ <span class="k">in</span> <span class="n">range</span>(<span class="n">300</span>):  <span class="c"># 最多 15 分钟</span>
+        time.sleep(<span class="n">3</span>)
+        result = raccoonx.get_task(raccoonx_task_id)
+        <span class="k">if</span> result[<span class="s">"status"</span>] <span class="k">in</span> (<span class="s">"success"</span>, <span class="s">"failed"</span>):
+            <span class="c"># 解析结果存 Archery 库</span>
+            task = InspectTask.objects.<span class="n">get</span>(id=archery_task_id)
+            _parse_raccoonx_result(result, task)
+            task.status = <span class="s">"success"</span> <span class="k">if</span> result[<span class="s">"status"</span>] == <span class="s">"success"</span> <span class="k">else</span> <span class="s">"failed"</span>
+            task.finished_at = timezone.now()
+            task.save()
+            <span class="k">return</span>
+    <span class="c"># 超时</span>
+    task = InspectTask.objects.<span class="n">get</span>(id=archery_task_id)
+    task.status = <span class="s">"failed"</span>
+    task.error_message = <span class="s">"RaccoonX 巡检超时 (15min)"</span>
+    task.save()</pre>
+
+    <!-- ============== 08 实施阶段 ============== -->
+    <h2 id="phase"><span class="h2-num">08</span>实施阶段 (Phase 0~2)</h2>
+
+    <div class="flow flow-4">
+      <div class="flow-step active">
+        <div class="step-num">PHASE 0</div>
+        <div class="step-name">可行性验证</div>
+        <div class="step-detail">8/20 下午<br/>半天<br/>RaccoonX 跑通</div>
+      </div>
+      <div class="flow-step active">
+        <div class="step-num">PHASE 1</div>
+        <div class="step-name">巡检框架</div>
+        <div class="step-detail">8/21~8/27<br/>1 周<br/>菜单 + 列表 + 详情 + 一键</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">PHASE 2</div>
+        <div class="step-name">巡检增强</div>
+        <div class="step-detail">8/28~9/3<br/>1 周<br/>定时 + 趋势 + 钉钉通知</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">PHASE 3</div>
+        <div class="step-name">工单闭环</div>
+        <div class="step-detail">后续<br/>2 周<br/>巡检 → Archery 工单</div>
+      </div>
+    </div>
+
+    <h3>Phase 0 — 可行性验证 (8/20 下午半天)</h3>
+    <div class="callout raccoon">
+      <span class="icon">🦝</span>
+      <p><strong>关键验证 (8/19 教训)</strong>: 拿 8/19 那条 50 万行全表扫描 SQL 走一遍。RaccoonX 报告里有没有"加索引"建议, 跟 SOAR 对比 — <strong>SOAR 100 分 OK 没建议, RaccoonX 真给出来才算数</strong>。如果 RaccoonX 也给不出来, 整个项目都不做, 改走 v0.4.1 慢 SQL 索引解析路线。</p>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>项</th><th>做什么</th><th>怎么判断</th></tr></thead>
+        <tbody>
+          <tr><td>部署</td><td>134 dev 装 RaccoonX 源码 (Python 3.10 venv + systemd, 跟 goinception 一样)</td><td>启动 5003 端口</td></tr>
+          <tr><td>数据源</td><td>配 1 个 Archery 已有的 MySQL (172.20.2.134:3306 / archery_dev 库)</td><td>连接通</td></tr>
+          <tr><td>跑一次</td><td>触发全库巡检, 关 AI 模式 (跟 8/19 一样, 纯规则)</td><td>拿到 Word 报告</td></tr>
+          <tr><td>业务验证</td><td>拿 8/19 那条 50 万行全表扫描 SQL, 看 RaccoonX 给的是不是 "建议加 idx_xxx 索引"</td><td><strong>如果给不出来, 后面都不做</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Phase 1 — 巡检框架 (8/21~8/27, 1 周)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>模块</th><th>内容</th><th>工作量</th></tr></thead>
+        <tbody>
+          <tr><td>Extension 脚手架</td><td><code>sql/extensions/sql_inspect/</code> 目录结构 (跟 ddl_gh_ost 同)</td><td>半天</td></tr>
+          <tr><td>4 张表 migration</td><td>0001~0003 (跟 ddl_gh_ost 风格一致, 5.7/8.0 兼容)</td><td>半天</td></tr>
+          <tr><td>RaccoonX 客户端</td><td><code>raccoonx_client.py</code> + 凭据解密 helper</td><td>半天</td></tr>
+          <tr><td>数据源映射脚本</td><td><code>sync_raccoonx_datasources</code> management command</td><td>半天</td></tr>
+          <tr><td>核心 views</td><td>task_list / task_detail / task_start / task_cancel / task_rerun</td><td>1 天</td></tr>
+          <tr><td>异步 runner + 轮询</td><td>后台线程调 RaccoonX + 解析结果存库</td><td>1 天</td></tr>
+          <tr><td>菜单 + 权限</td><td>base.html 条件渲染 + 4 个 perm + 实例隔离</td><td>半天</td></tr>
+          <tr><td>前端模板</td><td>3 个 HTML (列表 / 详情 / 一键弹窗)</td><td>1 天</td></tr>
+          <tr><td>AJAX 轮询</td><td>前端 JS 3s polling task_status</td><td>半天</td></tr>
+          <tr><td>5 步必做脚本补充</td><td>推 110 必做的 RaccoonX 装 + 数据源同步 + env 配</td><td>半天</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><strong>Phase 1 验证标准</strong>: 业务 RD 真能用, 看到自己库健康分 + 风险。</p>
+
+    <h3>Phase 2 — 巡检增强 (8/28~9/3, 1 周)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>模块</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>定时配置</td><td>schedule_list / new / edit / delete / run, 复用 Django Q2 schedule</td></tr>
+          <tr><td>趋势看板</td><td>dashboard 全公司健康总览 + 健康分分布 + Top 10</td></tr>
+          <tr><td>钉钉通知</td><td>高风险立即推 + 日报汇总, 复用 v0.2.0 dingtalk_oa driver</td></tr>
+          <tr><td>健康分趋势</td><td>Archery 端聚合折线图 (7 天 / 30 天)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><strong>Phase 2 验证标准</strong>: DBA 配 cron 跑通, 日报真发出去。</p>
+
+    <h3>Phase 3 — 工单闭环 (后续, 2 周)</h3>
+    <p>等 Phase 1 业务用户用起来后再评估:</p>
+    <ul>
+      <li>巡检"缺失索引"建议 → 一键建 Archery DDL 工单 (走审批 + gh-ost)</li>
+      <li>巡检"碎片多" → 一键建 v0.4.5 rebuild 工单</li>
+      <li>巡检"归档建议" → 一键建 v0.4.0 归档工单</li>
+    </ul>
+
+    <!-- ============== 09 风险与验证 ============== -->
+    <h2 id="risk"><span class="h2-num">09</span>风险与验证</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>风险</th><th>应对</th><th>跟 8/19 教训对照</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag tag-red">高</span><br/><strong>RaccoonX 跑通 ≠ 业务真用</strong></td>
+            <td>Phase 0 用 8/19 那条 SQL 验证报告内容</td>
+            <td>SQLAdvisor 装上但跑不出 add index</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-red">高</span><br/><strong>报告空洞没东西看</strong></td>
+            <td>RaccoonX MySQL 35+ 规则, Phase 0 验证</td>
+            <td>同上</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-warn">中</span><br/><strong>RaccoonX 资源占用</strong></td>
+            <td>134 dev 8GB 内存, MySQL 巡检 + Word 报告跑得动, Ollama 暂不开</td>
+            <td>8/19 sqladvisor 装到 <code>/opt/archery/bin/</code> 跟 SOAR 一样套路</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-red">高</span><br/><strong>数据出境 (云端 LLM)</strong></td>
+            <td>默认 <code>ai_mode=disabled</code></td>
+            <td>8/19 教训</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-warn">中</span><br/><strong>RaccoonX 快速迭代 API 崩</strong></td>
+            <td>锁版本 v26.8.15.0, 推 110 时同步更新</td>
+            <td>8/18 教训 (1.10.0 → 1.14.0 切换)</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-warn">中</span><br/><strong>数据源双维护</strong></td>
+            <td>一次性同步脚本 + 后续手动重跑</td>
+            <td>8/18 教训 (sqladvisor 历史 bug)</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-gray">低</span><br/><strong>跟 gh-ost 任务管理菜单冲突</strong></td>
+            <td>菜单分开 ("DBA 工具 → gh-ost 任务" / "DBA 工具 → 数据库巡检")</td>
+            <td>8/13 拍板</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-warn">中</span><br/><strong>Ollama 资源不够</strong></td>
+            <td>暂不开 AI, 跟 8/19 一样</td>
+            <td>8/19 教训</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-gray">低</span><br/><strong>DBA 误改 perm</strong></td>
+            <td>默认最小权限, 4 个 perm 4 个判定 (跟 gh-ost 任务管理一致)</td>
+            <td>8/13 教训</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-gray">低</span><br/><strong>Archery password 在内存明文</strong></td>
+            <td>跟 gh-ost 业务一样接受, 后续可用 Vault 兜底</td>
+            <td>8/12 一致</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>每个 Phase 验证标准</h3>
+    <ul>
+      <li><strong>Phase 0</strong>: 拿到 Word 报告, 内容非空, 有"缺失索引"卡片, <strong>用 8/19 那条 SQL 真给出"加索引"建议</strong></li>
+      <li><strong>Phase 1</strong>: 业务 RD 真能用, 看到自己库健康分 + 风险; DBA 看全量; 4 个 perm 跟 8/13 gh-ost 任务管理一致</li>
+      <li><strong>Phase 2</strong>: DBA 配 cron 跑通, 日报真发出去; 趋势图渲染正常</li>
+      <li><strong>Phase 3</strong>: 业务 RD 点按钮真建工单走审批 + gh-ost</li>
+    </ul>
+
+    <!-- ============== 10 推 110 ============== -->
+    <h2 id="deploy110"><span class="h2-num">10</span>跟推 110 prod 的关系</h2>
+
+    <h3>10.1 时间窗 (跟推 110 W3 9/1-7 并行不冲突)</h3>
+    <div class="flow flow-3">
+      <div class="flow-step active">
+        <div class="step-num">W2 (8/18-24)</div>
+        <div class="step-name">摸头 + Phase 0</div>
+        <div class="step-detail">W1+W2 必做摸头<br/>RaccoonX 跑通</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">W2 末 (8/21-27)</div>
+        <div class="step-name">Phase 1</div>
+        <div class="step-detail">Archery 端<br/>巡检框架</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">W3 (8/28-9/3)</div>
+        <div class="step-name">Phase 2 + 推 110</div>
+        <div class="step-detail">巡检增强<br/>推 110 prod 包含 RaccoonX</div>
+      </div>
+    </div>
+
+    <h3>10.2 5 步必做脚本补充 (推 110 必做)</h3>
+    <p>5 步必做 (commit <code>035850f</code>, 8/17) 当前 7 个步骤, 推 RaccoonX 时补 3 条:</p>
+
+    <pre class="code"><span class="c"># 步骤 8: 装 RaccoonX 源码到 110 prod</span>
+bash scripts/deploy/install_raccoonx_110prod.sh
+<span class="c"># - 拉代码 (跟 Archery 同 v0.5.0-alpha tag)</span>
+<span class="c"># - 创建 /opt/raccoonx/venv (Python 3.10)</span>
+<span class="c"># - systemd unit /etc/systemd/system/raccoonx.service</span>
+<span class="c"># - nginx 反代 /raccoonx/ → 127.0.0.1:5003</span>
+<span class="c"># - 验证 systemctl status raccoonx + curl 5003</span>
+<span class="c"># - 验证 chmod archery:archery (跟 8/19 教训, 避免 permission denied)</span>
+
+<span class="c"># 步骤 9: 同步 Archery instance → RaccoonX datasource (110 prod)</span>
+ssh 110 <span class="s">'cd /opt/archery && python manage.py sync_raccoonx_datasources'</span>
+<span class="c"># - 跑一次性同步脚本</span>
+<span class="c"># - 验证 ext_inspect_datasource_map 有 10 个实例</span>
+<span class="c"># - 验证 RaccoonX 端能连上每个实例</span>
+
+<span class="c"># 步骤 10: 配置 RACCOONX_API_URL / RACCOONX_API_KEY 环境变量</span>
+<span class="c"># 存 /etc/archery/.env (跟现有真凭据一致)</span>
+<span class="c"># RACCOONX_API_URL=http://127.0.0.1:5003</span>
+<span class="c"># RACCOONX_API_KEY=&lt;RaccoonX admin API Key, 8/18 教训: 用 SysConfig().set 加密配&gt;</span></pre>
+
+    <h3>10.3 110 prod 推前必做 (跟 W1+W2 摸头 8/18 一致)</h3>
+    <div class="callout warn">
+      <span class="icon">⚠</span>
+      <p><strong>推 110 前</strong>: 跑 W1+W2 必做摸头 7 项 (commit <code>acd6345</code>, 8/18) + 新增 sql_inspect 4 个 migration 5.7 演练 (跟 ddl_gh_ost 8/18 演练同), 5.7/8.0 兼容性确认。Phase 1 完成后, 推 110 当天一次性跑 10 步必做。</p>
+    </div>
+
+    <h3>10.4 5 步必做补 3 条后完整 10 步</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>步骤</th><th>内容</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>推代码 + migration</td><td>8/17 commit <code>035850f</code></td></tr>
+          <tr><td>2</td><td>凭据备份 (DBA 手动)</td><td>8/17</td></tr>
+          <tr><td>3</td><td>凭据上传 (DBA 手动)</td><td>8/17</td></tr>
+          <tr><td>4</td><td>env 配 (DBA 手动)</td><td>8/17</td></tr>
+          <tr><td>5</td><td>fix_approval_flow_3level 阶段 3</td><td>8/17</td></tr>
+          <tr><td>6</td><td>清空 sqladvisor 配置 (8/18 教训)</td><td>8/18 commit <code>25ce9b3</code></td></tr>
+          <tr><td>7</td><td>清空 soar 配置 (8/19 教训)</td><td>8/19</td></tr>
+          <tr style="background:var(--raccoon-soft);"><td>8</td><td><strong>装 RaccoonX 源码</strong> (本次新增)</td><td>待 Phase 0 验证后补</td></tr>
+          <tr style="background:var(--raccoon-soft);"><td>9</td><td><strong>同步数据源</strong> (本次新增)</td><td>待 Phase 0 验证后补</td></tr>
+          <tr style="background:var(--raccoon-soft);"><td>10</td><td><strong>配 RACCOONX_API_URL/API_KEY</strong> (本次新增)</td><td>待 Phase 0 验证后补</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============== Footer ============== -->
+    <div class="footer">
+      <p>🦝 RaccoonX 浣巡接入 · Archery v0.5.0 详细设计稿 · mavis · 2026-08-21</p>
+      <p style="margin-top:6px;">配套: <a href="2026-08-21_raccoonx-integration-design.md" style="color:var(--primary);">Markdown 版</a> · <a href="troubleshooting.md" style="color:var(--primary);">troubleshooting.md</a> · <a href="customization.md" style="color:var(--primary);">customization.md</a></p>
+    </div>
+  </div>
+</body>
+</html>
