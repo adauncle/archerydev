@@ -222,16 +222,18 @@
       </div>
     </div>
 
-    <h3>核心解决的问题 (8 月 4 个生产事故)</h3>
+    <h3>核心解决的问题 (4 个事故场景举例)</h3>
+
+    <p>以下 4 类事故是 SQL 变更场景里高频踩的坑, gh-ost + 字段 diff 这两个功能就是为解这些事设计的。真实案例宣讲时用 §09 业务场景案例。</p>
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>事故</th><th>现象</th><th>根因</th><th>哪个功能解</th></tr></thead>
+        <thead><tr><th>事故类型</th><th>典型现象</th><th>常见根因</th><th>哪个功能解</th></tr></thead>
         <tbody>
-          <tr><td>字符集丢失</td><td>跨表 JOIN 索引失效, 性能暴跌</td><td>ALTER 没带 <code>CHARACTER SET utf8mb4</code>, 字段字符集变 utf8</td><td>字段 diff "字符集变化"规则</td></tr>
-          <tr><td>大表锁表 30s</td><td>业务感知, 写操作堆积</td><td>直接 <code>ALTER TABLE</code> 锁表, 业务 RD 没用 gh-ost</td><td>大表 DDL 防呆 + gh-ost 兜底</td></tr>
-          <tr><td>DDL 失败留半残</td><td>ADD COLUMN 成功, 后续 DDL 失败, 字段卡在中间</td><td>DDL 失败没有回滚</td><td>DDL 智能回滚 (A+B 方案)</td></tr>
-          <tr><td>碎片率 42%</td><td>OPTIMIZE TABLE 锁表, 表越大越痛</td><td>MySQL 5.7 OPTIMIZE 走 COPY 锁表</td><td>碎片回收走 gh-ost 触发空 alter</td></tr>
+          <tr><td>字符集丢失</td><td>跨表 JOIN 索引失效, 性能暴跌</td><td>ALTER 没带 <code>CHARACTER SET utf8mb4</code>, 字段字符集意外变 utf8</td><td>字段 diff "字符集变化"规则</td></tr>
+          <tr><td>大表锁表</td><td>业务感知明显, 写操作堆积</td><td>直接 <code>ALTER TABLE</code> 锁表, 业务 RD 没用 gh-ost</td><td>大表 DDL 防呆 + gh-ost 兜底</td></tr>
+          <tr><td>DDL 失败留半残</td><td>ADD COLUMN 成功, 后续 DDL 失败, 字段卡在中间</td><td>DDL 失败没有回滚机制</td><td>DDL 智能回滚 (A+B 方案)</td></tr>
+          <tr><td>碎片率过高</td><td>OPTIMIZE TABLE 锁表, 表越大越痛</td><td>MySQL 5.7 OPTIMIZE 走 COPY 锁表</td><td>碎片回收走 gh-ost 触发空 alter</td></tr>
         </tbody>
       </table>
     </div>
