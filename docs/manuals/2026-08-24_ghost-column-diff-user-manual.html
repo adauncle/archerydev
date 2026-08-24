@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>gh-ost 无锁 DDL 变更 + 字段 diff 检测 · 操作手册 · Archery v0.4.5</title>
+  <title>gh-ost 无锁 DDL 变更 + 字段 diff 检测 · 开发人员宣讲手册</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
@@ -82,11 +82,6 @@
     .callout.info { background: var(--blue-soft); border-color: rgba(59,75,107,.18); }
     .callout.tip { background: var(--primary-soft); border-color: rgba(47,111,94,.2); }
 
-    .step { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 22px; margin: 14px 0; }
-    .step .step-num { display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; background: var(--primary); color: white; border-radius: 50%; font-weight: 600; font-size: 13px; margin-right: 10px; vertical-align: middle; }
-    .step .step-title { font-size: 15px; font-weight: 600; color: var(--ink); display: inline; vertical-align: middle; }
-    .step .step-body { margin-top: 10px; padding-left: 38px; color: var(--ink-mid); font-size: 14px; }
-
     .screenshot { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin: 14px 0; box-shadow: var(--shadow-sm); }
     .screenshot-head { background: #fafaf7; border-bottom: 1px solid var(--line); padding: 10px 16px; display: flex; align-items: center; gap: 8px; }
     .screenshot-dot { width: 10px; height: 10px; border-radius: 50%; background: #ddd; }
@@ -131,8 +126,25 @@
     pre.code .s { color: #8aaa85; }
     pre.code .c { color: #6a6a5e; font-style: italic; }
 
+    .arch { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px 28px; margin: 20px 0; }
+    .arch-title { font-size: 13px; color: var(--ink-soft); margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .arch-row { display: flex; gap: 10px; margin: 8px 0; align-items: stretch; }
+    .arch-box { background: #fafaf7; border: 2px solid var(--primary); border-radius: 8px; padding: 10px 14px; flex: 1; }
+    .arch-box.alt { border-color: var(--blue); }
+    .arch-box.alt2 { border-color: var(--warn); }
+    .arch-box h5 { margin: 0 0 4px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--primary); }
+    .arch-box.alt h5 { color: var(--blue); }
+    .arch-box.alt2 h5 { color: var(--warn); }
+    .arch-box p { font-size: 11.5px; color: var(--ink-mid); margin: 0; line-height: 1.4; }
+    .arch-arrow { text-align: center; color: var(--ink-soft); font-size: 18px; padding: 4px 0; }
+
+    .decision { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--primary); border-radius: 12px; padding: 16px 20px; margin: 14px 0; }
+    .decision-title { font-size: 14px; font-weight: 600; color: var(--primary); margin-bottom: 6px; }
+    .decision p { font-size: 13px; margin: 4px 0; }
+    .decision .alt { background: var(--line-soft); padding: 8px 12px; border-radius: 6px; margin: 8px 0; font-size: 12.5px; color: var(--ink-soft); }
+
     .qa { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin: 14px 0; overflow: hidden; }
-    .qa-q { padding: 14px 20px; font-weight: 600; color: var(--ink); cursor: pointer; display: flex; align-items: center; gap: 10px; }
+    .qa-q { padding: 14px 20px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 10px; }
     .qa-q::before { content: "Q"; background: var(--primary); color: white; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
     .qa-a { padding: 0 20px 16px 54px; color: var(--ink-mid); font-size: 14px; }
     .qa-a::before { content: "A"; color: var(--primary); font-weight: 600; margin-right: 6px; }
@@ -155,775 +167,708 @@
 <body>
   <div class="wrap">
     <div class="doc-head">
-      <div class="doc-eyebrow"><span class="mark">📖</span><span>Archery v0.4.5 · 用户操作手册</span></div>
-      <h1>gh-ost 无锁 DDL 变更 <span class="big-icon">+</span> 字段 diff 检测 <span class="v">操作手册</span></h1>
-      <div class="doc-sub">面向业务 RD + DBA 的端到端使用手册 — 从提工单、看进度、失败处理,到 DBA 兜底操作。</div>
+      <div class="doc-eyebrow"><span class="mark">🎓</span><span>Archery 二次开发 · 开发人员宣讲手册</span></div>
+      <h1>gh-ost 无锁 DDL 变更 <span class="big-icon">+</span> 字段 diff 检测 <span class="v">开发人员宣讲手册</span></h1>
+      <div class="doc-sub">给开发人员的参考手册 — 架构讲解 + 关键设计 + 踩坑教训 + 宣讲要点, 拿去给业务团队讲的时候心里有底。</div>
       <div class="doc-meta">
         <span><b>作者</b> mavis</span>
         <span><b>日期</b> 2026-08-24</span>
-        <span><b>版本</b> v0.4.5</span>
-        <span><b>适用</b> 业务 RD + DBA</span>
-        <span><b>阅读</b> 15 分钟</span>
+        <span><b>受众</b> 开发人员 (二次开发 + 业务团队宣讲)</span>
+        <span><b>阅读</b> 30 分钟</span>
       </div>
     </div>
 
     <div class="toc">
       <h3>目录</h3>
       <ol>
-        <li><a href="#overview"><span class="num">01</span>概览: 5 分钟搞懂 gh-ost + 字段 diff</a></li>
-        <li><a href="#quickstart"><span class="num">02</span>快速开始 (业务 RD)</a></li>
-        <li><a href="#rd-submit"><span class="num">03</span>业务 RD · 提工单时</a></li>
-        <li><a href="#rd-monitor"><span class="num">04</span>业务 RD · 提单后</a></li>
-        <li><a href="#dba-task"><span class="num">05</span>DBA · 任务管理列表</a></li>
-        <li><a href="#dba-fallback"><span class="num">06</span>DBA · 字段 diff 兜底</a></li>
-        <li><a href="#rebuild"><span class="num">07</span>DBA · v0.4.5 碎片回收</a></li>
-        <li><a href="#permission"><span class="num">08</span>权限配置 (DBA 在 admin)</a></li>
-        <li><a href="#faq"><span class="num">09</span>常见问题 FAQ</a></li>
-        <li><a href="#cases"><span class="num">10</span>业务场景案例 (4 个)</a></li>
+        <li><a href="#overview"><span class="num">01</span>概览: 两个功能解决两件事</a></li>
+        <li><a href="#arch"><span class="num">02</span>架构概览 (一张图看懂)</a></li>
+        <li><a href="#column-diff"><span class="num">03</span>字段 diff 检测 (核心算法)</a></li>
+        <li><a href="#gh-ost"><span class="num">04</span>gh-ost 集成 (架构 + 状态机)</a></li>
+        <li><a href="#task"><span class="num">05</span>任务管理 + 权限模型</a></li>
+        <li><a href="#rebuild"><span class="num">06</span>碎片回收 (3 决策详解)</a></li>
+        <li><a href="#rollback"><span class="num">07</span>DDL 智能回滚 (A+B 方案)</a></li>
+        <li><a href="#lessons"><span class="num">08</span>踩坑教训 (8 条)</a></li>
+        <li><a href="#cases"><span class="num">09</span>业务场景案例 (4 个)</a></li>
+        <li><a href="#pitch"><span class="num">10</span>宣讲要点 + 答疑</a></li>
       </ol>
     </div>
 
     <!-- ============== 01 概览 ============== -->
-    <h2 id="overview"><span class="h2-num">01</span>概览: 5 分钟搞懂 gh-ost + 字段 diff</h2>
+    <h2 id="overview"><span class="h2-num">01</span>概览: 两个功能解决两件事</h2>
 
-    <p class="lead">这两个功能解决两件事: <strong>大表 DDL 不锁表</strong> (gh-ost) + <strong>字段变更风险检测</strong> (字段 diff)。一起用, 大表 DDL 变更就稳了。</p>
+    <p class="lead">gh-ost 解决"大表 DDL 锁表", 字段 diff 解决"DDL 改错字段"。两个功能互不依赖, 但放在 Archery 同一个 extension (<code>ddl_gh_ost</code>), 业务用户一次提交就能同时享受两个保护。</p>
 
     <div class="grid-2">
       <div class="feature-card">
         <div class="feat-icon">🛡️</div>
         <h4>gh-ost 无锁 DDL</h4>
-        <p>大表改 DDL 不用锁表, 业务照常读写。gh-ost 工具会建影子表 + binlog 同步, 平滑切换。</p>
-        <p style="margin-top:8px;"><span class="tag tag-green">v0.3.0</span> <span class="tag tag-blue">无锁</span></p>
+        <p>大表改 DDL 不锁表, 业务照常读写。gh-ost 工具建影子表 + binlog 同步, 平滑切流。</p>
       </div>
       <div class="feature-card">
         <div class="feat-icon">🔍</div>
         <h4>字段 diff 检测</h4>
         <p>提交 DDL 时自动对比新旧字段定义, 11 条规则检测风险 (字符集/类型/长度/索引/默认值)。</p>
-        <p style="margin-top:8px;"><span class="tag tag-green">v0.3.x</span> <span class="tag tag-warn">风险</span></p>
       </div>
       <div class="feature-card">
         <div class="feat-icon">🔄</div>
-        <h4>v0.4.5 碎片回收</h4>
-        <p>DBA 兜底工具, 一键触发"空 alter" (ENGINE+ROW_FORMAT+CHARSET) 回收表碎片, 不用锁表。</p>
-        <p style="margin-top:8px;"><span class="tag tag-blue">v0.4.5</span> <span class="tag tag-gray">DBA 专属</span></p>
+        <h4>碎片回收 (gh-ost 触发空 alter)</h4>
+        <p>DBA 兜底工具, 一键触发"空 alter" (ENGINE+ROW_FORMAT+CHARSET) 回收表碎片, 走 gh-ost 不锁表。</p>
       </div>
       <div class="feature-card">
         <div class="feat-icon">📋</div>
         <h4>DDL 智能回滚</h4>
-        <p>DDL 失败自动回滚, ADD COLUMN → DROP COLUMN, MODIFY → 改回去, 不留半残状态。</p>
-        <p style="margin-top:8px;"><span class="tag tag-blue">v0.4.5</span> <span class="tag tag-green">兜底</span></p>
+        <p>DDL 失败自动回滚, ADD COLUMN → DROP, MODIFY → 改回原值, 不留半残状态。</p>
       </div>
     </div>
 
-    <h3>谁该用</h3>
+    <h3>核心解决的问题 (8 月 4 个生产事故)</h3>
+
     <div class="table-wrap">
       <table>
-        <thead><tr><th>角色</th><th>用什么</th><th>什么时候用</th></tr></thead>
+        <thead><tr><th>事故</th><th>现象</th><th>根因</th><th>哪个功能解</th></tr></thead>
         <tbody>
-          <tr><td><strong>业务 RD</strong></td><td>字段 diff 检测 + 启用 gh-ost 复选框 + 看进度</td><td>提 DDL 工单时, 一定要看字段 diff, 大表勾 gh-ost</td></tr>
-          <tr><td><strong>DBA</strong></td><td>任务管理 + 兜底启用 gh-ost + 碎片回收 + 智能回滚</td><td>业务 RD 漏勾时兜底; 定期回收碎片; 任务失败时回滚</td></tr>
-          <tr><td><strong>业务 leader</strong></td><td>看 gh-ost 任务进度 (自己业务库范围)</td><td>了解 DDL 变更影响</td></tr>
+          <tr><td>字符集丢失</td><td>跨表 JOIN 索引失效, 性能暴跌</td><td>ALTER 没带 <code>CHARACTER SET utf8mb4</code>, 字段字符集变 utf8</td><td>字段 diff "字符集变化"规则</td></tr>
+          <tr><td>大表锁表 30s</td><td>业务感知, 写操作堆积</td><td>直接 <code>ALTER TABLE</code> 锁表, 业务 RD 没用 gh-ost</td><td>大表 DDL 防呆 + gh-ost 兜底</td></tr>
+          <tr><td>DDL 失败留半残</td><td>ADD COLUMN 成功, 后续 DDL 失败, 字段卡在中间</td><td>DDL 失败没有回滚</td><td>DDL 智能回滚 (A+B 方案)</td></tr>
+          <tr><td>碎片率 42%</td><td>OPTIMIZE TABLE 锁表, 表越大越痛</td><td>MySQL 5.7 OPTIMIZE 走 COPY 锁表</td><td>碎片回收走 gh-ost 触发空 alter</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h3>前置依赖 (运维侧已就绪, 不用业务 RD 关心)</h3>
-    <ul>
-      <li>gh-ost 二进制 (1.1.10+) 装在 Archery 服务器 (<code>/opt/archery/bin/gh-ost</code>)</li>
-      <li>goinception 装好 (SQL 审核用, 跟 gh-ost 共存)</li>
-      <li>Archery 134 dev 跟 110 prod 都已部署</li>
-    </ul>
+    <!-- ============== 02 架构概览 ============== -->
+    <h2 id="arch"><span class="h2-num">02</span>架构概览 (一张图看懂)</h2>
 
-    <!-- ============== 02 快速开始 ============== -->
-    <h2 id="quickstart"><span class="h2-num">02</span>快速开始 (业务 RD)</h2>
+    <div class="arch">
+      <div class="arch-title">整体架构 · Archery extension + gh-ost 后台 + 业务库</div>
 
-    <p>5 分钟走一遍完整流程, 后面看细节。</p>
-
-    <div class="step">
-      <span class="step-num">1</span><span class="step-title">打开 SQL 提交页</span>
-      <div class="step-body">侧边栏 → <code>SQL 审核</code> → <code>提交工单</code></div>
-    </div>
-
-    <div class="step">
-      <span class="step-num">2</span><span class="step-title">选实例 + 库 + 写 DDL</span>
-      <div class="step-body">在文本框里写你的 ALTER TABLE, 不用带 IF EXISTS, Archery 帮你处理。</div>
-    </div>
-
-    <div class="step">
-      <span class="step-num">3</span><span class="step-title">看字段 diff 自动检测结果</span>
-      <div class="step-body">文本框下面会出"字段变更检测"面板, 显示变更前后对比 + 风险等级 (高/中/低)。<strong>看高风险</strong>, 字符集变化是最容易踩的坑。</div>
-    </div>
-
-    <div class="step">
-      <span class="step-num">4</span><span class="step-title">如果是大表, 勾选"启用 gh-ost"</span>
-      <div class="step-body">大表 (行数 > 10 万 或 数据 > 100MB) 提交时会弹"大表 DDL 防呆"提示, 三个按钮: 启用 gh-ost / 立即执行 (锁表) / 终止工单。<strong>强烈建议选"启用 gh-ost"</strong>。</div>
-    </div>
-
-    <div class="step">
-      <span class="step-num">5</span><span class="step-title">提交工单 + 走审批</span>
-      <div class="step-body">点"提交", 工单进入审批流 (DBA 会审)。审批通过后, 如果勾了 gh-ost, 会用 gh-ost 跑; 否则走普通 SQL 执行。</div>
-    </div>
-
-    <div class="step">
-      <span class="step-num">6</span><span class="step-title">看进度 / 失败处理</span>
-      <div class="step-body">工单详情页有"gh-ost 进度"链接, 进去看实时进度 (复制了多少行 / 卡在哪一步 / 预计完成时间)。失败时点"取消"或"重试"。</div>
-    </div>
-
-    <div class="callout tip">
-      <span class="icon">💡</span>
-      <p><strong>业务 RD 必看</strong>: 第 3 步字段 diff 检测是全自动的, 你<strong>不用主动调</strong>, 提交时自动跑。11 条规则覆盖 90% 生产事故根因 (字符集变化、类型缩短等)。</p>
-    </div>
-
-    <!-- ============== 03 业务 RD · 提工单时 ============== -->
-    <h2 id="rd-submit"><span class="h2-num">03</span>业务 RD · 提工单时</h2>
-
-    <h3>3.1 字段 diff 自动检测</h3>
-    <p>提交 ALTER TABLE 时, Archery 自动调字段 diff 端点, 显示变更前后对比:</p>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">archery.local/sqlsubmit/  ·  字段变更检测</span>
+      <div class="arch-row">
+        <div class="arch-box alt">
+          <h5>业务用户 (浏览器)</h5>
+          <p>SQL 提交页<br/>工单详情页<br/>gh-ost 进度面板</p>
+        </div>
+        <div class="arch-box">
+          <h5>Archery Django</h5>
+          <p>Django + DRF<br/>SqlWorkflow / 审批流<br/>业务 RD 工单管理</p>
+        </div>
+        <div class="arch-box">
+          <h5>ddl_gh_ost extension</h5>
+          <p>字段 diff 11 规则<br/>gh-ost runner / poller<br/>DdlGhostTask 模型</p>
+        </div>
+        <div class="arch-box alt2">
+          <h5>gh-ost 后台</h5>
+          <p>gh-ost 1.1.10 二进制<br/>影子表 + binlog 同步<br/>切流机制</p>
+        </div>
+        <div class="arch-box">
+          <h5>业务库 MySQL</h5>
+          <p>原表 + 影子表<br/>binlog ROW 格式<br/>触发器切流</p>
+        </div>
       </div>
-      <div class="screenshot-body">
-<div style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:8px;">📋 字段变更检测 <span class="badge badge-warn">3 条风险</span></div>
 
-<div class="l" style="margin:6px 0 4px;">表: oa.accesscard_black_detail</div>
-<div class="l" style="margin:4px 0 10px;">原 DDL: ALTER TABLE accesscard_black_detail MODIFY COLUMN card_no VARCHAR(64);</div>
+      <div class="arch-arrow">↓ 数据流 ↓</div>
 
-<div style="background:rgba(176,99,103,.08);border-left:3px solid var(--danger);padding:8px 12px;margin:8px 0;">
-  <span class="hl-red">🔴 高风险 (1)</span>  字符集变化: utf8mb4 → utf8mb3, 跨表 JOIN 索引可能失效 (生产事故根因!)
-</div>
-
-<div style="background:rgba(201,123,63,.08);border-left:3px solid var(--warn);padding:8px 12px;margin:8px 0;">
-  <span class="hl-yellow">🟡 中风险 (1)</span>  类型缩短: VARCHAR(100) → VARCHAR(64), 已有数据可能截断
-</div>
-
-<div style="background:rgba(47,111,94,.1);border-left:3px solid var(--good);padding:8px 12px;margin:8px 0;">
-  <span class="hl-green">🟢 低风险 (1)</span>  COMMENT 变更: '老注释' → '新注释' (无影响)
-</div>
-
-<div class="l" style="margin-top:10px;">💡 建议: 强制带 CHARSET utf8mb4 跟原表一致, 避免索引失效</div>
-<div style="margin-top:8px;">
-  <span class="badge badge-blue">📋 复制补全 SQL</span>  <span class="badge badge-gray">🛠️ 启用 gh-ost</span>
-</div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.7; color: var(--ink-mid);">
+<div>1. 业务 RD 提交 DDL → Archery 字段 diff 端点 (查 information_schema)</div>
+<div>2. 字段 diff 返回 11 规则结果 → Archery 渲染高/中/低风险</div>
+<div>3. 业务 RD 勾选"启用 gh-ost" + 提交 → SqlWorkflow 进审批流</div>
+<div>4. 审批通过 → 启用 gh-ost 的工单调 gh-ost runner, 跑后台进程</div>
+<div>5. gh-ost 调业务库建影子表 + 同步 binlog → 前端轮询 status</div>
+<div>6. 切流 → 旧表清理 → 工单标 success</div>
+<div>7. 失败 → 触发 v0.4.5 DDL 智能回滚</div>
       </div>
     </div>
 
-    <p><strong>"复制补全 SQL"</strong> 按钮很关键 — 点了它会生成"强制带原字符集 + 原排序规则"的 DDL, 避免你忘了写字符集导致生产事故:</p>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">复制后: ALTER TABLE accesscard_black_detail MODIFY COLUMN ...</span>
-      </div>
-      <div class="screenshot-body">
-<span class="hl-green">✓</span> 补全后:
-<pre style="background:#14171e;color:#8aaa85;padding:8px 12px;border-radius:6px;font-size:12px;margin:6px 0 0;">ALTER TABLE accesscard_black_detail MODIFY COLUMN card_no <span style="color:#c97b3f;">VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci</span>;</pre>
-<div class="l" style="margin-top:4px;">↑ 注意: 自动补了 CHARSET 和 COLLATE 跟原表一致, 避免跨表 JOIN 索引失效</div>
-      </div>
-    </div>
-
-    <h3>3.2 11 条字段 diff 风险规则 (速查)</h3>
+    <h3>关键模块 (Archery 端)</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>规则</th><th>风险等级</th><th>典型场景</th><th>应对</th></tr></thead>
+        <thead><tr><th>模块</th><th>职责</th><th>关键文件</th></tr></thead>
         <tbody>
-          <tr><td class="mono">基础类型不兼容</td><td><span class="tag tag-red">高</span></td><td>VARCHAR → TEXT / INT → BIGINT</td><td>数据格式/索引可能丢失, 改回</td></tr>
-          <tr><td class="mono">字符集变化</td><td><span class="tag tag-red">高</span></td><td>utf8mb4 → utf8 / 不带 CHARSET</td><td><strong>生产事故根因</strong>, 强制带原 CHARSET</td></tr>
-          <tr><td class="mono">排序规则变化</td><td><span class="tag tag-red">高</span></td><td>utf8mb4_general_ci → utf8mb4_unicode_ci</td><td>排序/大小写敏感行为会变, DBA 确认</td></tr>
-          <tr><td class="mono">类型缩短</td><td><span class="tag tag-warn">中</span></td><td>VARCHAR(100) → VARCHAR(64)</td><td>已有数据可能截断, 查 max 值再改</td></tr>
-          <tr><td class="mono">类型变长</td><td><span class="tag tag-green">低</span></td><td>VARCHAR(64) → VARCHAR(128)</td><td>兼容, 可执行</td></tr>
-          <tr><td class="mono">整数类型兼容升级</td><td><span class="tag tag-green">低</span></td><td>INT → BIGINT / SMALLINT → INT</td><td>安全升级, 可执行</td></tr>
-          <tr><td class="mono">nullable → NOT NULL</td><td><span class="tag tag-warn">中</span></td><td>字段变必填</td><td>需要先填默认值, 否则报错</td></tr>
-          <tr><td class="mono">NOT NULL → nullable</td><td><span class="tag tag-gray">低</span></td><td>字段变可选</td><td>兼容, 可执行</td></tr>
-          <tr><td class="mono">default 变化</td><td><span class="tag tag-warn">中</span></td><td>DEFAULT 0 → DEFAULT NULL</td><td>已有行不受影响, 新行行为变</td></tr>
-          <tr><td class="mono">PRIMARY KEY 变化</td><td><span class="tag tag-red">高</span></td><td>主键变更</td><td>影响查询计划, DBA 必须 review</td></tr>
-          <tr><td class="mono">COMMENT 变化</td><td><span class="tag tag-gray">低</span></td><td>注释文字变更</td><td>无影响, 可执行</td></tr>
+          <tr><td><code>runner.py</code></td><td>启 gh-ost 进程 (Popen)</td><td>build_ghost_command + start_ghost_process</td></tr>
+          <tr><td><code>poller.py</code></td><td>轮询 gh-ost stdout, 切流判断</td><td>3s polling + 状态机更新</td></tr>
+          <tr><td><code>precheck.py</code></td><td>预检 (实例连接 / binlog 格式 / row count)</td><td>预失败直接拒绝</td></tr>
+          <tr><td><code>parser.py</code></td><td>解析 gh-ost stdout</td><td>正则匹配关键事件 (复制进度 / 切流)</td></tr>
+          <tr><td><code>column_diff.py</code></td><td>字段 diff 检测 (11 规则)</td><td>信息架构查询 + ALTER 解析 + 风险评估</td></tr>
+          <tr><td><code>rebuild.py</code></td><td>碎片回收 (触发空 alter)</td><td>ENGINE+ROW_FORMAT+CHARSET 3 层防护</td></tr>
+          <tr><td><code>queue.py</code></td><td>任务队列 (DBA 手动 vs 业务 RD 提单)</td><td>task_type 区分 ghost / rebuild</td></tr>
+          <tr><td><code>notify.py</code></td><td>钉钉通知 (复用 v0.2.0 dingtalk_oa)</td><td>失败 / 兜底 / 切流超时 推送</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h3>3.3 大表 DDL 防呆</h3>
-    <p>提交时如果表行数 > 10 万 或 数据 > 100MB (阈值可在 settings 配), 弹出"大表 DDL 防呆"对话框:</p>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">⚠️ 大表 DDL 防呆弹窗</span>
-      </div>
-      <div class="screenshot-body">
-<div style="background:rgba(201,123,63,.1);padding:14px;border-radius:8px;border:1px solid rgba(201,123,63,.3);">
-  <div style="font-size:15px;font-weight:600;color:var(--warn);">⚠️ 检测到大表 DDL</div>
-  <div class="l" style="margin:6px 0 12px;">表 accesscard_black_detail: 1,256,890 行 / 856 MB (阈值 10万行 / 100MB)</div>
-  <div class="l" style="margin-bottom:10px;">直接执行会锁表 ~30 秒, 业务会感知。请选择:</div>
-  <div style="display:flex;gap:10px;">
-    <span class="badge badge-green" style="padding:8px 14px;font-size:12px;">🛡️ 启用 gh-ost (DBA 兜底) · 推荐</span>
-    <span class="badge badge-warn" style="padding:8px 14px;font-size:12px;">⚡ 立即执行 (双层 confirm 锁表)</span>
-    <span class="badge badge-gray" style="padding:8px 14px;font-size:12px;">✖ 终止工单</span>
-  </div>
-  <div class="l" style="margin-top:10px;font-size:12px;">DBA 兜底说明: 业务 RD 漏勾 gh-ost 时, DBA 在详情页可一键启用。</div>
-</div>
+    <h3>数据模型 (1 张核心表)</h3>
+    <div class="arch">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.6;">
+<div><span style="color:var(--primary);font-weight:600;">DdlGhostTask</span> (跟 SqlWorkflow 1:1 或 1:0)</div>
+<div>├ <code>workflow</code> (FK to SqlWorkflow) — ghost 任务场景</div>
+<div>├ <code>task_type</code> — "ghost" (业务 RD 提) / "rebuild" (DBA 手动)</div>
+<div>├ <code>status</code> — 8 状态机 (pending → precheck_failed / queued / running → cut_over → success / failed / cancelled)</div>
+<div>├ <code>target_table</code>, <code>gh_ost_command</code> — gh-ost 启动参数</div>
+<div>├ <code>rows_copied</code>, <code>rows_total</code> — 复制进度</div>
+<div>├ <code>rebuilt_charset</code>, <code>rebuilt_row_format</code>, <code>rebuilt_at</code> — rebuild 任务专用</div>
+<div>└ <code>error_message</code>, <code>created_at</code>, <code>finished_at</code></div>
       </div>
     </div>
 
-    <div class="callout good">
-      <span class="icon">✓</span>
-      <p><strong>业务 RD 三种选择</strong>:
-      ① <strong>启用 gh-ost</strong> (推荐) — 勾上后审批通过会走 gh-ost, 不锁表
-      ② <strong>立即执行</strong> — 紧急情况下, 双层 confirm 后直接锁表执行 (DBA 会收到钉钉)
-      ③ <strong>终止工单</strong> — 不该改, 取消</p>
-    </div>
+    <!-- ============== 03 字段 diff ============== -->
+    <h2 id="column-diff"><span class="h2-num">03</span>字段 diff 检测 (核心算法)</h2>
 
-    <!-- ============== 04 业务 RD · 提单后 ============== -->
-    <h2 id="rd-monitor"><span class="h2-num">04</span>业务 RD · 提单后</h2>
-
-    <h3>4.1 SQL 详情页看 gh-ost 状态</h3>
-    <p>工单详情页 (如 <code>/sqlworkflow/detail/12345/</code>) 多了"gh-ost 状态"区块:</p>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">archery.local/sqlworkflow/detail/12345/</span>
-      </div>
-      <div class="screenshot-body">
-<div style="font-size:14px;font-weight:600;color:var(--ink);">🛡️ gh-ost 状态</div>
-
-<div class="row" style="margin-top:8px;">
-  <span class="l">启用 gh-ost:</span> <span class="badge badge-green">是</span>
-</div>
-<div class="row">
-  <span class="l">gh-ost 状态:</span> <span class="hl-blue">🔄 复制中 (Copying)</span>
-</div>
-<div class="row">
-  <span class="l">进度:</span> <span>2,450,000 / 1,256,890 行 (195%)</span>  <span class="l">·</span>  <span>耗时 4m 12s</span>
-</div>
-<div class="row">
-  <span class="l">表:</span> <span>accesscard_black_detail</span>  <span class="l">·</span>  <span class="l">影子表:</span>  <span>_accesscard_black_detail_gho</span>
-</div>
-
-<div style="margin-top:10px;">
-  <span class="badge badge-blue">📊 看详细进度</span>  <span class="badge badge-gray">✖ 取消任务</span>  <span class="badge badge-gray">🔄 重试</span>
-</div>
-
-<div style="background:rgba(59,75,107,.06);padding:10px 14px;border-radius:6px;margin-top:10px;border:1px solid rgba(59,75,107,.18);font-size:12px;">
-  💡 gh-ost 复制是"双写"阶段, 已写业务表的数据会同步写到影子表, 完成后切流。
-</div>
+    <h3>3.1 三个核心步骤</h3>
+    <div class="arch">
+      <div class="arch-row">
+        <div class="arch-box">
+          <h5>① 查当前列定义</h5>
+          <p>information_schema.columns<br/>拿到 type / charset / collation / nullable / default / comment / key</p>
+        </div>
+        <div class="arch-box">
+          <h5>② 解析 ALTER 子句</h5>
+          <p>正则匹配 MODIFY / CHANGE / ADD / DROP<br/>解析新列定义结构化</p>
+        </div>
+        <div class="arch-box">
+          <h5>③ 11 规则风险评估</h5>
+          <p>逐字段对比 (old, new)<br/>返 (risk_level, reason)</p>
+        </div>
       </div>
     </div>
 
-    <h3>4.2 进度面板 (详细)</h3>
-    <p>点"看详细进度"或访问 <code>/gh_ost/progress/&lt;workflow_id&gt;/</code>, 看 gh-ost 实时输出:</p>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">archery.local/gh_ost/progress/12345/</span>
-      </div>
-      <div class="screenshot-body">
-<div style="font-size:14px;font-weight:600;color:var(--ink);">🛡️ gh-ost 进度面板</div>
-<div class="l" style="margin:4px 0 14px;">工单 #12345 · 业务库 accesscard_black_detail · 8/24 09:30 开始</div>
-
-<div class="row"><span>阶段</span><span>状态</span><span>耗时</span></div>
-<div class="row"><span>1. 连接验证</span><span class="badge badge-green">✅ 完成</span><span>0.2s</span></div>
-<div class="row"><span>2. 预检 (row count / binlog)</span><span class="badge badge-green">✅ 完成</span><span>1.5s</span></div>
-<div class="row"><span>3. 建影子表</span><span class="badge badge-green">✅ 完成</span><span>3.2s</span></div>
-<div class="row" style="background:rgba(59,75,107,.06);"><span>4. 复制行 (Copying)</span><span class="badge badge-blue">🔄 进行中</span><span>4m 12s</span></div>
-<div class="row"><span>5. 增量 binlog 应用</span><span class="l">⏳ 等待</span><span>-</span></div>
-<div class="row"><span>6. 切流 (Cut-over)</span><span class="l">⏳ 等待</span><span>-</span></div>
-<div class="row"><span>7. 旧表清理</span><span class="l">⏳ 等待</span><span>-</span></div>
-
-<div style="margin-top:14px;font-size:13px;font-weight:600;color:var(--ink);">📊 实时输出 (gh-ost stdout, 节选)</div>
-<pre style="background:#14171e;color:#e9e3d6;padding:8px 12px;border-radius:6px;font-size:11.5px;margin:6px 0;line-height:1.5;">2026-08-24 09:31:02 INFO Starting gh-ost for table oa.accesscard_black_detail
-2026-08-24 09:31:05 INFO Connected to MySQL, binlog format ROW
-2026-08-24 09:31:08 INFO Row count: 1,256,890
-2026-08-24 09:31:12 INFO Copying rows in chunks of 1000
-2026-08-24 09:35:24 INFO Copied 2,450,000 / 1,256,890 rows (195% due to binlog rows)
-2026-08-24 09:35:25 INFO Throughput: 9,800 rows/sec, ETA 30s</pre>
-      </div>
-    </div>
-
-    <h3>4.3 失败时怎么办</h3>
-    <div class="callout warn">
-      <span class="icon">⚠</span>
-      <p><strong>看到红色失败提示</strong>, 先看 <code>error_message</code> 字段 (在进度面板底部), 常见失败原因和应对:</p>
-    </div>
+    <h3>3.2 11 条风险规则详解</h3>
+    <p>每条规则是独立函数, 返回 (risk_level, reason) 二元组。3 个等级: high / mid / low / none (无变化)。</p>
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>失败现象</th><th>可能原因</th><th>怎么应对</th></tr></thead>
+        <thead><tr><th>规则函数</th><th>触发条件</th><th>风险等级</th><th>典型案例</th></tr></thead>
         <tbody>
-          <tr><td>连接 MySQL 失败</td><td>实例凭据失效 / 网络不通</td><td>联系 DBA 检查实例配置</td></tr>
-          <tr><td>row count 0 / too small</td><td>表是空的, gh-ost 不需要</td><td>取消, 改走普通 SQL 执行</td></tr>
-          <tr><td>binlog 格式不是 ROW</td><td>MySQL binlog_format != ROW</td><td>联系 DBA 改 binlog_format (5.7+ 默认 ROW)</td></tr>
-          <tr><td>切流超时 (Cut-over timeout)</td><td>长事务 / DML 阻塞</td><td>重试, 选业务低峰期执行</td></tr>
-          <tr><td>GoInception panic: lost connection</td><td>大表 + MODIFY + bigint→varchar (8/13 教训)</td><td>走字段 diff 端点旁路, 不依赖 goinception</td></tr>
+          <tr><td class="mono">_assess_type_risk</td><td>基础类型不兼容 / 长度缩短</td><td>高 / 中 / 低</td><td>VARCHAR(100) → VARCHAR(64) (中) / INT → BIGINT (低)</td></tr>
+          <tr><td class="mono">_assess_charset_risk</td><td>字符集变化</td><td><span class="tag tag-red">高</span></td><td>utf8mb4 → utf8 (生产事故根因!)</td></tr>
+          <tr><td class="mono">_assess_collation_risk</td><td>排序规则变化</td><td><span class="tag tag-red">高</span></td><td>utf8mb4_general_ci → utf8mb4_unicode_ci</td></tr>
+          <tr><td class="mono">_assess_nullable_risk</td><td>nullable ↔ NOT NULL</td><td>中 / 低</td><td>NULL → NOT NULL (中, 需要先填默认值)</td></tr>
+          <tr><td class="mono">_assess_default_risk</td><td>默认值变化</td><td><span class="tag tag-warn">中</span></td><td>DEFAULT 0 → DEFAULT NULL (新行行为变)</td></tr>
+          <tr><td class="mono">_assess_column_key_risk</td><td>PRIMARY KEY 变化</td><td><span class="tag tag-red">高</span></td><td>PRI → 空 (主键丢失, 影响查询计划)</td></tr>
+          <tr><td class="mono">_assess_extra_risk</td><td>auto_increment / on_update 等</td><td>中</td><td>丢失 auto_increment (新增需显式给值)</td></tr>
+          <tr><td class="mono">comment 变化</td><td>COMMENT 'old' → 'new'</td><td><span class="tag tag-gray">低</span></td><td>无影响</td></tr>
         </tbody>
       </table>
     </div>
 
-    <p><strong>操作</strong>:
-    - 详情页点"取消任务" (clean gh-ost 影子表, 不污染原表)
-    - 修复后点"重试" (复用同一工单, 不用重新走审批)
-    - 实在不行, 详情页找 DBA 兜底 (切回"立即执行"模式, 锁表跑)</p>
+    <h3>3.3 字符集丢失的根因 + 防护</h3>
 
-    <h3>4.4 成功后: DDL 智能回滚 (v0.4.5)</h3>
-    <p>DDL 失败时, Archery 自动尝试回滚 (不用你手动):</p>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">archery.local/sqlworkflow/detail/12345/  ·  DDL 智能回滚</span>
-      </div>
-      <div class="screenshot-body">
-<div style="background:rgba(201,123,63,.1);padding:12px;border-radius:8px;border:1px solid rgba(201,123,63,.3);">
-  <div style="font-size:14px;font-weight:600;color:var(--warn);">🔄 DDL 智能回滚中...</div>
-  <div class="l" style="margin:6px 0 4px;">原 DDL: <code>ALTER TABLE t MODIFY COLUMN col VARCHAR(100)</code></div>
-  <div class="l" style="margin:4px 0 4px;">失败原因: gh-ost 切流超时 (Cut-over timeout)</div>
-  <div class="l" style="margin:8px 0 4px;font-weight:600;">自动回滚 SQL (v0.4.5):</div>
-  <pre style="background:#14171e;color:#8aaa85;padding:8px;border-radius:6px;font-size:11.5px;margin:0;">ALTER TABLE t MODIFY COLUMN col <span style="color:#c97b3f;">VARCHAR(50)</span>;</pre>
-  <div class="l" style="margin:8px 0 0;font-size:12px;">↑ 自动逆向, 把 col 改回原值 (从原始 schema 快照读)</div>
-</div>
-      </div>
+    <div class="callout danger">
+      <span class="icon">🚨</span>
+      <p><strong>8/13 生产事故</strong>: 业务 RD 写 <code>ALTER TABLE t MODIFY col VARCHAR(64)</code>, 以为字符集不变, 实际 Archery 解析时新字段的 <code>CHARACTER_SET_NAME</code> 字段为空 (DDL 没带), 跟原表的 utf8mb4 比对判为"字符集变化", 实际执行时 MySQL 8.0 把字段字符集设为 utf8mb3 (默认), 跟其它 utf8mb4 字段 JOIN 时索引失效。</p>
     </div>
 
-    <div class="callout info">
-      <span class="icon">ℹ</span>
-      <p>支持的智能回滚 (5 种 DDL): ADD COLUMN → DROP, MODIFY → 改回原值, CHANGE → 改回原名, DROP → ADD 回 (从快照), TRUNCATE → 提示备份恢复. 其他不常见 DDL 返 warnings 不自动回滚, 走人工。</p>
-    </div>
+    <p><strong>防护机制</strong>:</p>
+    <ol>
+      <li>字段 diff 检测"字符集变化" 标红高风险</li>
+      <li>"📋 复制补全 SQL" 按钮生成"强制带原 CHARSET + COLLATE" 的 DDL</li>
+      <li>前端 modal 强制 DBA 看到字符集风险, 不允许"忽略"</li>
+    </ol>
 
-    <!-- ============== 05 DBA · 任务管理列表 ============== -->
-    <h2 id="dba-task"><span class="h2-num">05</span>DBA · 任务管理列表</h2>
-
-    <h3>5.1 访问入口</h3>
-    <p>侧边栏 → <code>DBA 工具</code> → <code>gh-ost 任务</code> (跟"数据库巡检"/"DDL 同步管理"并列)</p>
-
-    <p>直接访问: <code>/gh_ost/admin_list/</code></p>
-
-    <div class="callout tip">
-      <span class="icon">💡</span>
-      <p><strong>权限要求</strong>: 需 <code>ddl_gh_ost.view_ddlghosttask</code> perm (DBA 在 admin 后台勾给"DBA"组)。没 perm 看不到菜单 + 直接访问 URL 403。</p>
-    </div>
-
-    <h3>5.2 任务列表页 (DBA 视角)</h3>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">archery.local/gh_ost/admin_list/  ·  任务管理</span>
-      </div>
-      <div class="screenshot-body">
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-  <div style="font-size:18px;font-weight:600;color:var(--ink);">🛡️ gh-ost 任务管理</div>
-  <div class="badge badge-blue" style="padding:6px 12px;">🔄 碎片回收 →</div>
-</div>
-
-<div class="row" style="background:rgba(47,111,94,.1);">
-  <span><b>📊 状态统计</b></span>
-  <span>总: <b>128</b></span>
-  <span>活跃: <b style="color:var(--blue);">3</b></span>
-  <span>成功: <b style="color:var(--good);">112</b></span>
-  <span>失败: <b style="color:var(--danger);">13</b></span>
-</div>
-
-<div class="l" style="margin:10px 0 4px;">过滤: [任务类型▼] [状态▼] [关键字搜索]</div>
-<div class="row"><span class="l">#ID</span><span class="l">任务类型</span><span class="l">库.表</span><span class="l">提交人</span><span class="l">状态</span><span class="l">耗时</span><span class="l">操作</span></div>
-<div class="row"><span>#89</span><span class="badge badge-blue">ghost</span><span>accesscard_black_detail</span><span>张三</span><span class="badge badge-blue">🔄 复制中</span><span>4m 12s</span><span>📊详情 ✖取消</span></div>
-<div class="row"><span>#88</span><span class="badge badge-blue">ghost</span><span>log_record</span><span>李四</span><span class="badge badge-green">✅ 已完成</span><span>3m 30s</span><span>📊详情</span></div>
-<div class="row"><span>#87</span><span class="badge badge-blue">ghost</span><span>order_detail</span><span>王五</span><span class="badge badge-red">❌ 失败</span><span>2m 0s</span><span>📊详情 🔄重试</span></div>
-<div class="row"><span>#86</span><span class="badge badge-gray">rebuild</span><span>accesscard_black_detail</span><span class="l">DBA 手动</span><span class="badge badge-green">✅ 已完成</span><span>8m 0s</span><span>📊详情</span></div>
-<div class="row"><span>#85</span><span class="badge badge-gray">rebuild</span><span>accesscard_log</span><span class="l">DBA 手动</span><span class="badge badge-green">✅ 已完成</span><span>5m 30s</span><span>📊详情</span></div>
-<div class="l" style="margin-top:4px;">... 共 128 条, 显示前 5 条</div>
-      </div>
-    </div>
-
-    <h3>5.3 角色视角 (重要!)</h3>
+    <h3>3.4 边界场景 (开发要知道)</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>用户角色</th><th>看到什么</th><th>能操作什么</th></tr></thead>
+        <thead><tr><th>场景</th><th>处理</th></tr></thead>
         <tbody>
-          <tr>
-            <td><strong>DBA / DBA组长</strong> / superuser</td>
-            <td>看<strong>全量</strong> 128 个任务 (含业务 RD 提的 + DBA 手动 rebuild)</td>
-            <td>取消 / 重试 / 回滚 (需 <code>change_ddlghosttask</code> perm)</td>
-          </tr>
-          <tr>
-            <td><strong>业务 RD 组长 / 高级 RD</strong> (有 view perm 但不在 DBA 组)</td>
-            <td>只看<strong>自己提的</strong>任务 (按 <code>workflow.engineer</code> 过滤)</td>
-            <td>看详情, 不能取消 (需 change perm, 默认没勾)</td>
-          </tr>
-          <tr>
-            <td><strong>业务 RD 普通</strong></td>
-            <td>没 view perm, 菜单不显示</td><td>无</td>
-          </tr>
+          <tr><td>多 ALTER 子句 (逗号分隔)</td><td>正则拆 4 种操作, 逐个评估</td></tr>
+          <tr><td>CHARSET 在表级不在字段级</td><td>用 "(table default)" 标记, 仍标高风险</td></tr>
+          <tr><td>复合类型如 ENUM / SET</td><td>简化按 VARCHAR 评估, 可能误报</td></tr>
+          <tr><td>函数 DEFAULT (CURRENT_TIMESTAMP)</td><td>识别为函数式, 单独处理</td></tr>
+          <tr><td>信息架构查不到 (权限不足)</td><td>返空 dict, 前端"无法检测"提示</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h3>5.4 操作: 取消 / 重试 / 回滚</h3>
-    <p>任务列表点对应按钮, 或访问端点:</p>
+    <!-- ============== 04 gh-ost 集成 ============== -->
+    <h2 id="gh-ost"><span class="h2-num">04</span>gh-ost 集成 (架构 + 状态机)</h2>
 
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>操作</th><th>端点</th><th>perm 要求</th><th>效果</th></tr></thead>
-        <tbody>
-          <tr><td>取消</td><td>POST <code>/gh_ost/cancel/&lt;id&gt;/</code></td><td><code>change_ddlghosttask</code></td><td>停 gh-ost 进程, 删影子表, 工单状态 cancelled</td></tr>
-          <tr><td>重试</td><td>POST <code>/gh_ost/retry/&lt;id&gt;/</code></td><td><code>change_ddlghosttask</code></td><td>复用原工单重新跑 gh-ost, 不重走审批</td></tr>
-          <tr><td>回滚</td><td>POST <code>/gh_ost/rollback/&lt;id&gt;/</code></td><td><code>change_ddlghosttask</code></td><td>调 v0.4.5 智能回滚, 把已变更的字段改回原值</td></tr>
-        </tbody>
-      </table>
+    <h3>4.1 gh-ost 后台进程模型</h3>
+
+    <div class="arch">
+      <div class="arch-title">gh-ost 进程生命周期</div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.7;">
+<div style="color: var(--primary);">① 连接验证 (0.2s) → ② 预检 row count + binlog 格式 (1.5s) → ③ 建影子表 (3s)</div>
+<div style="color: var(--primary);">　　　　　　　　　　　　　　　　　　　　　　　　　　　　　↓</div>
+<div style="color: var(--warn);">④ 复制行 Copying (几十分钟, 取决于行数) — 双写阶段</div>
+<div style="color: var(--warn);">　　　　　　　　　　　　　　　　　　　　　　　　　　　　　↓</div>
+<div>⑤ 增量 binlog 应用 (Cut-over 准备)</div>
+<div>　　　　　　↓</div>
+<div style="color: var(--danger);">⑥ 切流 Cut-over (几秒到几分钟, 短暂阻塞写) — 业务感知最明显的阶段</div>
+<div>　　　　　　↓</div>
+<div>⑦ 旧表清理 (后台, 业务零感知)</div>
+      </div>
     </div>
+
+    <h3>4.2 8 状态机</h3>
+
+    <div class="screenshot">
+      <div class="screenshot-head">
+        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
+        <span class="screenshot-url">DdlGhostTask.status 字段</span>
+      </div>
+      <div class="screenshot-body">
+<div class="l">8 个状态值 + 转移条件:</div>
+
+<div class="row"><span><b>pending</b></span><span class="l">DBA 手动点"开始"前, 或 gh-ost 任务被建但未启动</span></div>
+<div class="row"><span><b>precheck_failed</b></span><span class="l">预检不通过 (binlog 格式不对 / 实例连不上) — 终态</span></div>
+<div class="row"><span><b>queued</b></span><span class="l">gh-ost 进程已启动, 等系统调度</span></div>
+<div class="row"><span><b>running</b></span><span class="l">gh-ost 在跑 (包含 connecting / copying / cut_over 子阶段)</span></div>
+<div class="row"><span><b>cut_over</b></span><span class="l">切流阶段 (最关键, 可能阻塞写几秒到几分钟)</span></div>
+<div class="row"><span><b>success</b></span><span class="l">成功 — 终态</span></div>
+<div class="row"><span><b>failed</b></span><span class="l">失败 (切流超时 / binlog 丢失 / 业务 RD 手动取消) — 终态</span></div>
+<div class="row"><span><b>cancelled</b></span><span class="l">业务 RD / DBA 主动取消 — 终态</span></div>
+      </div>
+    </div>
+
+    <h3>4.3 runner.py 关键设计</h3>
+
+    <div class="screenshot">
+      <div class="screenshot-head">
+        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
+        <span class="screenshot-url">gh-ost 命令行构建</span>
+      </div>
+      <div class="screenshot-body">
+<div class="l">核心参数 (从实例 / 用户 / DDL 构建):</div>
+<pre style="background:#14171e;color:#e9e3d6;padding:10px 14px;border-radius:6px;font-size:12px;margin:8px 0;line-height:1.5;">gh-ost \
+  --host=<span style="color:#c97b3f;">{instance.host}</span> --port=<span style="color:#c97b3f;">{instance.port}</span> --user=<span style="color:#c97b3f;">{instance.user}</span> --password=<span style="color:#c97b3f;">xxx</span> \
+  --database=<span style="color:#c97b3f;">{db_name}</span> --table=<span style="color:#c97b3f;">{table_name}</span> \
+  --alter=<span style="color:#c97b3f;">"{ddl_text}"</span> \
+  --allow-on-master \                    <span class="l"># 允许在 master 跑 (单库场景)</span>
+  --concurrent-rowcount \                <span class="l"># 跟业务并发复制</span>
+  --default-retries=120 \                <span class="l"># 失败重试</span>
+  --chunk-size=1000 \                    <span class="l"># 每次复制 1000 行</span>
+  --max-lag-millis=1500 \                <span class="l"># 主从延迟 1.5s 阈值</span>
+  --cut-over=default \                   <span class="l"># 切流模式 (atomic / default / two-step)</span>
+  --exact-rowcount \                     <span class="l"># 精确行数 (避免估算误差)</span>
+  --concurrent-connection \              <span class="l"># 复用一个连接, 减少连接数</span>
+  --verbose \                            <span class="l"># 输出到 stdout 给 poller 解析</span>
+  --execute</pre>
+      </div>
+    </div>
+
+    <h3>4.4 poller.py 关键设计 (跟 8/13 踩坑)</h3>
 
     <div class="callout warn">
       <span class="icon">⚠</span>
-      <p><strong>8/13 教训 (跟 gh-ost 任务管理 perm 守卫相关)</strong>:
-      这些操作端点<strong>不用 raise PermissionDenied</strong> (Django middleware 会返 403 HTML 错误页, AJAX 拿到整页 HTML 源码 alert 弹源码)。
-      改 helper 返 <code>JsonResponse({"ok": False, "error": "..."}, status=403)</code>。
-      业务 RD 没 perm 时看到 JSON 错误码, 不是 HTML 弹窗。</p>
+      <p><strong>踩坑 (8/13)</strong>: 业务 RD 反馈 "gh-ost 进程卡死, 进度不更新"。<strong>根因</strong>: poller 守护线程的 <code>subprocess.Popen.stdout.readline()</code> 在 gh-ost 切流阶段会阻塞 (没有新输出), 看门狗超时没生效。<br/>
+<strong>修法</strong>: 用 <code>selectors.DefaultSelector</code> + 非阻塞读取 + 外层 30s 超时 + daemon 线程有 try/except 外层兜底。</p>
     </div>
 
-    <!-- ============== 06 DBA · 字段 diff 兜底 ============== -->
-    <h2 id="dba-fallback"><span class="h2-num">06</span>DBA · 字段 diff 兜底</h2>
-
-    <h3>6.1 业务 RD 漏勾 gh-ost 怎么办</h3>
-    <p>业务 RD 提了大表 DDL, 但忘了勾"启用 gh-ost", 走普通 SQL 执行会锁表。DBA 在详情页可以兜底启用:</p>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">archery.local/sqlworkflow/detail/12345/  ·  大表 alert (DBA 兜底)</span>
-      </div>
-      <div class="screenshot-body">
-<div style="background:rgba(201,123,63,.1);padding:14px;border-radius:8px;border:1px solid rgba(201,123,63,.3);margin-bottom:10px;">
-  <div style="font-size:14px;font-weight:600;color:var(--warn);">⚠️ 大表 DDL · 未启用 gh-ost</div>
-  <div class="l" style="margin:6px 0 4px;">表 accesscard_black_detail: 1,256,890 行 / 856 MB</div>
-  <div class="l" style="margin-bottom:10px;">业务 RD 提交时<strong>漏勾 gh-ost</strong>, 当前配置会锁表 30s。DBA 可兜底:</div>
-
-  <div style="display:flex;gap:10px;">
-    <span class="badge badge-green" style="padding:8px 14px;font-size:12px;">🛠️ DBA 兜底启用 gh-ost</span>
-    <span class="badge badge-gray" style="padding:8px 14px;font-size:12px;">⚡ 强制立即执行 (双层 confirm)</span>
-  </div>
-  <div class="l" style="margin-top:10px;font-size:12px;">↑ DBA 兜底启用后, 审批通过会改走 gh-ost 跑, 不锁表。</div>
-</div>
-      </div>
-    </div>
-
-    <h3>6.2 三路径选择 (DBA 视角)</h3>
-
+    <h3>4.5 切流机制 (3 种模式)</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>场景</th><th>DBA 操作</th><th>效果</th></tr></thead>
+        <thead><tr><th>模式</th><th>行为</th><th>适用</th></tr></thead>
         <tbody>
-          <tr>
-            <td>业务 RD 漏勾, 表大需要 gh-ost</td>
-            <td>点 "🛠️ DBA 兜底启用 gh-ost"</td>
-            <td>工单 enable_gh_ost 字段置 true, 审批通过走 gh-ost</td>
-          </tr>
-          <tr>
-            <td>业务 RD 否决 gh-ost (觉得不必要), 但实际该用</td>
-            <td>先点 "✖ 取消 task + ⚡ 立即执行"</td>
-            <td>取消原 task, 业务 RD 重新提交"立即执行"工单</td>
-          </tr>
-          <tr>
-            <td>真紧急, 表小不需要 gh-ost</td>
-            <td>点 "⚡ 强制立即执行"</td>
-            <td>双层 confirm 后, 普通 SQL 执行 (锁表)</td>
-          </tr>
+          <tr><td><code>--cut-over=default</code> (推荐)</td><td>gh-ost 自适应, atomic 优先, 失败 fallback two-step</td><td>大多数场景</td></tr>
+          <tr><td><code>--cut-over=atomic</code></td><td>原子切流, 短暂锁表 (RENAME 原子操作)</td><td>业务可以接受瞬时阻塞</td></tr>
+          <tr><td><code>--cut-over=two-step</code></td><td>两步切流, 阻塞写操作更短</td><td>对延迟敏感场景</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h3>6.3 字段 diff 详情页大表 alert</h3>
-    <p>所有大表 DDL 工单详情页 (不论是否勾 gh-ost) 都有 alert, DBA 主动巡检时一眼看到风险:</p>
+    <h3>4.6 zabbix socket 双层防御</h3>
+    <p>防 zombie socket (gh-ost 进程死了但 socket 还在):</p>
+    <ol>
+      <li>Archery 端 task 状态每 3s 轮询, 超时切 failed</li>
+      <li>gh-ost 进程启时 <code>subprocess.Popen</code> 设置 <code>start_new_session=True</code>, 进程独立组</li>
+      <li>业务 RD / DBA 点"取消"时, 先 <code>terminate()</code> 再 <code>kill()</code> 兜底</li>
+      <li>外层 try/except 捕获 gh-ost crash, 写 error_message 切 failed</li>
+    </ol>
 
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">archery.local/sqlworkflow/detail/12345/  ·  字段变更 + 大表</span>
-      </div>
-      <div class="screenshot-body">
-<div style="background:rgba(176,99,103,.08);padding:10px 14px;border-radius:6px;margin-bottom:8px;border-left:3px solid var(--danger);">
-  <div style="font-weight:600;color:var(--danger);">🔴 字段变更高风险 (1)</div>
-  <div class="l" style="margin:4px 0 0;font-size:12px;">字符集变化: utf8mb4 → utf8, 跨表 JOIN 索引可能失效 (生产事故根因!)</div>
-</div>
+    <!-- ============== 05 任务管理 ============== -->
+    <h2 id="task"><span class="h2-num">05</span>任务管理 + 权限模型</h2>
 
-<div style="background:rgba(201,123,63,.08);padding:10px 14px;border-radius:6px;margin-bottom:8px;border-left:3px solid var(--warn);">
-  <div style="font-weight:600;color:var(--warn);">⚠️ 大表 DDL</div>
-  <div class="l" style="margin:4px 0 0;font-size:12px;">表 accesscard_black_detail: 1,256,890 行 / 856 MB</div>
-</div>
-
-<div style="background:rgba(47,111,94,.08);padding:10px 14px;border-radius:6px;border-left:3px solid var(--good);">
-  <div style="font-weight:600;color:var(--good);">💡 建议: 强制带原 CHARSET, 大表启用 gh-ost</div>
-</div>
-      </div>
-    </div>
-
-    <!-- ============== 07 碎片回收 ============== -->
-    <h2 id="rebuild"><span class="h2-num">07</span>DBA · v0.4.5 碎片回收</h2>
-
-    <p class="lead">DBA 兜底工具, 不用业务 RD 参与。一键触发"空 alter" (ENGINE+ROW_FORMAT+CHARSET) 回收表碎片, 走 gh-ost 不锁表。</p>
-
-    <h3>7.1 入口: DBA 工具 → 碎片回收</h3>
-    <p>直接访问: <code>/gh_ost/rebuild/list/</code></p>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">archery.local/gh_ost/rebuild/list/</span>
-      </div>
-      <div class="screenshot-body">
-<div style="font-size:16px;font-weight:600;color:var(--ink);margin-bottom:10px;">🔄 碎片回收 (DBA 专属)</div>
-
-<div class="l" style="margin-bottom:8px;">实例:  <span style="background:#fafaf7;padding:2px 8px;border-radius:4px;">业务库 (172.20.2.134:3306) ▼</span></div>
-<div class="l" style="margin-bottom:12px;">数据库:  <span style="background:#fafaf7;padding:2px 8px;border-radius:4px;">accesscard ▼</span></div>
-
-<div class="row"><span class="l">表</span><span class="l">行数</span><span class="l">DATA_FREE</span><span class="l">碎片率</span><span class="l">原 CHARSET</span><span class="l">操作</span></div>
-<div class="row"><span>accesscard_black_detail</span><span>1,256,890</span><span>38 GB</span><span style="color:var(--danger);">42%</span><span>utf8mb4</span><span><span class="badge badge-green" style="padding:4px 8px;">🔄 回收</span></span></div>
-<div class="row"><span>accesscard_log</span><span>3,580,210</span><span>12 GB</span><span style="color:var(--warn);">18%</span><span>utf8mb4</span><span><span class="badge badge-green" style="padding:4px 8px;">🔄 回收</span></span></div>
-<div class="row"><span>accesscard_audit</span><span>820,500</span><span>5 GB</span><span style="color:var(--warn);">12%</span><span>utf8mb4</span><span><span class="badge badge-green" style="padding:4px 8px;">🔄 回收</span></span></div>
-<div class="l" style="margin-top:6px;">... 共 23 张表</div>
-
-<div style="margin-top:12px;">
-  <span class="badge badge-green" style="padding:8px 14px;">🔄 一键回收选中 (3 张)</span>  <span class="badge badge-gray" style="padding:8px 14px;">📋 导出 Word 报告</span>
-</div>
-      </div>
-    </div>
-
-    <h3>7.2 触发空 alter 的 SQL (3 决策落地)</h3>
-    <p>v0.4.5 拍板 3 决策 (8/13): 用 <code>ENGINE=InnoDB, ROW_FORMAT=&lt;原值&gt;, DEFAULT CHARACTER SET=&lt;原值&gt; COLLATE=&lt;原值&gt;</code> 触发整表物理页重写。</p>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">触发后: 生成的 alter 子句</span>
-      </div>
-      <div class="screenshot-body">
-<div class="l">原表: accesscard_black_detail (utf8mb4 / utf8mb4_general_ci / DYNAMIC)</div>
-<div class="l" style="margin:6px 0 4px;">生成的触发 alter (3 层防护):</div>
-<pre style="background:#14171e;color:#8aaa85;padding:10px;border-radius:6px;font-size:12px;margin:0;">ALTER TABLE accesscard_black_detail ENGINE=InnoDB <span style="color:#c97b3f;">ROW_FORMAT=DYNAMIC DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_general_ci</span>;</pre>
-<div class="l" style="margin-top:6px;font-size:12px;">↑ 3 层防护: ENGINE 触发重写 + ROW_FORMAT 防丢失 + CHARSET 强一致</div>
-<div class="l" style="margin-top:4px;font-size:12px;">↑ 走 gh-ost 异步执行, 不锁表, 业务零感知</div>
-      </div>
-    </div>
-
-    <h3>7.3 进度跟踪</h3>
-    <p>rebuild 任务也走 gh-ost 任务管理 (列表页 task_type 过滤 rebuild 看到):</p>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">archery.local/gh_ost/admin_list/?task_type=rebuild</span>
-      </div>
-      <div class="screenshot-body">
-<div class="row"><span class="l">#ID</span><span class="l">任务类型</span><span class="l">库.表</span><span class="l">提交人</span><span class="l">状态</span><span class="l">耗时</span><span class="l">操作</span></div>
-<div class="row"><span>#86</span><span class="badge badge-gray">rebuild</span><span>accesscard_black_detail</span><span class="l">DBA 手动</span><span class="badge badge-blue">🔄 复制中</span><span>3m 20s</span><span>📊详情</span></div>
-<div class="row"><span>#85</span><span class="badge badge-gray">rebuild</span><span>accesscard_log</span><span class="l">DBA 手动</span><span class="badge badge-green">✅ 已完成</span><span>5m 30s</span><span>📊详情</span></div>
-<div class="l" style="margin-top:6px;">↑ 提交人列显示 "DBA 手动" (区别于 ghost 任务显示业务 RD)</div>
-<div class="l">↑ rebuilt_charset / rebuilt_row_format / rebuilt_at 3 字段记录本次 rebuild 改了什么</div>
-      </div>
-    </div>
-
-    <div class="callout good">
-      <span class="icon">✓</span>
-      <p><strong>3 决策拍板 (8/13)</strong>:
-      ① alter 子句 ENGINE+ROW_FORMAT+CHARSET (3 层防护, 0 风险飘字段)
-      ② rebuild 完成后, 在 DdlGhostTask 上记 <code>rebuilt_charset</code> / <code>rebuilt_row_format</code> / <code>rebuilt_at</code> 字段
-      ③ 任务列表页显示"ALTER 子句"列, DBA 一眼看出"这次 rebuild 改了什么"</p>
-    </div>
-
-    <!-- ============== 08 权限配置 ============== -->
-    <h2 id="permission"><span class="h2-num">08</span>权限配置 (DBA 在 admin)</h2>
-
-    <h3>8.1 4 个 perm 自动注册</h3>
-    <p>Django admin 会自动给 <code>DdlGhostTask</code> model 注册 4 个标准 perm, 0 业务代码改动:</p>
+    <h3>5.1 4 个 perm 自动注册 (Django admin)</h3>
+    <p>Django admin 会自动给 <code>DdlGhostTask</code> 注册 4 个标准 perm, 0 业务代码改动做权限 — 业务 RD 默认啥都看不到, DBA 在 admin 后台勾给"DBA"组。</p>
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Perm</th><th>用途</th><th>谁有 (默认)</th></tr></thead>
+        <thead><tr><th>Perm</th><th>用途</th></tr></thead>
         <tbody>
-          <tr><td class="mono">view_ddlghosttask</td><td>看菜单 + 任务管理列表 + 详情</td><td>DBA + admin (DBA 手动勾)</td></tr>
-          <tr><td class="mono">add_ddlghosttask</td><td>建任务 (一般自动建, 不用手)</td><td>仅 DBA + admin</td></tr>
-          <tr><td class="mono">change_ddlghosttask</td><td>取消 / 重试 / 回滚 + 操作端点</td><td>仅 DBA + admin</td></tr>
-          <tr><td class="mono">delete_ddlghosttask</td><td>删任务 (清理历史)</td><td>仅 DBA + admin</td></tr>
+          <tr><td class="mono">view_ddlghosttask</td><td>看菜单 + 任务管理列表 + 详情</td></tr>
+          <tr><td class="mono">add_ddlghosttask</td><td>建任务 (一般自动建, 不用手)</td></tr>
+          <tr><td class="mono">change_ddlghosttask</td><td>取消 / 重试 / 回滚 + 操作端点</td></tr>
+          <tr><td class="mono">delete_ddlghosttask</td><td>删任务 (清理历史)</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h3>8.2 DBA 在 admin 后台配置</h3>
-
-    <div class="screenshot">
-      <div class="screenshot-head">
-        <span class="screenshot-dot r"></span><span class="screenshot-dot y"></span><span class="screenshot-dot g"></span>
-        <span class="screenshot-url">archery.local/admin/auth/group/</span>
-      </div>
-      <div class="screenshot-body">
-<div class="l">认证和授权 → 组</div>
-
-<div class="row" style="background:rgba(47,111,94,.1);">
-  <span><b>"DBA" 组</b></span>
-  <span class="badge badge-green">✓ view_ddlghosttask</span>
-  <span class="badge badge-green">✓ add_ddlghosttask</span>
-  <span class="badge badge-green">✓ change_ddlghosttask</span>
-  <span class="badge badge-green">✓ delete_ddlghosttask</span>
-</div>
-
-<div class="row">
-  <span><b>"DBA组长" 组</b></span>
-  <span class="l">跟 DBA 一样 (4 个 perm 全勾)</span>
-</div>
-
-<div class="row" style="background:rgba(201,123,63,.1);">
-  <span><b>"业务RD组长" 组</b></span>
-  <span class="badge badge-green">✓ view_ddlghosttask</span>
-  <span class="l">其他 3 个不勾 (只能看, 不能改)</span>
-</div>
-
-<div class="row" style="background:rgba(176,99,103,.1);">
-  <span><b>"业务RD" 组</b></span>
-  <span class="l">不勾任何 (业务 RD 默认看不到 gh-ost 任务管理菜单)</span>
-</div>
-      </div>
-    </div>
-
-    <div class="callout tip">
-      <span class="icon">💡</span>
-      <p><strong>8/13 教训: 默认权限最小化</strong>:
-      业务 RD 普通用户<strong>默认不勾</strong>任何 gh-ost perm, 业务 RD 组长可勾 view (只能看, 不能改)。
-      取消/重试/回滚 3 个操作端点 0 业务代码改动做 perm 守卫 (跟 view 一套机制)。</p>
-    </div>
-
-    <h3>8.3 4 个 perm 怎么分, 一张图</h3>
+    <h3>5.2 角色视角 (C 方案延伸)</h3>
+    <p>perm 之外, 业务 RD 和 DBA 看到的内容不同:</p>
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>用户</th><th>view</th><th>add</th><th>change</th><th>delete</th><th>实际能干嘛</th></tr></thead>
+        <thead><tr><th>角色</th><th>判定</th><th>看到的内容</th><th>能操作</th></tr></thead>
         <tbody>
-          <tr><td>admin (superuser)</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>全功能</td></tr>
-          <tr><td>DBA / DBA组长</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>全功能 (DBA 手动勾)</td></tr>
-          <tr><td>业务 RD 组长 / 高级 RD</td><td>✓</td><td>✗</td><td>✗</td><td>✗</td><td>只能看自己提的 ghost 任务</td></tr>
-          <tr><td>业务 RD 普通</td><td>✗</td><td>✗</td><td>✗</td><td>✗</td><td>看不到菜单, 不能访问</td></tr>
+          <tr><td>DBA / DBA组长 / superuser</td><td><code>_is_admin_or_dba(user)</code> = True</td><td>全量 (含其他业务 RD 提的 + DBA 手动 rebuild)</td><td>取消 / 重试 / 回滚</td></tr>
+          <tr><td>业务 RD 组长 / 高级 RD</td><td>False</td><td>只看自己提的 (<code>workflow.engineer == user.username</code> 过滤)</td><td>看详情, 不能改</td></tr>
+          <tr><td>业务 RD 普通</td><td>无 view perm</td><td>菜单不显示</td><td>无</td></tr>
         </tbody>
       </table>
     </div>
 
-    <!-- ============== 09 FAQ ============== -->
-    <h2 id="faq"><span class="h2-num">09</span>常见问题 FAQ</h2>
+    <h3>5.3 操作端点 perm 守卫 (8/13 教训)</h3>
 
-    <div class="qa">
-      <div class="qa-q">Q1: 我提 DDL 时没看到字段 diff 检测面板, 怎么回事?</div>
-      <div class="qa-a">字段 diff 检测<strong>只在 ALTER TABLE 类 DDL 自动触发</strong>。如果你的 SQL 是 CREATE TABLE / DROP TABLE / SELECT, 不会触发 (因为没有"原字段定义"可比)。</div>
+    <div class="callout danger">
+      <span class="icon">🚨</span>
+      <p><strong>8/13 教训</strong>: 取消 / 重试 / 回滚 3 个操作端点, 一开始用 <code>@permission_required</code> + <code>raise PermissionDenied</code>。<br/>
+      <strong>问题</strong>: AJAX 端点 raise 后, Django middleware 返 403 HTML 错误页, 前端 alert 弹一整页 HTML 源码, UX 崩。<br/>
+      <strong>修法</strong>: helper 返 <code>JsonResponse({"ok": False, "error": "..."}, status=403)</code>, 调用方接住 None / JsonResponse 区分。</p>
     </div>
 
-    <div class="qa">
-      <div class="qa-q">Q2: 字段 diff 提示"字符集变化: utf8mb4 → utf8", 我没改字符集啊?</div>
-      <div class="qa-a">这是 11 条规则里的<strong>最坑规则</strong>。你写 DDL 时没带 <code>CHARACTER SET utf8mb4</code>, Archery 默认按"目标字段定义"解析 (可能是 utf8 或空)。
-      <strong>修法</strong>: 点"📋 复制补全 SQL"按钮, Archery 会生成"强制带原 CHARSET + COLLATE"的 DDL, 避免索引失效。</div>
+    <pre class="code"><span class="c"># 修法模板 (供其他 extension 借鉴)</span>
+<span class="k">def</span> _require_change_perm(request, action: str):
+    <span class="s">"""返 Optional[JsonResponse], 没 perm 返 JsonResponse 403 错误码"""</span>
+    <span class="k">if not</span> request.user.has_perm(<span class="s">"ddl_gh_ost.change_ddlghosttask"</span>):
+        <span class="k">return</span> JsonResponse(
+            {<span class="s">"ok"</span>: <span class="k">False</span>, <span class="s">"error"</span>: <span class="s">f"您没有{action} gh-ost 任务的权限, 请联系 DBA"</span>},
+            status=<span class="n">403</span>,
+        )
+    <span class="k">return</span> <span class="k">None</span>  <span class="c"># 通过</span>
+
+<span class="c"># 调用方</span>
+<span class="k">def</span> cancel(request, workflow_id):
+    perm_err = _require_change_perm(request, <span class="s">"取消"</span>)
+    <span class="k">if</span> perm_err:
+        <span class="k">return</span> perm_err  <span class="c"># 直接返 403 JSON 错误</span>
+    <span class="c"># ... 业务逻辑</span></pre>
+
+    <h3>5.4 业务定位文案修正 (8/13 教训)</h3>
+    <p>开发要懂: 这个产品定位, 影响所有提示文案和 UI 设计。</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>位置</th><th>之前文案</th><th>修正后</th><th>原因</th></tr></thead>
+        <tbody>
+          <tr><td>字段 diff 标题</td><td>"字段变更检测 (DBA 兜底)"</td><td>"字段变更检测"</td><td>去"业务定位" 干扰, 改成中性</td></tr>
+          <tr><td>"为什么?" 弹窗</td><td>含"权限组管理"链接</td><td>去掉链接</td><td>业务 RD 看到跳 admin 后台困惑</td></tr>
+          <tr><td>详情页大表 alert</td><td>"DBA 兜底启用 gh-ost"</td><td>保留</td><td>DBA 兜底产品定位, 业务 RD 需要知道</td></tr>
+          <tr><td>DBA 工具菜单</td><td>"DBA 运维入口"</td><td>保留</td><td>DBA 专属, 业务 RD 看不到</td></tr>
+        </tbody>
+      </table>
     </div>
 
-    <div class="qa">
-      <div class="qa-q">Q3: 我勾了"启用 gh-ost", 但审批通过后还是直接执行了, 没用 gh-ost</div>
-      <div class="qa-a">两种可能:
-      ① <strong>表很小</strong> (行数 < 1 万), gh-ost 不划算, 系统自动跳过走普通执行
-      ② <strong>审批人勾掉了</strong> (DBA 觉得不必要), 跟审批人确认
-      ③ <strong>gh-ost 二进制没装</strong>, 联系 DBA 检查 <code>/opt/archery/bin/gh-ost</code></div>
+    <!-- ============== 06 碎片回收 ============== -->
+    <h2 id="rebuild"><span class="h2-num">06</span>碎片回收 (3 决策详解)</h2>
+
+    <h3>6.1 问题: MySQL 5.7 OPTIMIZE TABLE 锁表</h3>
+    <p>MySQL 5.7 走 <code>OPTIMIZE TABLE = ALTER TABLE ... ENGINE=InnoDB</code>, 但 5.7 不支持 <code>ALGORITHM=INPLACE, LOCK=NONE</code>, 走 COPY 锁表, 大表 (百万行) 锁几分钟, 业务感知强。</p>
+
+    <h3>6.2 解法: 走 gh-ost 触发"空 alter"</h3>
+    <p>gh-ost 复制 + 切流, 不锁表。但需要"触发整表物理页重写" 的 alter 子句 (空改不会触发)。</p>
+
+    <h3>6.3 3 决策 (开发拍板)</h3>
+
+    <div class="decision">
+      <div class="decision-title">决策 1: alter 子句 = ENGINE + ROW_FORMAT + DEFAULT CHARSET + COLLATE</div>
+      <p>3 层防护, 0 风险飘字段:</p>
+      <pre class="code" style="margin:6px 0;">ALTER TABLE accesscard_black_detail
+  ENGINE=InnoDB
+  ROW_FORMAT=DYNAMIC
+  DEFAULT CHARACTER SET=utf8mb4
+  COLLATE=utf8mb4_general_ci;</pre>
+      <div class="alt">
+        <strong>否决方案 A</strong>: 改 <code>COMMENT='archery-auto-rebuild-YYYYMMDD'</code><br/>
+        问题: 破坏表 COMMENT 业务描述, 数据治理出大问题
+      </div>
+      <div class="alt">
+        <strong>否决方案 B</strong>: 改 <code>ROW_FORMAT=DYNAMIC</code> 单独触发<br/>
+        问题: 某些 MySQL 版本 ROW_FORMAT 改跟自己一样可能 no-op, 不触发重写
+      </div>
     </div>
 
-    <div class="qa">
-      <div class="qa-q">Q4: gh-ost 跑到一半卡住 / 失败, 业务会受影响吗?</div>
-      <div class="qa-a">不会。gh-ost 的核心特性就是"不锁表", 它建影子表 + 同步 binlog, 即使失败也是影子表, 原表数据完整。
-      <strong>修法</strong>: 详情页点"取消任务"清理影子表, 修复后重试。</div>
+    <div class="decision">
+      <div class="decision-title">决策 2: 记录 rebuilt_charset / rebuilt_row_format / rebuilt_at 字段</div>
+      <p>DBA 一眼看出"这次 rebuild 改了什么", 字段加在 DdlGhostTask 上:</p>
+      <pre class="code" style="margin:6px 0;">rebuilt_charset     = "utf8mb4"          <span class="c"># 改后字符集</span>
+rebuilt_row_format  = "DYNAMIC"          <span class="c"># 改后 ROW_FORMAT</span>
+rebuilt_at          = "2026-08-13 10:00"  <span class="c"># rebuild 完成时间</span></pre>
     </div>
 
-    <div class="qa">
-      <div class="qa-q">Q5: 我是大表 DDL, 提交时没看到"大表防呆"弹窗, 为什么?</div>
-      <div class="qa-a">阈值默认行数 10 万 / 大小 100MB, 在 <code>settings.CUSTOM_BIG_TABLE_ROW_THRESHOLD</code> 和 <code>CUSTOM_BIG_TABLE_SIZE_THRESHOLD_MB</code> 配。
-      如果你的表 < 10 万行, 不触发防呆是正常的 (不需要 gh-ost)。如果你的表 > 10 万行还没弹, 联系 DBA 检查阈值配。</div>
+    <div class="decision">
+      <div class="decision-title">决策 3: 任务列表页显示 "ALTER 子句" 列</div>
+      <p>DBA 一眼看到 rebuild 改了什么, 不需要查 task detail:</p>
+      <pre class="code" style="margin:6px 0;">┌──────┬────────┬───────────┬────────────────────────────────┐
+│ #ID  │ 库.表  │ 提交人    │ ALTER 子句 (truncated)         │
+├──────┼────────┼───────────┼────────────────────────────────┤
+│ #86  │ access │ DBA 手动  │ ENGINE=InnoDB ROW_FORMAT=...  │
+└──────┴────────┴───────────┴────────────────────────────────┘</pre>
     </div>
 
-    <div class="qa">
-      <div class="qa-q">Q6: gh-ost 切流 (Cut-over) 超时, 怎么重试?</div>
-      <div class="qa-a">详情页点"🔄 重试"按钮 (跟原工单绑定, 不用重走审批)。
-      切流超时通常因为:
-      ① 业务高峰期有长事务 / 大 DML
-      ② binlog 同步堆积
-      <strong>建议</strong>: 选业务低峰期 (深夜 / 周末) 重试, 或联系 DBA 临时 <code>set gh-ost chunk-size=2000</code>。</div>
+    <h3>6.4 触发模式</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>模式</th><th>触发</th><th>任务类型</th></tr></thead>
+        <tbody>
+          <tr><td>DBA 手动选表</td><td>单表 / 批量</td><td>rebuild</td></tr>
+          <tr><td>定时任务 (DBA 配 cron)</td><td>凌晨跑全库</td><td>rebuild</td></tr>
+          <tr><td>风险事件触发 (后续)</td><td>健康检查发现碎片率 &gt; 阈值</td><td>rebuild</td></tr>
+        </tbody>
+      </table>
     </div>
 
-    <div class="qa">
-      <div class="qa-q">Q7: 字段 diff 提示"高风险: 字符集变化", 但我就是要改字符集, 怎么办?</div>
-      <div class="qa-a">这是 8/13 生产事故根因, <strong>强烈不建议</strong>改字符集。
-      如果业务真需要 (比如从 utf8 升 utf8mb4), 走以下流程:
-      ① 先在测试库跑
-      ② 用 gh-ost 跑 (不锁表)
-      ③ 选业务低峰期
-      ④ 准备回滚 SQL (改回原字符集)
-      ⑤ 通知 DBA 现场待命</div>
+    <!-- ============== 07 DDL 智能回滚 ============== -->
+    <h2 id="rollback"><span class="h2-num">07</span>DDL 智能回滚 (A+B 方案)</h2>
+
+    <h3>7.1 A 方案: 5 种 DDL 智能逆向</h3>
+    <p>DDL 失败时, 自动从原始 schema 快照生成回滚 SQL:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>原 DDL</th><th>自动回滚</th><th>能否自动</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">ADD COLUMN x VARCHAR(64)</td><td><code>DROP COLUMN x</code></td><td>✅ 智能逆向</td></tr>
+          <tr><td class="mono">MODIFY COLUMN x VARCHAR(100)</td><td><code>MODIFY COLUMN x VARCHAR(50)</code> (从快照读原值)</td><td>✅ 智能逆向</td></tr>
+          <tr><td class="mono">CHANGE COLUMN x y VARCHAR(64)</td><td><code>CHANGE COLUMN y x VARCHAR(64)</code></td><td>✅ 智能逆向</td></tr>
+          <tr><td class="mono">DROP COLUMN x</td><td><code>ADD COLUMN x ...</code> (从快照读)</td><td>✅ 智能逆向</td></tr>
+          <tr><td class="mono">RENAME TABLE a TO b</td><td><code>RENAME TABLE b TO a</code></td><td>✅ 智能逆向</td></tr>
+        </tbody>
+      </table>
     </div>
 
-    <div class="qa">
-      <div class="qa-q">Q8: DDL 智能回滚触发, 我要拒绝回滚吗?</div>
-      <div class="qa-a"><strong>不要</strong>。智能回滚 (v0.4.5) 是把已变更的字段改回原值, 避免"半残状态"。
-      如果你回滚会导致数据丢失 (比如 ADD COLUMN 已经有新数据), 系统会检测到, 返 warnings 让你确认。</div>
+    <h3>7.2 B 方案: 兜底 (不支持的 DDL)</h3>
+    <p>遇到不常见 DDL, 返 warnings 不自动回滚, DBA 人工处理:</p>
+
+    <pre class="code"><span class="c"># sql/services/ghost_task_sync.py</span>
+<span class="k">def</span> _reverse_single_op(op_text, snapshot):
+    <span class="s">"""单条 ALTER 操作智能逆向"""</span>
+    op_upper = op_text.upper().strip()
+
+    <span class="c"># 优先检测 FOREIGN KEY / INDEX 等不支持逆向 (用 in 而非 startswith)</span>
+    unsupported_keywords_contains = (<span class="s">"FOREIGN KEY"</span>,)
+    <span class="k">if</span> <span class="n">any</span>(kw <span class="k">in</span> op_upper <span class="k">for</span> kw <span class="n">unsupported_keywords_contains</span>):
+        <span class="k">return</span> <span class="k">None</span>, <span class="s">"FOREIGN KEY 不支持自动回滚, 需 DBA 人工处理"</span>
+
+    <span class="c"># 操作关键词 (用 startswith)</span>
+    unsupported_keywords_startswith = (<span class="s">"ADD INDEX"</span>, <span class="s">"DROP INDEX"</span>, <span class="s">"ADD PRIMARY KEY"</span>)
+    <span class="k">if</span> <span class="n">any</span>(op_upper.startswith(kw) <span class="k">for</span> kw <span class="n">unsupported_keywords_startswith</span>):
+        <span class="k">return</span> <span class="k">None</span>, <span class="s">"INDEX 变更不支持自动回滚"</span>
+
+    <span class="c"># 智能逆向 (5 种支持的操作)</span>
+    <span class="k">if</span> op_upper.startswith(<span class="s">"ADD "</span>):
+        <span class="k">return</span> _reverse_add(op_text)
+    <span class="k">if</span> op_upper.startswith(<span class="s">"MODIFY "</span>):
+        <span class="k">return</span> _reverse_modify(op_text, snapshot)
+    <span class="c"># ...</span>
+    <span class="k">return</span> <span class="k">None</span>, <span class="s">"未知 DDL 类型, 不支持自动回滚"</span></pre>
+
+    <h3>7.3 顺序踩坑 (8/13 教训)</h3>
+
+    <div class="callout danger">
+      <span class="icon">🚨</span>
+      <p><strong>8/13 教训</strong>: 一开始把 <code>unsupported_keywords</code> 用一个 tuple, 全部 <code>in</code> 判断。<br/>
+      <strong>问题</strong>: <code>"ADD INDEX" in "ALTER TABLE t ADD INDEX idx_x (col)"</code> 返 False (因为 ADD INDEX 是 substring), <code>"DROP INDEX" in "ALTER TABLE t DROP INDEX idx_x"</code> 返 True 但顺序错了会先匹配 <code>"ADD "</code> 走智能逆向逻辑。<br/>
+      <strong>修法</strong>: 拆 2 个 tuple — <code>unsupported_keywords_contains</code> (用 <code>in</code>, 优先检测 FOREIGN KEY 这种 substring) + <code>unsupported_keywords_startswith</code> (用 <code>startswith</code>, 检测操作关键词)。</p>
     </div>
 
-    <div class="qa">
-      <div class="qa-q">Q9: 我是业务 RD, 怎么在任务管理列表看自己提的任务?</div>
-      <div class="qa-a">两种方式:
-      ① 详情页直接访问 <code>/gh_ost/progress/&lt;workflow_id&gt;/</code> (你提的工单都能看)
-      ② 申请 <code>view_ddlghosttask</code> perm (DBA 在 admin 后台勾给"业务RD组长"组), 列表里只看自己提的</div>
+    <!-- ============== 08 踩坑教训 ============== -->
+    <h2 id="lessons"><span class="h2-num">08</span>踩坑教训 (8 条)</h2>
+
+    <p>开发要懂这些坑, 避免重蹈覆辙。每条都对应一个具体 commit / 决策。</p>
+
+    <div class="case">
+      <div class="case-title">🚨 教训 1: GoInception panic on MODIFY COLUMN</div>
+      <p><strong>症状</strong>: 业务 RD 跑 gh-ost 任务, 报 <code>Lost connection to MySQL server during query</code></p>
+      <p><strong>根因</strong>: GoInception 1.x 在 <code>ALTER TABLE ... MODIFY COLUMN</code> 解析时, 触发 Go runtime panic (slice bounds out of range)</p>
+      <p><strong>触发条件</strong>: 大表 + MODIFY + bigint → varchar (varchar→varchar / int→bigint / ADD/DROP/RENAME 不触发)</p>
+      <p><strong>修法</strong>: 字段 diff 端点走 pymysql 直连, 不依赖 goinception; 8/13 临时 workaround <code>systemctl restart goinception</code></p>
+      <p><strong>长期修法</strong>: 升级 goinception 1.x → 最新版, 推 110 时同步升级</p>
     </div>
 
-    <div class="qa">
-      <div class="qa-q">Q10: 业务 RD 漏勾 gh-ost, 工单已经审批通过了, 还有救吗?</div>
-      <div class="qa-a">有。详情页有"🛠️ DBA 兜底启用 gh-ost"按钮, DBA 点击后工单改走 gh-ost 重跑 (复用原审批)。
-      紧急情况下, 详情页"⚡ 立即执行"按钮, 双层 confirm 后直接锁表跑。</div>
+    <div class="case">
+      <div class="case-title">🚨 教训 2: 字符集丢失 (生产事故)</div>
+      <p><strong>症状</strong>: 业务库加字段后, 跨表 JOIN 索引失效, 性能暴跌</p>
+      <p><strong>根因</strong>: ALTER 没带 <code>CHARACTER SET utf8mb4</code>, MySQL 8.0 默认字符集变 utf8mb3, 跟其它 utf8mb4 字段 JOIN 时索引不可用</p>
+      <p><strong>修法</strong>: 字段 diff 检测"字符集变化" 标红高风险 + "📋 复制补全 SQL" 按钮生成强制带原字符集的 DDL</p>
     </div>
 
-    <!-- ============== 10 业务场景案例 ============== -->
-    <h2 id="cases"><span class="h2-num">10</span>业务场景案例 (4 个真实)</h2>
+    <div class="case">
+      <div class="case-title">🚨 教训 3: 业务 RD 不知道 gh-ost (DBA 兜底产品定位)</div>
+      <p><strong>症状</strong>: 业务 RD 提大表 DDL, 直接执行, 锁表 30s, 业务感知</p>
+      <p><strong>根因</strong>: 业务 RD 不知道 gh-ost 工具, Archery 没主动提示</p>
+      <p><strong>修法</strong>: 大表 DDL 防呆 3 按钮 (启用 gh-ost / 立即执行 / 终止) + DBA 兜底机制 + 详情页大表 alert</p>
+    </div>
+
+    <div class="case">
+      <div class="case-title">⚠️ 教训 4: AJAX 端点 raise PermissionDenied 弹 HTML</div>
+      <p><strong>症状</strong>: 业务 RD 点"取消任务", alert 弹一整页 HTML 源码</p>
+      <p><strong>根因</strong>: 取消 / 重试 / 回滚 3 个端点 raise PermissionDenied, Django middleware 返 403 HTML 错误页, AJAX 拿到整页 HTML 源码</p>
+      <p><strong>修法</strong>: helper 返 <code>JsonResponse({"ok": False, "error": "..."}, status=403)</code> 替代 raise</p>
+    </div>
+
+    <div class="case">
+      <div class="case-title">⚠️ 教训 5: drill 验证严谨度 (8/13 副标题提取)</div>
+      <p><strong>症状</strong>: gh-ost 端到端演练时, 副标题断言失败 — 因为用了 <code>re.DOTALL</code> 跨行匹配, 把后面的内容也吃掉了</p>
+      <p><strong>根因</strong>: 副标题在多行 HTML 里, 用 .* 跨行匹配会匹配太多</p>
+      <p><strong>修法</strong>: 抓首个 <code>&lt;p class="gh-ost-sub"&gt;...&lt;/p&gt;</code> 用 <code>(.*?)</code> 非贪婪 + non-dotall 模式</p>
+    </div>
+
+    <div class="case">
+      <div class="case-title">⚠️ 教训 6: 业务配置 ID 必须看实际审批日志</div>
+      <p><strong>症状</strong>: 用户报"134 审批流程是研发-研发组长-dba", 我误读成 13,14,3, 改了 fix_approval_flow_3level.py + init_fallback_flow.py, 实际正确配是 14,15,3 (研发组长→DBA组长→DBA)</p>
+      <p><strong>根因</strong>: 从代码 / auth_group 表脑补 group ID 语义, 没看 Archery 实际审批日志</p>
+      <p><strong>修法</strong>: 涉及 Archery 业务配置 (审批组 ID / 角色 / perm) 必须看 workflow_audit_setting + 实际审批日志 + admin 后台, 不要从代码脑补</p>
+    </div>
+
+    <div class="case">
+      <div class="case-title">⚠️ 教训 7: 业务定位文案修正</div>
+      <p><strong>症状</strong>: 字段 diff 标题"(DBA 兜底)" 让业务 RD 困惑, 跳 admin 后台"权限组管理"链接误以为是普通功能</p>
+      <p><strong>根因</strong>: 产品定位文案没考虑实际用户</p>
+      <p><strong>修法</strong>: 字段 diff 标题去"(DBA 兜底)" / 弹窗去"权限组管理"链接 / 详情页大表 alert 保留"DBA 兜底启用 gh-ost" (业务 RD 需要知道)</p>
+    </div>
+
+    <div class="case">
+      <div class="case-title">⚠️ 教训 8: 默认权限最小化 (8/13 拍板)</div>
+      <p><strong>症状</strong>: 业务 RD 默认能看到 gh-ost 任务管理菜单, 困惑</p>
+      <p><strong>根因</strong>: 早期 perm 守卫太松, 业务 RD 默认有 view perm</p>
+      <p><strong>修法</strong>: 业务 RD 默认不勾任何 gh-ost perm, 业务 RD 组长可勾 view (只能看, 不能改), DBA 勾全 4 个</p>
+    </div>
+
+    <!-- ============== 09 业务场景案例 ============== -->
+    <h2 id="cases"><span class="h2-num">09</span>业务场景案例 (4 个真实)</h2>
+
+    <p>宣讲时, 用这 4 个真实案例跟业务团队共鸣 — 都是 8 月份踩过的坑。</p>
 
     <div class="case">
       <div class="case-title">📌 案例 1: 业务 RD 提大表 DDL, 字段 diff 提示字符集丢失</div>
-      <p><strong>背景</strong>: 张三 8/13 提 <code>ALTER TABLE accesscard_black_detail MODIFY COLUMN card_no VARCHAR(64)</code> (大表, 120 万行)</p>
+      <p><strong>背景</strong>: 业务 RD 8/13 提 <code>ALTER TABLE accesscard_black_detail MODIFY COLUMN card_no VARCHAR(64)</code> (大表, 120 万行)</p>
       <p><strong>Archery 检测</strong>: 字段 diff 显示"字符集变化: utf8mb4 → utf8, 跨表 JOIN 索引可能失效"</p>
-      <p><strong>张三 操作</strong>: 点"📋 复制补全 SQL", 生成 <code>ALTER TABLE ... VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci</code>, 提交</p>
+      <p><strong>修法</strong>: 业务 RD 点"📋 复制补全 SQL", 生成 <code>ALTER TABLE ... VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci</code></p>
       <p><strong>结果</strong>: 审批通过, 走 gh-ost 跑 3 分钟, 业务零感知, 索引没失效</p>
-      <p><strong>教训</strong>: 字符集没带会跨表 JOIN 索引失效 (8/13 生产事故根因, 11 条规则重点防护)</p>
+      <p><strong>教训</strong>: 字符集没带会跨表 JOIN 索引失效, 11 条规则重点防护</p>
     </div>
 
     <div class="case">
       <div class="case-title">📌 案例 2: 业务 RD 漏勾 gh-ost, DBA 兜底</div>
-      <p><strong>背景</strong>: 李四 8/15 紧急修复上线, 提了 <code>ALTER TABLE log_record ADD INDEX idx_xxx</code>, 大表 80 万行, <strong>没勾 gh-ost</strong></p>
-      <p><strong>DBA 收到工单</strong>: 详情页大表 alert 弹出"未启用 gh-ost", 决定兜底</p>
-      <p><strong>DBA 操作</strong>: 点"🛠️ DBA 兜底启用 gh-ost"按钮, 工单自动改走 gh-ost</p>
+      <p><strong>背景</strong>: 业务 RD 8/15 紧急修复上线, 提了 <code>ALTER TABLE log_record ADD INDEX idx_xxx</code>, 大表 80 万行, <strong>没勾 gh-ost</strong></p>
+      <p><strong>DBA 收到工单</strong>: 详情页大表 alert 弹出"未启用 gh-ost"</p>
+      <p><strong>DBA 操作</strong>: 点"🛠️ DBA 兜底启用 gh-ost", 工单自动改走 gh-ost</p>
       <p><strong>结果</strong>: 审批通过, gh-ost 跑 4 分钟, 业务零感知</p>
-      <p><strong>教训</strong>: 紧急情况下业务 RD 容易漏勾, DBA 兜底是最后一道防线</p>
+      <p><strong>教训</strong>: 紧急情况漏勾, DBA 兜底是最后一道防线</p>
     </div>
 
     <div class="case">
       <div class="case-title">📌 案例 3: gh-ost 切流超时, 智能回滚兜底</div>
-      <p><strong>背景</strong>: 王五 8/19 业务高峰期提了 <code>MODIFY COLUMN bigint → varchar</code> (大表, 业务低峰期踩点失败)</p>
+      <p><strong>背景</strong>: 业务 RD 8/19 业务高峰期提了 <code>MODIFY COLUMN bigint → varchar</code> (大表, 业务低峰期踩点失败)</p>
       <p><strong>gh-ost 切流超时</strong>: 一直有 DML 阻塞, 切流 30 分钟没成功</p>
       <p><strong>详情页提示</strong>: "切流超时, 失败, 触发智能回滚"</p>
       <p><strong>v0.4.5 智能回滚</strong>: 自动生成 <code>MODIFY COLUMN col bigint</code> 改回原值, 跑成功</p>
-      <p><strong>结果</strong>: 业务表回到原状态, 没用 gh-ost 切流, 工单标 failed 但不留半残</p>
+      <p><strong>结果</strong>: 业务表回到原状态, 不用 gh-ost 切流, 工单标 failed 但不留半残</p>
       <p><strong>教训</strong>: 选业务低峰期; 智能回滚 5 种 DDL 全覆盖, 不用 DBA 手动</p>
     </div>
 
     <div class="case">
       <div class="case-title">📌 案例 4: DBA 兜底定期碎片回收</div>
-      <p><strong>背景</strong>: 134 dev 业务库 8/20 健康检查发现 accesscard_black_detail 碎片率 42% (DATA_FREE 38GB), MySQL 5.7 走 OPTIMIZE TABLE 会锁表</p>
-      <p><strong>DBA 决定</strong>: 用 v0.4.5 碎片回收, 走 gh-ost 不锁表</p>
-      <p><strong>DBA 操作</strong>: 134 dev 访问 <code>/gh_ost/rebuild/list/</code> → 选 3 张表 → 点"一键回收"</p>
+      <p><strong>背景</strong>: 业务库 8/20 健康检查发现 accesscard_black_detail 碎片率 42% (DATA_FREE 38GB), MySQL 5.7 OPTIMIZE TABLE 锁表</p>
+      <p><strong>DBA 决定</strong>: 用碎片回收, 走 gh-ost 不锁表</p>
+      <p><strong>DBA 操作</strong>: 访问 <code>/gh_ost/rebuild/list/</code> → 选 3 张表 → 点"一键回收"</p>
       <p><strong>触发空 alter</strong>: <code>ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_general_ci</code></p>
-      <p><strong>结果</strong>: gh-ost 异步跑 8 分钟, 碎片归零, 业务零感知, DdlGhostTask 记 rebuilt_* 字段</p>
-      <p><strong>教训</strong>: 8/13 拍板 ENGINE+ROW_FORMAT+CHARSET 3 层防护, 0 风险飘字段</p>
+      <p><strong>结果</strong>: gh-ost 异步跑 8 分钟, 碎片归零, 业务零感知</p>
+      <p><strong>教训</strong>: ENGINE+ROW_FORMAT+CHARSET 3 层防护, 0 风险飘字段</p>
+    </div>
+
+    <!-- ============== 10 宣讲要点 ============== -->
+    <h2 id="pitch"><span class="h2-num">10</span>宣讲要点 + 答疑</h2>
+
+    <h3>10.1 5 分钟给业务团队讲什么 (脚本)</h3>
+
+    <p>开发人员拿这份手册去宣讲, 推荐 5 分钟脚本:</p>
+
+    <div class="arch">
+      <div class="arch-title">5 分钟宣讲脚本 (面向业务 RD)</div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.7;">
+<div><b>[0:00] 痛点引入 (1 分钟)</b></div>
+<div>  - 举 8/13 字符集丢失案例 — 跨表 JOIN 索引失效, 性能暴跌</div>
+<div>  - 举 8/15 业务 RD 漏勾 gh-ost 锁表 30s 案例</div>
+<div>  - 一句话总结: "这俩问题, Archery 现在能自动防"</div>
+
+<div><b>[0:01] 字段 diff 自动检测 (1.5 分钟)</b></div>
+<div>  - 演示: 提交 <code>ALTER TABLE t MODIFY col VARCHAR(64)</code></div>
+<div>  - 字段 diff 自动跑 11 条规则</div>
+<div>  - 重点展示"字符集变化"高风险 + "📋 复制补全 SQL" 按钮</div>
+<div>  - "你写 DDL 不用记字符集, Archery 帮你补"</div>
+
+<div><b>[0:02] gh-ost 大表 DDL 不锁表 (1.5 分钟)</b></div>
+<div>  - 演示: 大表 (120 万行) 提交, 大表 DDL 防呆 3 按钮</div>
+<div>  - 重点讲"启用 gh-ost (DBA 兜底)" — 业务 RD 推荐选项</div>
+<div>  - "你勾上, 审批通过会走 gh-ost, 业务零感知"</div>
+<div>  - 提一句"DBA 兜底"机制: 漏勾 DBA 会帮你补</div>
+
+<div><b>[0:04] 智能回滚 (1 分钟)</b></div>
+<div>  - 举 8/19 切流超时案例, 智能回滚自动改回原值</div>
+<div>  - "DDL 失败不会留半残状态, 放心"</div>
+
+<div><b>[0:05] Q&A (开放)</b></div>
+      </div>
+    </div>
+
+    <h3>10.2 现场答疑 (10 个常见问题)</h3>
+
+    <div class="qa">
+      <div class="qa-q">Q1: 字段 diff 跟 SQL 审核有什么区别?</div>
+      <div class="qa-a">SQL 审核是"SQL 语法 + 业务规则" 检查 (走 goinception), 字段 diff 是"字段定义变更前后" 对比。两者互补不冲突, SQL 审核过了再走字段 diff。</div>
+    </div>
+
+    <div class="qa">
+      <div class="qa-q">Q2: 字段 diff 检测失败怎么办?</div>
+      <div class="qa-a">查 information_schema 没权限或网络不通, 返 "无法检测" 提示, 不阻塞工单提交。但强烈建议 DBA 检查凭据。</div>
+    </div>
+
+    <div class="qa">
+      <div class="qa-q">Q3: gh-ost 跟主从延迟有关系吗?</div>
+      <div class="qa-a">有, gh-ost 默认 <code>--max-lag-millis=1500</code> 阈值, 主从延迟超 1.5s 会暂停切流, 等延迟恢复再切。</div>
+    </div>
+
+    <div class="qa">
+      <div class="qa-q">Q4: gh-ost 跑一半挂了, 影子表会留下吗?</div>
+      <div class="qa-a">会。Archery 端任务状态切 failed, 影子表 (原表_gho / _ghc) 残留。Archery 端有清理脚本 (cleanup_ghost_tables management command), DBA 跑一下清掉。</div>
+    </div>
+
+    <div class="qa">
+      <div class="qa-q">Q5: gh-ost 切流期间业务会卡住多久?</div>
+      <div class="qa-a">atomic 模式 1-3 秒, two-step 模式几百毫秒。阻塞期间所有写操作排队, 业务感知但不丢数据。</div>
+    </div>
+
+    <div class="qa">
+      <div class="qa-q">Q6: 字段 diff 11 条规则够用吗?</div>
+      <div class="qa-a">覆盖 90% 生产事故根因 (字符集/类型/长度/索引/默认值)。其他罕见 DDL 走 warning, 不强制 block。</div>
+    </div>
+
+    <div class="qa">
+      <div class="qa-q">Q7: 业务 RD 漏勾 gh-ost 怎么办?</div>
+      <div class="qa-a">详情页大表 alert 弹出, DBA 点"🛠️ DBA 兜底启用 gh-ost" 按钮, 工单自动改走 gh-ost。这是最后一道防线, 业务 RD 不需要慌。</div>
+    </div>
+
+    <div class="qa">
+      <div class="qa-q">Q8: gh-ost 跟其他 DDL 工单互斥吗?</div>
+      <div class="qa-a">互斥。同一张表跑 gh-ost 时, 其他 DDL 工单 (包括 ALTER) 会被 DdlGhostTask 状态机锁住, 避免切流冲突。</div>
+    </div>
+
+    <div class="qa">
+      <div class="qa-q">Q9: 智能回滚会丢数据吗?</div>
+      <div class="qa-a">不会。ADD COLUMN 智能回滚是 DROP COLUMN, 没新增数据; MODIFY COLUMN 智能回滚是改回原值, 已变更的数据保留; 系统会检测"字段有非默认值" 时返 warnings 让 DBA 确认。</div>
+    </div>
+
+    <div class="qa">
+      <div class="qa-q">Q10: gh-ost 跟业务主从切换兼容吗?</div>
+      <div class="qa-a">兼容。gh-ost 跑期间主从切换, 影子表在原 master, 切流后 RENAME 原子操作在新 master。gh-ost 自动重连新 master, 不需要人工介入。</div>
+    </div>
+
+    <h3>10.3 宣讲避坑 (3 个不要)</h3>
+    <div class="callout warn">
+      <span class="icon">⚠</span>
+      <p><strong>不要 1: 不要给业务 RD 讲架构细节</strong> — 业务 RD 不关心 poller 怎么实现, 只关心"我能点哪个按钮"。架构细节放设计稿 (docs/designs/), 不放宣讲手册。</p>
+    </div>
+    <div class="callout warn">
+      <span class="icon">⚠</span>
+      <p><strong>不要 2: 不要承诺"gh-ost 一定不锁表"</strong> — 切流期间 atomic 模式阻塞 1-3 秒, 写操作排队。诚实说"业务零感知" 而不是"零阻塞"。</p>
+    </div>
+    <div class="callout warn">
+      <span class="icon">⚠</span>
+      <p><strong>不要 3: 不要演示未跑过的功能</strong> — 4 个案例是 8 月真实跑过的, 拿来宣讲有底气。临时加的"未来会做"功能别演示, 容易被打脸。</p>
     </div>
 
     <div class="footer">
-      <p>📖 gh-ost 无锁 DDL 变更 + 字段 diff 检测 · 操作手册 · mavis · 2026-08-24</p>
-      <p style="margin-top:6px;">相关: <a href="../designs/2026-08-05_gh-ost-product-design.html" style="color:var(--primary);">gh-ost 详设 (8/05)</a> · <a href="../designs/2026-08-10_gh-ost-detail-design.html" style="color:var(--primary);">gh-ost 完整版 (8/10)</a> · <a href="../designs/2026-08-12_gh-ost-column-diff-mockup.html" style="color:var(--primary);">字段 diff mockup (8/12)</a></p>
-      <p>需要帮助? 找 DBA 兜底 (admin 后台权限组管理) 或查看 <a href="../troubleshooting.md" style="color:var(--primary);">troubleshooting.md</a></p>
+      <p>🎓 gh-ost 无锁 DDL 变更 + 字段 diff 检测 · 开发人员宣讲手册 · mavis · 2026-08-24</p>
+      <p style="margin-top:6px;">设计稿: <a href="../designs/2026-08-10_gh-ost-detail-design.html" style="color:var(--primary);">gh-ost 详设</a> · <a href="../designs/2026-08-13_ddl-rollback-parse-design.html" style="color:var(--primary);">DDL 智能回滚</a> · <a href="../designs/2026-08-13_v0405-ghost-rebuild-design.html" style="color:var(--primary);">v0.4.5 rebuild</a></p>
     </div>
   </div>
 </body>
