@@ -33,25 +33,23 @@ if action == WorkflowAction.ABORT:
 else:  # REJECT
     abort_reason = "审批驳回"
 
-## 2. operator 显示 "中文名 (审批节点)"
+## 2. operator 显示 "中文名 (审批节点)" — 不再写死 group
+## 8/24 16:55 修: 用 user.groups ∩ wf.audit_auth_groups 拿 group, 不用 audit_auth_groups[0]
+## 8/24 16:52 误判: 用 audit_auth_groups[0] 拿 "14=研发组长", 但马克群是 DBA, 显示错
 operator_cn = request.user.display or request.user.username
 operator_with_group = operator_cn  # fallback
 try:
-    from django.contrib.auth.models import Group
-    wf_audit = sql_workflow.get_audit() if hasattr(sql_workflow, "get_audit") else None
-    group_id_str = None
-    if wf_audit and wf_audit.current_audit and wf_audit.current_audit != "-1":
-        group_id_str = wf_audit.current_audit  # 审核中工单
-    elif sql_workflow.audit_auth_groups:
-        group_id_str = (sql_workflow.audit_auth_groups or "").split(",")[0].strip()  # 兜底
-    if group_id_str:
-        try:
-            g = Group.objects.get(id=int(group_id_str))
-            operator_with_group = f"{operator_cn} ({g.name})"
-        except (Group.DoesNotExist, ValueError):
-            pass
+    audit_groups_str = (sql_workflow.audit_auth_groups or "").strip()
+    if audit_groups_str:
+        audit_group_ids = [int(g) for g in audit_groups_str.split(",") if g.strip().isdigit()]
+        if audit_group_ids:
+            # 查 user 在审批流相关 group 里的成员关系 (精确匹配)
+            user_groups = request.user.groups.filter(id__in=audit_group_ids)
+            if user_groups.exists():
+                g = user_groups.first()
+                operator_with_group = f"{operator_cn} ({g.name})"
 except Exception:
-    pass  # 拿 group 失败不影响主流程
+    pass
 
 cleanup_pending_ghost_tasks(
     sql_workflow,
@@ -63,7 +61,7 @@ cleanup_pending_ghost_tasks(
 **关键点**:
 1. **reason 跟 action 联动** - 不再写死"拒绝/撤回"
 2. **operator 用 display 优先** - 拿中文名, username 兜底
-3. **拼审批节点** - 优先用 `wf.audit.current_audit` 拿 group, 兜底用 `wf.audit_auth_groups` 第一个
+3. **审批节点用 user.groups 交集** - 不再写死"第一个 group"或"current_audit",而是**查 user 实际所在的审批节点**
 4. **拿不到 group fallback** - 只显示 display, 不阻塞主流程
 5. **OA 回调路径不动** - `oa_callback_handler.py:343` 已经传中文名 (用 `actor_label["operator"]`)
 
