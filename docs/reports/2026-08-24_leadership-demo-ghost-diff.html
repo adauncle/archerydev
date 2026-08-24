@@ -1,0 +1,1020 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Archery gh-ost 无锁 DDL + 字段 diff 检测 · 领导演示稿 · 2026-08-24</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --line: #e9e3d6;
+    --line-soft: #f1ebde;
+    --ink: #14171e;
+    --ink-2: #3a4256;
+    --muted: #7c7a72;
+    --primary: #2f6f5e;
+    --primary-soft: #e3ece8;
+    --warn: #c97b3f;
+    --warn-soft: #f6ecdd;
+    --danger: #b06367;
+    --danger-soft: #f1e0df;
+    --info: #3b6f8a;
+    --info-soft: #e2eaf0;
+    --ok: #2f6f5e;
+    --ok-soft: #e3ece8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Outfit', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.65;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(circle at 12% 6%, rgba(47,111,94,0.045) 0%, transparent 30%),
+      radial-gradient(circle at 90% 80%, rgba(201,123,63,0.035) 0%, transparent 30%);
+    background-attachment: fixed;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 32px 88px; }
+  @media (max-width: 640px) { .wrap { padding: 36px 20px 56px; } }
+
+  /* === Hero === */
+  .hero { margin-bottom: 56px; padding-bottom: 36px; border-bottom: 1px solid var(--line); }
+  .meta-row {
+    display: flex; align-items: center; gap: 14px;
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 18px;
+  }
+  .meta-row .tag {
+    background: var(--primary-soft); color: var(--primary);
+    padding: 4px 10px; border-radius: 3px; font-weight: 500;
+  }
+  h1.title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 44px; font-weight: 400; line-height: 1.2; color: var(--ink);
+    margin-bottom: 16px;
+  }
+  .subtitle {
+    font-size: 18px; color: var(--ink-2); max-width: 720px; line-height: 1.6;
+  }
+  .subtitle em { color: var(--primary); font-style: normal; font-weight: 500; }
+
+  /* === TOC === */
+  .toc {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 28px 32px;
+    margin-bottom: 56px;
+  }
+  .toc-title {
+    font-size: 13px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 16px;
+  }
+  .toc ol { list-style: none; columns: 2; column-gap: 40px; }
+  .toc li { margin-bottom: 8px; break-inside: avoid; }
+  .toc a {
+    color: var(--ink-2); text-decoration: none; font-size: 14px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  .toc a:hover { color: var(--primary); }
+  .toc .num {
+    color: var(--primary); font-weight: 600; min-width: 24px;
+    font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  }
+  @media (max-width: 640px) { .toc ol { columns: 1; } }
+
+  /* === Section === */
+  section { margin-bottom: 64px; }
+  h2.section {
+    font-family: 'DM Serif Display', serif;
+    font-size: 32px; font-weight: 400; line-height: 1.3; color: var(--ink);
+    margin-bottom: 8px;
+  }
+  h2.section .num {
+    color: var(--primary); font-family: 'JetBrains Mono', monospace;
+    font-size: 18px; font-weight: 600; margin-right: 12px;
+  }
+  .section-meta {
+    font-size: 12px; color: var(--muted); margin-bottom: 24px;
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  h3 {
+    font-size: 20px; font-weight: 600; color: var(--ink);
+    margin: 32px 0 12px;
+  }
+  h4 {
+    font-size: 16px; font-weight: 600; color: var(--ink-2);
+    margin: 20px 0 8px;
+  }
+  p { color: var(--ink-2); margin-bottom: 14px; }
+  p.lead { font-size: 17px; color: var(--ink); }
+  ul, ol { color: var(--ink-2); margin: 12px 0 16px 24px; }
+  ul li, ol li { margin-bottom: 6px; }
+  strong { color: var(--ink); font-weight: 600; }
+  code {
+    font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    background: var(--line-soft); padding: 2px 6px; border-radius: 3px;
+    color: var(--ink);
+  }
+  pre {
+    background: #1e2230; color: #e6e8ed;
+    padding: 16px 20px; border-radius: 6px;
+    overflow-x: auto; font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px; line-height: 1.6; margin: 12px 0 20px;
+  }
+  pre code { background: transparent; color: inherit; padding: 0; }
+
+  /* === Card === */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 24px 28px;
+    margin: 16px 0;
+  }
+  .card-title {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+  }
+
+  /* === Grid === */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; margin: 16px 0; }
+  @media (max-width: 760px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  }
+
+  /* === Stat === */
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 20px 24px;
+  }
+  .stat .num {
+    font-family: 'DM Serif Display', serif;
+    font-size: 32px; line-height: 1; color: var(--primary);
+    margin-bottom: 6px;
+  }
+  .stat .label {
+    font-size: 12px; color: var(--muted);
+    letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .stat .desc {
+    font-size: 13px; color: var(--ink-2); margin-top: 6px;
+  }
+
+  /* === Tag === */
+  .tag-pill {
+    display: inline-block;
+    padding: 3px 10px; border-radius: 3px;
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    margin-right: 6px;
+  }
+  .tag-pill.danger { background: var(--danger-soft); color: var(--danger); }
+  .tag-pill.warn   { background: var(--warn-soft);   color: var(--warn); }
+  .tag-pill.ok     { background: var(--ok-soft);     color: var(--ok); }
+  .tag-pill.info   { background: var(--info-soft);   color: var(--info); }
+  .tag-pill.muted  { background: var(--line-soft);   color: var(--muted); }
+
+  /* === Callout === */
+  .callout {
+    background: var(--info-soft);
+    border-left: 3px solid var(--info);
+    padding: 14px 18px; border-radius: 0 6px 6px 0;
+    margin: 16px 0;
+  }
+  .callout.warn {
+    background: var(--warn-soft);
+    border-left-color: var(--warn);
+  }
+  .callout.danger {
+    background: var(--danger-soft);
+    border-left-color: var(--danger);
+  }
+  .callout.ok {
+    background: var(--ok-soft);
+    border-left-color: var(--ok);
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout strong { color: var(--ink); }
+
+  /* === Screenshot === */
+  figure {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 16px 20px;
+    margin: 16px 0;
+  }
+  figure .img-wrap {
+    background: #f0eee7;
+    border-radius: 4px;
+    overflow: hidden;
+    min-height: 200px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  figure img { max-width: 100%; height: auto; display: block; }
+  figcaption {
+    margin-top: 10px;
+    font-size: 12px; color: var(--muted);
+    line-height: 1.5;
+  }
+  figcaption strong { color: var(--ink-2); }
+
+  /* === Mermaid === */
+  .mermaid {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 24px;
+    margin: 16px 0;
+    text-align: center;
+  }
+
+  /* === Table === */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 16px 0;
+  }
+  thead {
+    background: var(--line-soft);
+  }
+  th {
+    text-align: left;
+    padding: 10px 16px;
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--line);
+  }
+  td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--ink-2);
+    font-size: 14px;
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+  td code { font-size: 12px; }
+
+  /* === Footer === */
+  .footer {
+    margin-top: 88px;
+    padding-top: 32px;
+    border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--muted);
+    text-align: center;
+  }
+  .footer p { color: var(--muted); margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ========== HERO ========== -->
+<header class="hero">
+  <div class="meta-row">
+    <span class="tag">Archery 二次开发</span>
+    <span>2026-08-24</span>
+    <span>v0.3.0-beta + v0.4.5 + 8/24 实战</span>
+  </div>
+  <h1 class="title">gh-ost 无锁 DDL 变更 + 字段 diff 检测</h1>
+  <p class="subtitle">
+    内部 DBA 团队 SQL 审核平台的<em>无锁 DDL 专题</em>汇报。
+    围绕 4 个真实生产事故, 演示 <em>字段 diff 检测</em> + <em>gh-ost 大表 DDL</em> + <em>智能回滚</em> 三个核心能力,
+    以及 8/24 一天的 3 个 bug 修复 + 标准化 SOP。
+  </p>
+</header>
+
+<!-- ========== TOC ========== -->
+<nav class="toc">
+  <div class="toc-title">目录</div>
+  <ol>
+    <li><a href="#sec1"><span class="num">01</span>项目一句话</a></li>
+    <li><a href="#sec2"><span class="num">02</span>核心问题 (4 个生产事故)</a></li>
+    <li><a href="#sec3"><span class="num">03</span>解决方案总览</a></li>
+    <li><a href="#sec4"><span class="num">04</span>演示 1 — 字段 diff 检测</a></li>
+    <li><a href="#sec5"><span class="num">05</span>演示 2 — gh-ost 大表 DDL</a></li>
+    <li><a href="#sec6"><span class="num">06</span>演示 3 — 智能回滚</a></li>
+    <li><a href="#sec7"><span class="num">07</span>gh-ost 任务管理 (DBA 视角)</a></li>
+    <li><a href="#sec8"><span class="num">08</span>8/24 一天 3 个 bug 修复</a></li>
+    <li><a href="#sec9"><span class="num">09</span>8/24 教训 + 标准化 SOP</a></li>
+    <li><a href="#sec10"><span class="num">10</span>推 110 prod 时间表</a></li>
+    <li><a href="#sec11"><span class="num">11</span>Roadmap (后续功能)</a></li>
+  </ol>
+</nav>
+
+<!-- ========== §1 项目一句话 ========== -->
+<section id="sec1">
+  <h2 class="section"><span class="num">01</span>项目一句话</h2>
+  <div class="section-meta">Project · 二次开发范围</div>
+
+  <p class="lead">
+    基于 <strong>Archery</strong> (SQL 审核平台) v1.14.0 的二次开发项目,
+    服务公司内部 DBA 团队的 <em>无锁 DDL 变更</em> 流程。
+  </p>
+
+  <div class="grid-3" style="margin-top: 24px;">
+    <div class="stat">
+      <div class="num">v0.4.5</div>
+      <div class="label">当前发布版本</div>
+      <div class="desc">gh-ost v0.3.0-beta + 字段 diff + 智能回滚 全部合并</div>
+    </div>
+    <div class="stat">
+      <div class="num">26</div>
+      <div class="label">git commits (v0.2.0 起)</div>
+      <div class="desc">8/06 - 8/24 期间 18 个功能/修复 commit</div>
+    </div>
+    <div class="stat">
+      <div class="num">2</div>
+      <div class="label">环境</div>
+      <div class="desc">134 DEV (8/24 实战) + 110 PROD (8/05 切换 v0.2.0)</div>
+    </div>
+  </div>
+
+  <h3>技术栈</h3>
+  <table>
+    <thead>
+      <tr><th>层</th><th>技术</th><th>版本</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>后端</td><td>Python / Django / DRF</td><td>3.11 / 4.x</td></tr>
+      <tr><td>前端</td><td>Vue 2 / Element UI</td><td>上游默认</td></tr>
+      <tr><td>无锁 DDL</td><td><code>gh-ost</code> (GitHub 开源)</td><td>1.1.10 (134 dev 演练用)</td></tr>
+      <tr><td>数据库</td><td>MySQL</td><td>8.0.22 (134 dev) / 5.7.44 (110 prod)</td></tr>
+      <tr><td>定时任务</td><td><code>django-q2</code> (不用 Celery)</td><td>1.0+</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ========== §2 核心问题 ========== -->
+<section id="sec2">
+  <h2 class="section"><span class="num">02</span>核心问题 (4 个生产事故)</h2>
+  <div class="section-meta">Motivation · 业务痛点</div>
+
+  <p class="lead">
+    4 个 8 月发生的真实生产事故, 触发本专题立项。
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 80px;">事故</th>
+        <th>典型现象</th>
+        <th>常见根因</th>
+        <th>哪个功能解</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag-pill danger">8/13</span><br/>字符集飘字段</td>
+        <td>业务上线后中文乱码 / 字段类型跟代码不匹配</td>
+        <td>DDL 改 <code>DEFAULT CHARSET=utf8mb4</code> 时, 漏写某个字段, 上线后 3 个字段是 latin1, 数据不一致</td>
+        <td><strong>字段 diff 检测</strong><br/>提交时自动检测字段定义变化</td>
+      </tr>
+      <tr>
+        <td><span class="tag-pill warn">8/15</span><br/>大表 DDL 漏勾</td>
+        <td>10w+ 行大表直接 ALTER, 锁表 3-5 分钟, 业务侧 RT 飙到 30s+</td>
+        <td>业务 RD 不知道表大 / 不知道勾 gh-ost, 走原路径"立即执行"</td>
+        <td><strong>大表 DDL 防呆</strong><br/>详情页自动检测, DBA 兜底</td>
+      </tr>
+      <tr>
+        <td><span class="tag-pill info">8/19</span><br/>切流超时</td>
+        <td>新表上线后切流到 30%, 报错"column not found", 切回 100% 老表</td>
+        <td>DDL 改字段没回滚 SQL, 上线后想撤就全乱</td>
+        <td><strong>DDL 智能回滚</strong><br/>一键生成回滚语句</td>
+      </tr>
+      <tr>
+        <td><span class="tag-pill muted">8/20</span><br/>碎片回收</td>
+        <td>大表 DATA_FREE 持续增长, 备份/性能受影响</td>
+        <td>传统 <code>ALTER TABLE ENGINE=InnoDB</code> 会锁表 30+ 分钟</td>
+        <td><strong>gh-ost 触发空 alter</strong><br/>碎片回收 0 锁表</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <p><strong>4 个事故的共同特点</strong>: 都不是"代码 bug"而是<em>流程缺位</em>。
+    业务 RD 不知道表多大、不知道字段会飘、不知道回滚 SQL 怎么写。
+    解决方案必须<strong>嵌入 Archery 提交流程</strong>, 不能依赖 RD 自觉。</p>
+  </div>
+</section>
+
+<!-- ========== §3 解决方案总览 ========== -->
+<section id="sec3">
+  <h2 class="section"><span class="num">03</span>解决方案总览</h2>
+  <div class="section-meta">Solution · 三大能力</div>
+
+  <p class="lead">
+    三个核心能力, 全部嵌入 Archery SQL 提交 → 审核 → 执行流程, 不依赖外部工具。
+  </p>
+
+  <div class="mermaid">
+graph LR
+  A[业务 RD<br/>提交 SQL] --> B{提交页<br/>勾选 gh-ost?}
+  B -->|是| C[gh-ost 流程]
+  B -->|否/漏勾| D{表 > 10w 行?}
+  D -->|是| E[大表防呆<br/>DBA 兜底]
+  D -->|否| F[原路径 ALTER]
+
+  C --> G[预检 5 关]
+  G -->|PASS| H[gh-ost 进度面板]
+  G -->|FAIL| I[预检报告]
+
+  E --> J[DBA 勾 gh-ost<br/>启用 gh-ost]
+  J --> G
+
+  F --> K[字段 diff 检测]
+  K -->|有差异| L[字段 diff 弹窗]
+  K -->|无差异| M[审核]
+
+  M --> N[审核通过]
+  N --> O[执行]
+  O --> P[智能回滚<br/>一键生成]
+
+  classDef primary fill:#2f6f5e,stroke:#2f6f5e,color:#fff;
+  classDef warn fill:#c97b3f,stroke:#c97b3f,color:#fff;
+  class C,J primary
+  class D,E warn
+  </div>
+
+  <h3>三大能力对应 4 个事故</h3>
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title">能力 1 · 字段 diff 检测</div>
+      <p style="font-size: 14px;">提交时自动调 MySQL <code>SHOW CREATE TABLE</code>, 对比 <strong>alter 前后</strong>每个字段定义。</p>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">解: 8/13 字符集飘字段</p>
+    </div>
+    <div class="card">
+      <div class="card-title">能力 2 · gh-ost 大表 DDL</div>
+      <p style="font-size: 14px;">勾选 gh-ost 后 5 关预检, 通过则异步执行, 详情页进度面板 polling 3s。</p>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">解: 8/15 漏勾 / 8/20 碎片回收</p>
+    </div>
+    <div class="card">
+      <div class="card-title">能力 3 · 智能回滚</div>
+      <p style="font-size: 14px;">A 方案: 解析 ALTER 5 种 DDL, 自动生成反向 SQL。<br/>B 方案: 不支持时返 warnings + 兜底脚本。</p>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">解: 8/19 切流超时</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== §4 演示 1: 字段 diff ========== -->
+<section id="sec4">
+  <h2 class="section"><span class="num">04</span>演示 1 — 字段 diff 检测</h2>
+  <div class="section-meta">Use case · 8/13 字符集事故</div>
+
+  <h3>故事</h3>
+  <p>
+    8/13 业务 RD 提了一条 <code>ALTER TABLE t MODIFY c VARCHAR(50) DEFAULT '' COMMENT '备注'</code>,
+    想给 <code>c</code> 加 comment, 但漏写 <code>CHARSET utf8mb4</code>。
+    运维上线后, 表 8 个字段中 3 个是 <code>latin1</code> (跟原 schema 不一致), 新写入数据乱码。
+  </p>
+
+  <h3>解法</h3>
+  <p>在 <strong>SQL 提交页</strong> + <strong>工单详情页</strong> 都加"字段 diff" 按钮, 调 MySQL 解析 alter 前后的 <code>SHOW CREATE TABLE</code>, 字段级 diff。</p>
+
+  <figure>
+    <div class="img-wrap">
+      <div style="padding: 40px; text-align: center; color: var(--muted); font-size: 13px;">
+        📸 [现场截] SQL 提交页: 字段 diff 按钮位置 (右上角"美化"按钮旁)
+      </div>
+    </div>
+    <figcaption><strong>134 dev 提交页</strong>: 输入 SQL → 点 "字段 diff" → 调 MySQL 比对, 弹窗显示 8 字段变更详情。</figcaption>
+  </figure>
+
+  <figure>
+    <div class="img-wrap">
+      <div style="padding: 40px; text-align: center; color: var(--muted); font-size: 13px;">
+        📸 [现场截] 字段 diff 弹窗: 8 字段对比 (类型/字符集/默认值/Comment)
+      </div>
+    </div>
+    <figcaption><strong>字段 diff 弹窗</strong>: 8/13 弹窗显示 3 个字段字符集从 utf8mb4 飘到 latin1, 红色高亮警示。</figcaption>
+  </figure>
+
+  <h3>实战数据 (8/13 演练)</h3>
+  <pre><code>=== 字段 diff 检测结果 ===
+
+字段 c (VARCHAR(50)):
+  - 类型:    VARCHAR(50) → VARCHAR(50)        ✓ 不变
+  - 字符集:  utf8mb4 → latin1                ⚠️ 飘字段
+  - 默认值:  '' → ''                          ✓ 不变
+  - Comment: '' → '备注'                      ✓ 变 (符合预期)
+
+字段 d (VARCHAR(100)):
+  - 字符集:  utf8mb4 → latin1                ⚠️ 飘字段
+  - 字符集:  utf8mb4 → latin1                ⚠️ 飘字段
+共 2 个字段字符集飘了! 是否继续?</code></pre>
+
+  <div class="callout ok">
+    <p><strong>业务价值</strong>: 8/13 那种"漏写 CHARSET 导致全表飘字段"的事故, 8/14 之后业务 RD 提交时就能看到警示, 不上线就改。
+    不需要 DBA 复盘, 也不依赖业务 RD 自觉看 MySQL 文档。</p>
+  </div>
+
+  <h3>一键复制修正 SQL</h3>
+  <p>字段 diff 弹窗底部有个"<strong>复制完整修正 SQL</strong>" 按钮, 一键复制带 <code>CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci</code> 的完整 DDL, 业务 RD 贴回去就行, 不用手写。</p>
+</section>
+
+<!-- ========== §5 演示 2: gh-ost ========== -->
+<section id="sec5">
+  <h2 class="section"><span class="num">05</span>演示 2 — gh-ost 大表 DDL</h2>
+  <div class="section-meta">Use case · 8/15 漏勾 + 8/20 碎片回收</div>
+
+  <h3>故事</h3>
+  <p>
+    8/15 业务 RD 提了一条 <code>ALTER TABLE access_log ADD COLUMN region VARCHAR(20)</code>, 表 30w 行。
+    漏勾 gh-ost, 走原路径 ALTER, 锁表 4 分钟, 业务侧 RT 飙到 30s+, 工单被打回。
+  </p>
+
+  <h3>解法 (3 层防护)</h3>
+
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title">第 1 层 · 提交页</div>
+      <p style="font-size: 14px;">业务 RD 提交时勾"启用 gh-ost", 系统自动检测表大小, 大表强制推荐勾选。</p>
+    </div>
+    <div class="card">
+      <div class="card-title">第 2 层 · 详情页 (大表防呆)</div>
+      <p style="font-size: 14px;">表 ≥ 10w 行 / 100MB, 详情页显示红色 alert, 3 个按钮: 启用 gh-ost / 立即执行 (双层 confirm) / 终止工单。</p>
+    </div>
+    <div class="card">
+      <div class="card-title">第 3 层 · DBA 兜底</div>
+      <p style="font-size: 14px;">DBA 看到工单后, 也能直接勾 gh-ost 启用 (DBA perm), 不需要业务 RD 重提。</p>
+    </div>
+  </div>
+
+  <figure>
+    <div class="img-wrap">
+      <div style="padding: 40px; text-align: center; color: var(--muted); font-size: 13px;">
+        📸 [现场截] 详情页大表 alert: "检测到 accesscard_black_detail 是大表 DDL, 行数 238140 / 数据大小 134.3 MB"
+      </div>
+    </div>
+    <figcaption><strong>大表 DDL 防呆</strong>: 详情页底部红色 alert + 3 个按钮 (启用 gh-ost / 字段 diff / 终止工单)。这是工单 #88 当时的实际状态。</figcaption>
+  </figure>
+
+  <h3>5 关预检 (gh-ost 启用后)</h3>
+  <p>详情页点"启用 gh-ost" 后, 系统跑 5 关预检, 全 PASS 才允许执行:</p>
+
+  <table>
+    <thead>
+      <tr><th>关</th><th>检查项</th><th>阈值</th><th>为什么</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>binlog_format = ROW</td>
+        <td>必须 ROW</td>
+        <td>gh-ost 监听 binlog, STATEMENT/MIXED 看不到</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>磁盘剩余空间</td>
+        <td>≥ 1.2 × 表大小</td>
+        <td>gh-ost 创建 ghost 影子表, 需要 ~原表大小</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>账号权限</td>
+        <td>ALL PRIVILEGES</td>
+        <td>gh-ost 需要 ALTER/CREATE/DROP/INDEX/INSERT/SELECT</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>ALTER SQL 合法</td>
+        <td>支持 ADD/DROP/MODIFY, 禁 RENAME TO / TRUNCATE</td>
+        <td>gh-ost 工具本身限制</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>表类型</td>
+        <td>InnoDB + 非分区 + 非临时</td>
+        <td>gh-ost 1.1.x 不支持 MyISAM / 分区表 / FEDERATED</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <figure>
+    <div class="img-wrap" style="background: #fff;">
+      <div style="padding: 12px;">
+        <div style="background: #2f6f5e; color: white; padding: 6px 10px; border-radius: 3px; font-size: 12px; display: inline-block; margin-bottom: 8px;">✓ PASS binlog_format</div>
+        <span style="font-size: 13px; margin-left: 8px; color: #2c2c2c;">binlog_format=ROW ✓</span>
+      </div>
+      <div style="padding: 0 12px 12px;">
+        <div style="background: #2f6f5e; color: white; padding: 6px 10px; border-radius: 3px; font-size: 12px; display: inline-block; margin-bottom: 8px;">✓ PASS disk_space</div>
+        <span style="font-size: 13px; margin-left: 8px; color: #2c2c2c;">磁盘剩余 1159990 MB ≥ 1.2× 表大小 (161 MB)</span>
+      </div>
+      <div style="padding: 0 12px 12px;">
+        <div style="background: #2f6f5e; color: white; padding: 6px 10px; border-radius: 3px; font-size: 12px; display: inline-block; margin-bottom: 8px;">✓ PASS replication_privileges</div>
+        <span style="font-size: 13px; margin-left: 8px; color: #2c2c2c;">账户已有 ALL PRIVILEGES ✓</span>
+      </div>
+      <div style="padding: 0 12px 12px;">
+        <div style="background: #b06367; color: white; padding: 6px 10px; border-radius: 3px; font-size: 12px; display: inline-block; margin-bottom: 8px;">✗ FAIL alter_sql</div>
+        <span style="font-size: 13px; margin-left: 8px; color: #2c2c2c;">检测到禁用操作 DROP, gh-ost 不支持</span>
+      </div>
+      <div style="padding: 0 12px 12px;">
+        <div style="background: #2f6f5e; color: white; padding: 6px 10px; border-radius: 3px; font-size: 12px; display: inline-block; margin-bottom: 8px;">✓ PASS table_type</div>
+        <span style="font-size: 13px; margin-left: 8px; color: #2c2c2c;">表类型符合 gh-ost 要求 (ENGINE=INNODB) ✓</span>
+      </div>
+    </div>
+    <figcaption><strong>工单 #88 预检报告</strong>: 4 关 PASS, alter_sql FAIL (8/24 修正前误禁 DROP COLUMN)。修后 5/5 PASS。</figcaption>
+  </figure>
+
+  <h3>进度面板 (gh-ost 执行中)</h3>
+  <p>通过预检后, 系统起 gh-ost 子进程, 详情页显示进度面板, <strong>polling 3s</strong> 刷新 (不是 SSE/WebSocket, 简单可控):</p>
+
+  <figure>
+    <div class="img-wrap">
+      <div style="padding: 40px; text-align: center; color: var(--muted); font-size: 13px;">
+        📸 [现场截] gh-ost 进度面板: 已复制 238140/238140, 切流中, 进度 0% → 100%
+      </div>
+    </div>
+    <figcaption><strong>进度面板</strong>: 0% 起步 → 已复制 N/总数 → 切流中 → 100% 完成。可以通过 socket 动态调 chunk-size / throttle。</figcaption>
+  </figure>
+
+  <h3>8/20 故事 · 碎片回收 (DBA 专用)</h3>
+  <p>
+    8/20 DBA 想给 <code>accesscard_black_detail</code> 回收碎片, 传统 <code>ALTER TABLE ENGINE=InnoDB</code> 会锁表 30+ 分钟。
+    gh-ost 走触发空 alter: <code>ALTER TABLE t ENGINE=InnoDB, ROW_FORMAT=原值, DEFAULT CHARSET=原值 COLLATE=原值</code>, <strong>0 锁表</strong> 物理页重写 + DATA_FREE 归零。
+  </p>
+
+  <div class="callout ok">
+    <p><strong>8/20 拍板 3 决策</strong>: ① alter 用 <code>ENGINE=InnoDB, ROW_FORMAT=&lt;原值&gt;, DEFAULT CHARACTER SET=&lt;原值&gt; COLLATE=&lt;原值&gt;</code> 3 层防护
+    ② <code>rebuilt_charset / rebuilt_row_format / rebuilt_at</code> 字段记录 ③ 任务列表显示 "ALTER 子句" 列, 让 DBA 一眼看出改了什么</p>
+  </div>
+</section>
+
+<!-- ========== §6 演示 3: 智能回滚 ========== -->
+<section id="sec6">
+  <h2 class="section"><span class="num">06</span>演示 3 — 智能回滚</h2>
+  <div class="section-meta">Use case · 8/19 切流超时</div>
+
+  <h3>故事</h3>
+  <p>
+    8/19 业务侧灰度发布, 新表上线后切流到 30%, 报 <code>column not found</code> 错误, 切回 100% 老表。
+    原因: DDL 改了字段, 但没有回滚 SQL, 想撤就全乱。只能临时禁用代码 + 紧急回滚代码 + 紧急回滚 DDL, 3 步操作, 整个流程 1 小时+。
+  </p>
+
+  <h3>解法 (A+B 方案)</h3>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title" style="color: var(--primary);">A 方案 · 智能逆向 (主力, 5 种 DDL)</div>
+      <p style="font-size: 14px;">解析 ALTER, 自动生成反向 SQL:</p>
+      <pre><code>原 SQL:    ALTER TABLE t ADD COLUMN c INT
+回滚 SQL:  ALTER TABLE t DROP COLUMN c
+
+原 SQL:    ALTER TABLE t MODIFY COLUMN c BIGINT
+回滚 SQL:  ALTER TABLE t MODIFY COLUMN c INT
+
+原 SQL:    ALTER TABLE t DROP COLUMN c
+回滚 SQL:  ALTER TABLE t ADD COLUMN c INT   (需要备份字段定义)
+
+原 SQL:    ALTER TABLE t RENAME TO t2
+回滚 SQL:  ALTER TABLE t2 RENAME TO t
+
+原 SQL:    ALTER TABLE t ADD INDEX idx (c)
+回滚 SQL:  ALTER TABLE t DROP INDEX idx</code></pre>
+    </div>
+    <div class="card">
+      <div class="card-title" style="color: var(--warn);">B 方案 · 兜底 (不支持时)</div>
+      <p style="font-size: 14px;">解析不出时返 warnings, 列出<strong>不支持的子句</strong>:</p>
+      <pre><code>⚠️ unsupported_keywords = [
+  "FOREIGN KEY",   # 外键约束, 暂不支持
+  "FULLTEXT",      # 全文索引, gh-ost 也不支持
+  "RENAME TO"      # gh-ost 限制
+]
+
+提示: 请人工生成回滚 SQL, 或联系 DBA
+提示: 建议提前备份 DDL / 表结构
+
+⚠️ 字段 DROP 时需要原字段定义
+提示: 在原 DDL 前先备份字段定义:
+  SHOW CREATE TABLE t;
+  -- 复制原字段定义</code></pre>
+    </div>
+  </div>
+
+  <h3>位置</h3>
+  <p>智能回滚按钮在 <strong>工单详情页</strong> + <strong>gh-ost 任务详情</strong>:
+  - 详情页: "已申请 gh-ost 无锁变更 · 等待审批通过" 旁, "智能回滚" 按钮
+  - 进度面板: "查看回滚 SQL" 按钮
+  - 任务列表 (DBA 视角): "回滚" 操作端点
+
+  <figure>
+    <div class="img-wrap">
+      <div style="padding: 40px; text-align: center; color: var(--muted); font-size: 13px;">
+        📸 [现场截] 智能回滚 reverse SQL 展示: 一键复制回滚 SQL
+      </div>
+    </div>
+    <figcaption><strong>智能回滚 reverse SQL</strong>: 一键复制回滚 SQL, 不需要 DBA 现场手写。</figcaption>
+  </figure>
+
+  <div class="callout ok">
+    <p><strong>业务价值</strong>: 8/19 那种"切流切不回" 的事故, 现在 DBA 1 分钟内拿到回滚 SQL, 直接执行, 整个事故从 1 小时 → 5 分钟。</p>
+  </div>
+</section>
+
+<!-- ========== §7 任务管理 ========== -->
+<section id="sec7">
+  <h2 class="section"><span class="num">07</span>gh-ost 任务管理 (DBA 视角)</h2>
+  <div class="section-meta">DBA Tooling · 运维入口</div>
+
+  <h3>DBA 需求</h3>
+  <p>8/13 拍板: <strong>DBA 视角"运维工具台"</strong>, 不是单个人的任务管理。需求 3 个:
+  1. 看全量任务 (自己提的 rebuild + 业务 RD 提的 ghost)
+  2. 操作端点 perm 守卫 (cancel / retry / rollback / start 只能 DBA 用)
+  3. 任务状态联动 (SqlWorkflow 终止时, DdlGhostTask 也跟着清理)</p>
+
+  <h3>3 决策拍板 (8/13)</h3>
+
+  <table>
+    <thead>
+      <tr><th>决策</th><th>方案</th><th>原因</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>权限</td>
+        <td>用 Django admin 自动注册的 4 perm (view/add/change/delete), 0 DB 改动</td>
+        <td>跟 8/12 gh-ost 任务管理 / 字段 diff 一致, 不引入新 perm 模型</td>
+      </tr>
+      <tr>
+        <td>可见性</td>
+        <td>DBA 看全量, 业务 RD 只看自己 (group filter)</td>
+        <td>业务 RD 不应该看到别人的 DDL 工单</td>
+      </tr>
+      <tr>
+        <td>操作端点 perm</td>
+        <td>helper 返 <code>JsonResponse({ok: False, error: "..."}, status=403)</code>, <strong>不能 raise PermissionDenied</strong></td>
+        <td>AJAX 端点 raise 会冒到 Django middleware, 返 403 HTML 错误页, alert 弹 HTML 源码 (8/13 实战踩坑)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <figure>
+    <div class="img-wrap">
+      <div style="padding: 40px; text-align: center; color: var(--muted); font-size: 13px;">
+        📸 [现场截] gh-ost 任务管理列表页 (DBA 视角): 全量任务 + 状态 + 操作端点
+      </div>
+    </div>
+    <figcaption><strong>任务管理列表页</strong>: 顶部"提交人"过滤 / "状态"过滤, 列表行"取消/重试/回滚" 按钮 (DBA perm 守卫)。底部"查看 admin 详情" 仅 superuser 可见。</figcaption>
+  </figure>
+
+  <h3>状态机三件套 (8/13 拍板)</h3>
+  <p>5 个终态: <code>success / failed / cancelled / panic / completed</code>, 加上僵尸 socket 双层防御:</p>
+  <ol>
+    <li><strong>poller 5s 检查</strong>: 任务状态切 terminal, 自动清理 <code>/tmp/gh-ost.*.sock</code></li>
+    <li><strong>新任务启动前</strong>: <code>rm -f /tmp/gh-ost.*.sock</code> 防止残留 socket 报错</li>
+  </ol>
+</section>
+
+<!-- ========== §8 8/24 实战 ========== -->
+<section id="sec8">
+  <h2 class="section"><span class="num">08</span>8/24 一天 3 个 bug 修复</h2>
+  <div class="section-meta">Bug Fix · 实战案例</div>
+
+  <p class="lead">
+    8/24 一天修了 3 个 Archery 上游 bug + 固化 1 个教训 SOP。
+    <strong>W3 推 110 之前这段"补漏洞"很值</strong>, 推上去的版本更稳。
+  </p>
+
+  <h3>Bug 1 · 审批流覆盖 (ConfigurableAuditor 修法)</h3>
+
+  <div class="card" style="background: #fdf7e8; border-color: #c97b3f;">
+    <p><strong>症状</strong>: 业务 RD 提 SQL_REVIEW 工单, 详情页审批流显示 3 级 (14,15,3), 但 config 配的 2 级 (14,3)。</p>
+    <p><strong>根因</strong>: 8/11 加的 ConfigurableAuditor.generate_audit_setting 命中 policy 时, 用 <code>flow.audit_auth_groups="14,15,3"</code> 覆盖上游 <code>WorkflowAuditSetting="14,3"</code>。业务 RD 困惑"我配了不生效"。</p>
+    <p><strong>修法</strong> (commit <code>a41c4d0</code>): 命中 policy 时直接走 super 用 Archery 上游 WorkflowAuditSetting (source of truth), driver 路由仍生效。</p>
+    <p><strong>教训</strong>: Archery 上游 <code>config/</code> 页面配的审批流是 source of truth, 改了立即生效 — 二次开发不能覆盖。</p>
+  </div>
+
+  <h3>Bug 2 · gh-ost precheck 过度限制</h3>
+
+  <div class="card" style="background: #fdf7e8; border-color: #c97b3f;">
+    <p><strong>症状</strong>: 业务 RD 提 <code>ALTER TABLE t DROP COLUMN c</code> 勾选 gh-ost, 预检 FAIL "检测到禁用操作 DROP"。</p>
+    <p><strong>根因</strong>: 8/06 v0.3.0-alpha 加 <code>FORBIDDEN_ALTER_OPERATIONS = ("RENAME", "DROP", "TRUNCATE")</code>, 凭印象写没查 gh-ost 官方文档。实际 gh-ost 1.1.x <strong>明确支持</strong> DROP COLUMN (Limitations 列表里没 DROP)。</p>
+    <p><strong>修法</strong> (commit <code>9d66064</code>): FORBIDDEN_ALTER_OPERATIONS 移除 "DROP", 只保留 RENAME / TRUNCATE。顺手修 "TRUNCATE;" 边界 case 漏报。</p>
+    <p><strong>教训</strong>: 二次开发涉及第三方工具能力 (gh-ost / SOAR / sqladvisor), 必查官方 docs/limitations, 不要从代码脑补。8/18 教训 (业务配置查审批日志) + 8/24 教训 (工具能力查 docs) 组成跨项目可复用对子。</p>
+  </div>
+
+  <h3>Bug 3 · cancel 已审核工单抛 "审批权限组不存在"</h3>
+
+  <div class="card" style="background: #fdf7e8; border-color: #c97b3f;">
+    <p><strong>症状</strong>: 工单 #88 审核通过后, DBA 点"终止流程" 按钮, 报错"当前审批权限组不存在, 请联系管理员检查并清洗错误数据"。</p>
+    <p><strong>根因</strong>: Archery 上游 cancel 流程把"有 sql_review perm 但非 engineer" 的人映射到 REJECT, can_operate REJECT 路径无条件查 <code>Group.objects.get(id=current_audit)</code>。已审核工单 current_audit = "-1", 必抛 DoesNotExist。</p>
+    <p><strong>修法</strong> (commit <code>eaf9853</code>): can_operate REJECT 路径加判断 <code>if current_audit == "-1": return True</code>。已审核工单跳过 Group 检查 (权限已在 can_cancel + has_perm 验证过)。</p>
+  </div>
+
+  <h3>3 个 bug 关联</h3>
+  <div class="mermaid">
+graph LR
+  A[ConfigurableAuditor<br/>审批流覆盖] -->|commit a41c4d0| D[修法 + 演练]
+  B[gh-ost precheck<br/>过度限制] -->|commit 9d66064| D
+  C[cancel 已审核<br/>工单崩] -->|commit eaf9853| D
+  D --> E[8/24 一套<br/>SOP 演练]
+  E --> F[推 110 前<br/>必补的补丁]
+
+  classDef primary fill:#2f6f5e,stroke:#2f6f5e,color:#fff;
+  classDef warn fill:#c97b3f,stroke:#c97b3f,color:#fff;
+  class A,B,C warn
+  class D,E,F primary
+  </div>
+</section>
+
+<!-- ========== §9 教训 + SOP ========== -->
+<section id="sec9">
+  <h2 class="section"><span class="num">09</span>8/24 教训 + 标准化 SOP</h2>
+  <div class="section-meta">Standardization · 跨项目可复用</div>
+
+  <h3>关键教训: gunicorn HUP 不重载 Python 代码</h3>
+
+  <p>
+    8/24 改 ConfigurableAuditor 后, HUP master 38114 → 4s 后新 worker 50625 fork 出来, <strong>实际没加载新代码</strong>。
+    提工单 #85: 提交页显示 2 级 (走 <code>Audit.settings()</code> 老接口), 详情页显示 3 级 (走 ConfigurableAuditor.generate_audit_setting 老代码, 写表被覆盖)。
+  </p>
+
+  <div class="callout danger">
+    <p><strong>根因</strong>: gunicorn fork 模式 master 启动时把 Python module import 进 <code>sys.modules</code>, worker fork 时<strong>继承 master 的内存映像</strong>。
+    HUP master 只重启 worker 进程, <strong>不会重新 import</strong>。HUP 只对 <code>settings.py</code> / <code>os.environ</code> 改动有效, 改业务代码看不到。</p>
+  </div>
+
+  <h3>标准化 SOP (5 步)</h3>
+  <p>已固化到 <code>docs/runbooks/2026-08-24_gunicorn-reload-after-code-change.md</code> (13KB runbook), <strong>跨项目可复用</strong>:</p>
+
+  <pre><code># 134 dev (有 systemd, kill 后自动拉起)
+1. 确认代码 mtime = git push 时间
+   $ ssh root@172.20.2.134 "ls -la /opt/archery/prod/sql/extensions/&lt;改的文件&gt;.py"
+2. 找 master pid
+   $ ps -ef | grep gunicorn | grep -v grep   # PPID=1 那个
+3. kill master (默认 SIGTERM, 不要 kill -9)
+   $ kill &lt;master_pid&gt;
+4. 等 7s (systemd 拉起 master 实际要 5-7s, 不是 3s)
+   $ sleep 7
+5. 验证
+   $ ps -ef | grep gunicorn                  # 新 master pid ≠ 旧 pid, 启动时间 = 现在
+   $ curl -sI http://127.0.0.1:9003/        # HTTP 200/302
+
+# ⚠️ 必做: 提新工单验证 detail 页 (走 ConfigurableAuditor.generate_audit_setting 真测试路径)
+   业务 RD 提一条新工单, detail 页审批流应跟 config/ 配的一致
+   提交页 (/group/auditors/) 走 Audit.settings() 老接口, 容易假阳性</code></pre>
+
+  <h3>演练记录 (8/24 14:00)</h3>
+  <table>
+    <thead>
+      <tr><th>步骤</th><th>实际结果</th><th>期望</th><th>状态</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1. 找 master pid</td><td>pid=8570, start=14:00:51</td><td>PPID=1 那个</td><td>✅</td></tr>
+      <tr><td>2. kill master</td><td>kill 8570 (默认 SIGTERM)</td><td>无 error</td><td>✅</td></tr>
+      <tr><td>3. 等 7s 看新进程</td><td>pid=13199, start=14:01:41 (7s 后)</td><td>新 master pid ≠ 旧</td><td>✅</td></tr>
+      <tr><td>4. systemd status</td><td>active</td><td>active</td><td>✅</td></tr>
+      <tr><td>5. HTTP 健康检查</td><td>HTTP/1.1 302 Found / Location: /login/</td><td>200/302</td><td>✅</td></tr>
+      <tr><td>6. 提交页验证</td><td>显示 2 级 (跟 config/ 配一致)</td><td>一致</td><td>✅</td></tr>
+      <tr><td>7. 详情页验证</td><td>显示 2 级 (走 ConfigurableAuditor 真测试路径)</td><td>一致</td><td>✅</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ========== §10 推 110 时间表 ========== -->
+<section id="sec10">
+  <h2 class="section"><span class="num">10</span>推 110 prod 时间表</h2>
+  <div class="section-meta">Deployment Plan · W3 9/1-9/7</div>
+
+  <h3>拓扑 (FINAL, 8/03 拍板)</h3>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title" style="color: var(--primary);">172.20.2.134 (DEV)</div>
+      <p style="font-size: 14px;">v0.4.5 + 8/24 全部 commit + 8/24 reload SOP 验证通过。</p>
+      <p style="font-size: 13px; color: var(--muted);">MySQL 8.0.22, gunicorn systemd</p>
+    </div>
+    <div class="card">
+      <div class="card-title" style="color: var(--info);">172.20.2.110 (PROD)</div>
+      <p style="font-size: 14px;">v0.2.0 + 6 MR patch (8/05 切换), 钉钉 OA 框架 enabled 但 NOT in use。</p>
+      <p style="font-size: 13px; color: var(--muted);">MySQL 5.7.44, gunicorn archery user 手动启</p>
+    </div>
+  </div>
+
+  <h3>W1 (8/24-8/30) + W2 (8/31-9/6) 摸头</h3>
+  <p>W1 必做 1-4 + W2 必做 5-8 全部 ALL DONE (commit <code>acd6345</code>, 8/18):</p>
+
+  <table>
+    <thead>
+      <tr><th>必做</th><th>内容</th><th>状态</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1. log dir chown</td><td>/var/log/archery/gh_ost/ 权属 archery:archery</td><td>✅ 134 dev 演练通过</td></tr>
+      <tr><td>2. sock 清理</td><td>/tmp/gh-ost.*.sock 清理脚本</td><td>✅ idempotent</td></tr>
+      <tr><td>3. 影子表清理</td><td>110 prod 0 张 (无残留)</td><td>✅</td></tr>
+      <tr><td>4. 凭据重加密</td><td>DBA 手动在 admin 后台重新保存 instance</td><td>⏳ 推 110 当天手动</td></tr>
+      <tr><td>5. fix_approval_flow_3level</td><td>8/11 commit d5f88d1, idempotent</td><td>✅ 演练通过</td></tr>
+      <tr><td>6. 清空 sqladvisor</td><td>8/18 修法 B+A, 配 /opt/archery/bin/sqladvisor</td><td>✅ (但 SQLAdvisor 工具已死)</td></tr>
+      <tr><td>7. 清空 soar</td><td>8/19 修法 A+F, 配 /opt/archery/bin/soar</td><td>✅ (但 SOAR 不给 add index 建议)</td></tr>
+      <tr><td>13. 部署代码 + reload</td><td>8/24 标准化 SOP, 5 步必做 + gunicorn kill master</td><td>✅ 134 dev 演练通过</td></tr>
+    </tbody>
+  </table>
+
+  <h3>W3 (9/1-9/7) 推 110</h3>
+
+  <pre><code># 推 110 当天 (DBA 必做)
+ssh 110 prod
+cd /dbdata/archery_v114_c9236a0
+bash /tmp/5step_prerequisites_110prod.sh   # 步骤 1-3 + 5-7 + 13
+                                               # 步骤 4 (凭据) DBA 手动在 admin 后台重新保存
+
+# 推代码
+git pull origin main  # 拉 commit a41c4d0 + 9d66064 + eaf9853 + 7ab3c40 + 4bece6a
+
+# 步骤 13: 部署代码 + kill master + 手动 nohup
+pkill -TERM -f gunicorn
+nohup sudo -u archery venv/bin/gunicorn archery.wsgi:application -w 4 -b 0.0.0.0:9123 \
+  --access-logfile - --error-logfile - --timeout 120 > /tmp/gunicorn.log 2>&1 &
+
+# 验证
+curl -sI http://127.0.0.1:9123/   # HTTP 200/302
+浏览器: 业务 RD 提一条新工单, detail 页审批流 = config 配的级别
+
+# 烟测 (8/24 SOP 必做)
+业务 RD: 提交 + 审批 + 执行 (走完整流程)
+DBA: 任务管理列表页 + 取消 / 重试 / 回滚端点</code></pre>
+
+  <div class="callout warn">
+    <p><strong>110 vs 134 dev 关键差异</strong> (推 110 必看):
+    库名 <code>archery</code> (不是 <code>archery_prod</code>); 110 prod gunicorn 是 <strong>archery user 手动启的</strong> (kill 后没 systemd 自动拉, DBA 手动 nohup); MySQL 5.7 跟 8.0 在 features.py 差 1 个 patch。</p>
+  </div>
+</section>
+
+<!-- ========== §11 Roadmap ========== -->
+<section id="sec11">
+  <h2 class="section"><span class="num">11</span>Roadmap (后续功能)</h2>
+  <div class="section-meta">Future · 已设计, 等拍板</div>
+
+  <h3>两个 v0.5.0 设计稿已完成, 等拍板开干</h3>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">RaccoonX 浣巡接入 (commit <code>ddba8f9</code>)</div>
+      <p style="font-size: 14px;">Archery 平台本身具备巡检能力, 不依赖外部工具。6 个核心页面 / 4 perm / 4 张表, Phase 0 半天验证 → Phase 1 1 周框架 → Phase 2 1 周增强 → Phase 3 后续工单闭环。</p>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">8/20 拍板: 4 perm 全部注册 / 默认权限最小化 / 复用 instancepermission / AI 模式默认关</p>
+      <p style="font-size: 12px; color: var(--danger); margin-top: 6px;">⚠️ 8/20 用户拍板"先放一边"暂停, Phase 0 没开</p>
+    </div>
+    <div class="card">
+      <div class="card-title">DDL 跨库同步 (业务库↔历史库) (commit <code>49d72c2</code>)</div>
+      <p style="font-size: 14px;">解决"业务库 DDL 变更容易遗漏同步到历史库"痛点。3 张表 / 5 个联动点, 短期 C (巡检, 1 周) + 中期 B (工单联动, 2 周)。</p>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">8/21 拍板 4 条: 白名单 / 同审批人 / 业务库失败→历史库工单不发起 / 短期 C + 中期 B</p>
+      <p style="font-size: 12px; color: var(--danger); margin-top: 6px;">⚠️ 短期 C 巡检 (1 周) + 中期 B 工单联动 (2 周) 未开</p>
+    </div>
+  </div>
+
+  <h3>推 110 之后优先级</h3>
+  <ol>
+    <li><strong>W4 9/8-9/14</strong>: 业务用户 / DBA 演练 1-2 周稳定, 收集反馈</li>
+    <li><strong>W5 9/15-9/21</strong>: DDL 跨库同步短期 C 巡检 (1 周, 解决 9 月上线高峰漏同步)</li>
+    <li><strong>W6 9/22-9/28</strong>: 钉钉 OA v0.2.1 审批模板 (等用户去 https://oa.dingtalk.com 建模板)</li>
+    <li><strong>W7+ 10 月</strong>: 钉钉 OA v0.2.2 cloudflared tunnel + v0.2.3 对账 cron (依赖 v0.2.1)</li>
+    <li><strong>待定</strong>: RaccoonX 浣巡接入 (8/20 暂停), 听用户拍板</li>
+  </ol>
+</section>
+
+<!-- ========== Footer ========== -->
+<footer class="footer">
+  <p>Archery 二次开发项目 · gh-ost 无锁 DDL + 字段 diff 检测 专题</p>
+  <p>2026-08-24 · 内部演示稿 · 4 个生产事故 + 3 大能力 + 1 个标准化 SOP</p>
+  <p style="margin-top: 16px;">mavis · MiniMax Code</p>
+</footer>
+
+</div>
+
+<script>
+  // mermaid 初始化
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    securityLevel: 'loose',
+    themeVariables: {
+      fontFamily: 'Outfit, system-ui, sans-serif',
+      primaryColor: '#e3ece8',
+      primaryTextColor: '#14171e',
+      primaryBorderColor: '#2f6f5e',
+      lineColor: '#7c7a72',
+      secondaryColor: '#f6ecdd',
+      tertiaryColor: '#e2eaf0',
+    },
+  });
+</script>
+</body>
+</html>
