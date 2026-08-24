@@ -371,7 +371,7 @@
   <div class="section-meta">Motivation · 业务痛点</div>
 
   <p class="lead">
-    4 个 8 月发生的真实生产事故, 触发本专题立项。
+    4 个事故示例 (基于日常运维中观察到的典型场景), 触发本专题立项。
   </p>
 
   <table>
@@ -385,25 +385,25 @@
     </thead>
     <tbody>
       <tr>
-        <td><span class="tag-pill danger">8/13</span><br/>字符集飘字段</td>
+        <td><span class="tag-pill danger">事故 A</span><br/>字符集飘字段</td>
         <td>业务上线后中文乱码 / 字段类型跟代码不匹配</td>
         <td>DDL 改 <code>DEFAULT CHARSET=utf8mb4</code> 时, 漏写某个字段, 上线后 3 个字段是 latin1, 数据不一致</td>
         <td><strong>字段 diff 检测</strong><br/>提交时自动检测字段定义变化</td>
       </tr>
       <tr>
-        <td><span class="tag-pill warn">8/15</span><br/>大表 DDL 漏勾</td>
+        <td><span class="tag-pill warn">事故 B</span><br/>大表 DDL 漏勾</td>
         <td>10w+ 行大表直接 ALTER, 锁表 3-5 分钟, 业务侧 RT 飙到 30s+</td>
         <td>业务 RD 不知道表大 / 不知道勾 gh-ost, 走原路径"立即执行"</td>
         <td><strong>大表 DDL 防呆</strong><br/>详情页自动检测, DBA 兜底</td>
       </tr>
       <tr>
-        <td><span class="tag-pill info">8/19</span><br/>切流超时</td>
+        <td><span class="tag-pill info">事故 C</span><br/>切流超时</td>
         <td>新表上线后切流到 30%, 报错"column not found", 切回 100% 老表</td>
         <td>DDL 改字段没回滚 SQL, 上线后想撤就全乱</td>
         <td><strong>DDL 智能回滚</strong><br/>一键生成回滚语句</td>
       </tr>
       <tr>
-        <td><span class="tag-pill muted">8/20</span><br/>碎片回收</td>
+        <td><span class="tag-pill muted">事故 D</span><br/>碎片回收</td>
         <td>大表 DATA_FREE 持续增长, 备份/性能受影响</td>
         <td>传统 <code>ALTER TABLE ENGINE=InnoDB</code> 会锁表 30+ 分钟</td>
         <td><strong>gh-ost 触发空 alter</strong><br/>碎片回收 0 锁表</td>
@@ -461,17 +461,17 @@ graph LR
     <div class="card">
       <div class="card-title">能力 1 · 字段 diff 检测</div>
       <p style="font-size: 14px;">提交时自动调 MySQL <code>SHOW CREATE TABLE</code>, 对比 <strong>alter 前后</strong>每个字段定义。</p>
-      <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">解: 8/13 字符集飘字段</p>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">解: 事故 A (字符集飘字段)</p>
     </div>
     <div class="card">
       <div class="card-title">能力 2 · gh-ost 大表 DDL</div>
       <p style="font-size: 14px;">勾选 gh-ost 后 5 关预检, 通过则异步执行, 详情页进度面板 polling 3s。</p>
-      <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">解: 8/15 漏勾 / 8/20 碎片回收</p>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">解: 事故 B (大表漏勾) / 事故 D (碎片回收)</p>
     </div>
     <div class="card">
       <div class="card-title">能力 3 · 智能回滚</div>
       <p style="font-size: 14px;">A 方案: 解析 ALTER 5 种 DDL, 自动生成反向 SQL。<br/>B 方案: 不支持时返 warnings + 兜底脚本。</p>
-      <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">解: 8/19 切流超时</p>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">解: 事故 C (切流超时)</p>
     </div>
   </div>
 </section>
@@ -479,11 +479,11 @@ graph LR
 <!-- ========== §4 演示 1: 字段 diff ========== -->
 <section id="sec4">
   <h2 class="section"><span class="num">04</span>演示 1 — 字段 diff 检测</h2>
-  <div class="section-meta">Use case · 8/13 字符集事故</div>
+  <div class="section-meta">Use case · 事故 A 字符集飘字段</div>
 
   <h3>故事</h3>
   <p>
-    8/13 业务 RD 提了一条 <code>ALTER TABLE t MODIFY c VARCHAR(50) DEFAULT '' COMMENT '备注'</code>,
+    业务 RD 提了一条 <code>ALTER TABLE t MODIFY c VARCHAR(50) DEFAULT '' COMMENT '备注'</code>,
     想给 <code>c</code> 加 comment, 但漏写 <code>CHARSET utf8mb4</code>。
     运维上线后, 表 8 个字段中 3 个是 <code>latin1</code> (跟原 schema 不一致), 新写入数据乱码。
   </p>
@@ -506,10 +506,10 @@ graph LR
         📸 [现场截] 字段 diff 弹窗: 8 字段对比 (类型/字符集/默认值/Comment)
       </div>
     </div>
-    <figcaption><strong>字段 diff 弹窗</strong>: 8/13 弹窗显示 3 个字段字符集从 utf8mb4 飘到 latin1, 红色高亮警示。</figcaption>
+    <figcaption><strong>字段 diff 弹窗</strong>: 弹窗显示 3 个字段字符集从 utf8mb4 飘到 latin1, 红色高亮警示。</figcaption>
   </figure>
 
-  <h3>实战数据 (8/13 演练)</h3>
+  <h3>实战数据 (演练)</h3>
   <pre><code>=== 字段 diff 检测结果 ===
 
 字段 c (VARCHAR(50)):
@@ -524,7 +524,7 @@ graph LR
 共 2 个字段字符集飘了! 是否继续?</code></pre>
 
   <div class="callout ok">
-    <p><strong>业务价值</strong>: 8/13 那种"漏写 CHARSET 导致全表飘字段"的事故, 8/14 之后业务 RD 提交时就能看到警示, 不上线就改。
+    <p><strong>业务价值</strong>: 字符集飘字段那种"漏写 CHARSET 导致全表飘字段"的事故, 上线前业务 RD 提交时就能看到警示, 不上线就改。
     不需要 DBA 复盘, 也不依赖业务 RD 自觉看 MySQL 文档。</p>
   </div>
 
@@ -535,11 +535,11 @@ graph LR
 <!-- ========== §5 演示 2: gh-ost ========== -->
 <section id="sec5">
   <h2 class="section"><span class="num">05</span>演示 2 — gh-ost 大表 DDL</h2>
-  <div class="section-meta">Use case · 8/15 漏勾 + 8/20 碎片回收</div>
+  <div class="section-meta">Use case · 事故 B 大表漏勾 + 事故 D 碎片回收</div>
 
   <h3>故事</h3>
   <p>
-    8/15 业务 RD 提了一条 <code>ALTER TABLE access_log ADD COLUMN region VARCHAR(20)</code>, 表 30w 行。
+    业务 RD 提了一条 <code>ALTER TABLE access_log ADD COLUMN region VARCHAR(20)</code>, 表 30w 行。
     漏勾 gh-ost, 走原路径 ALTER, 锁表 4 分钟, 业务侧 RT 飙到 30s+, 工单被打回。
   </p>
 
@@ -648,14 +648,14 @@ graph LR
     <figcaption><strong>进度面板</strong>: 0% 起步 → 已复制 N/总数 → 切流中 → 100% 完成。可以通过 socket 动态调 chunk-size / throttle。</figcaption>
   </figure>
 
-  <h3>8/20 故事 · 碎片回收 (DBA 专用)</h3>
+  <h3>事故 D · 碎片回收 (DBA 专用)</h3>
   <p>
-    8/20 DBA 想给 <code>accesscard_black_detail</code> 回收碎片, 传统 <code>ALTER TABLE ENGINE=InnoDB</code> 会锁表 30+ 分钟。
+    DBA 想给 <code>accesscard_black_detail</code> 回收碎片, 传统 <code>ALTER TABLE ENGINE=InnoDB</code> 会锁表 30+ 分钟。
     gh-ost 走触发空 alter: <code>ALTER TABLE t ENGINE=InnoDB, ROW_FORMAT=原值, DEFAULT CHARSET=原值 COLLATE=原值</code>, <strong>0 锁表</strong> 物理页重写 + DATA_FREE 归零。
   </p>
 
   <div class="callout ok">
-    <p><strong>8/20 拍板 3 决策</strong>: ① alter 用 <code>ENGINE=InnoDB, ROW_FORMAT=&lt;原值&gt;, DEFAULT CHARACTER SET=&lt;原值&gt; COLLATE=&lt;原值&gt;</code> 3 层防护
+    <p><strong>事故 D 拍板 3 决策</strong>: ① alter 用 <code>ENGINE=InnoDB, ROW_FORMAT=&lt;原值&gt;, DEFAULT CHARACTER SET=&lt;原值&gt; COLLATE=&lt;原值&gt;</code> 3 层防护
     ② <code>rebuilt_charset / rebuilt_row_format / rebuilt_at</code> 字段记录 ③ 任务列表显示 "ALTER 子句" 列, 让 DBA 一眼看出改了什么</p>
   </div>
 </section>
@@ -663,11 +663,11 @@ graph LR
 <!-- ========== §6 演示 3: 智能回滚 ========== -->
 <section id="sec6">
   <h2 class="section"><span class="num">06</span>演示 3 — 智能回滚</h2>
-  <div class="section-meta">Use case · 8/19 切流超时</div>
+  <div class="section-meta">Use case · 事故 C 切流超时</div>
 
   <h3>故事</h3>
   <p>
-    8/19 业务侧灰度发布, 新表上线后切流到 30%, 报 <code>column not found</code> 错误, 切回 100% 老表。
+    业务侧灰度发布, 新表上线后切流到 30%, 报 <code>column not found</code> 错误, 切回 100% 老表。
     原因: DDL 改了字段, 但没有回滚 SQL, 想撤就全乱。只能临时禁用代码 + 紧急回滚代码 + 紧急回滚 DDL, 3 步操作, 整个流程 1 小时+。
   </p>
 
@@ -727,7 +727,7 @@ graph LR
   </figure>
 
   <div class="callout ok">
-    <p><strong>业务价值</strong>: 8/19 那种"切流切不回" 的事故, 现在 DBA 1 分钟内拿到回滚 SQL, 直接执行, 整个事故从 1 小时 → 5 分钟。</p>
+    <p><strong>业务价值</strong>: 切流超时那种"切流切不回" 的事故, 现在 DBA 1 分钟内拿到回滚 SQL, 直接执行, 整个事故从 1 小时 → 5 分钟。</p>
   </div>
 </section>
 
@@ -737,12 +737,12 @@ graph LR
   <div class="section-meta">DBA Tooling · 运维入口</div>
 
   <h3>DBA 需求</h3>
-  <p>8/13 拍板: <strong>DBA 视角"运维工具台"</strong>, 不是单个人的任务管理。需求 3 个:
+  <p>本专题立项时拍板: <strong>DBA 视角"运维工具台"</strong>, 不是单个人的任务管理。需求 3 个:
   1. 看全量任务 (自己提的 rebuild + 业务 RD 提的 ghost)
   2. 操作端点 perm 守卫 (cancel / retry / rollback / start 只能 DBA 用)
   3. 任务状态联动 (SqlWorkflow 终止时, DdlGhostTask 也跟着清理)</p>
 
-  <h3>3 决策拍板 (8/13)</h3>
+  <h3>3 决策拍板</h3>
 
   <table>
     <thead>
@@ -762,7 +762,7 @@ graph LR
       <tr>
         <td>操作端点 perm</td>
         <td>helper 返 <code>JsonResponse({ok: False, error: "..."}, status=403)</code>, <strong>不能 raise PermissionDenied</strong></td>
-        <td>AJAX 端点 raise 会冒到 Django middleware, 返 403 HTML 错误页, alert 弹 HTML 源码 (8/13 实战踩坑)</td>
+        <td>AJAX 端点 raise 会冒到 Django middleware, 返 403 HTML 错误页, alert 弹 HTML 源码 (立项时实战踩坑)</td>
       </tr>
     </tbody>
   </table>
@@ -776,7 +776,7 @@ graph LR
     <figcaption><strong>任务管理列表页</strong>: 顶部"提交人"过滤 / "状态"过滤, 列表行"取消/重试/回滚" 按钮 (DBA perm 守卫)。底部"查看 admin 详情" 仅 superuser 可见。</figcaption>
   </figure>
 
-  <h3>状态机三件套 (8/13 拍板)</h3>
+  <h3>状态机三件套</h3>
   <p>5 个终态: <code>success / failed / cancelled / panic / completed</code>, 加上僵尸 socket 双层防御:</p>
   <ol>
     <li><strong>poller 5s 检查</strong>: 任务状态切 terminal, 自动清理 <code>/tmp/gh-ost.*.sock</code></li>
