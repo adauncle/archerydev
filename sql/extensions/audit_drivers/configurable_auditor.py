@@ -10,6 +10,14 @@
     并设置::
 
         CUSTOM_DINGTALK_OA_ENABLED=True
+
+## CUSTOM-MODIFIED: 审批流 source of truth 改为上游 WorkflowAuditSetting @ 2026-08-24 @ mavis
+## 关联: docs/changelogs/2026-08-24_approval-flow-source-of-truth.md
+## 根因 (8/24): 之前命中 policy 时用 flow.audit_auth_groups 覆盖上游 WorkflowAuditSetting,
+##             导致用户在 Archery 上游 config/ 页面改审批流不生效 (被二次开发覆盖)。
+## 改法: 命中 policy 时直接走父类, 用 WorkflowAuditSetting.audit_auth_groups。
+##       ext_approval_flow.audit_driver (archery / dingtalk_oa) 仍生效, 走 driver 路由。
+##       ext_approval_flow.audit_auth_groups 字段保留但不再生效 (历史字段)。
 """
 
 import logging
@@ -31,9 +39,10 @@ class ConfigurableAuditor(AuditV2):
           上游 ``AuditV2``，不引入任何风险。
         * 开启特性时，在 ``generate_audit_setting`` 中：
               1. 调 ``services.policy.match_policy`` 路由到一条 ``ApprovalPolicy``；
-              2. 用 ``policy.flow`` 覆盖默认 ``audit_auth_groups``；
-              3. 在 ``create_audit`` 中把 ``flow.audit_driver`` 锁定到工单，
-                 并调 ``driver.start()`` 发起外部审批。
+              2. **走父类**, 审批组从 Archery 上游 ``WorkflowAuditSetting`` 读
+                 (用户在 config/ 页面配的就是 source of truth, 改了立即生效);
+              3. 在 ``create_audit`` 中把 ``flow.audit_driver`` 锁定到工单,
+                 并调 ``driver.start()`` 发起外部审批 (driver 路由仍生效)。
         * 任何异常都降级为本地 Group 审批，不阻塞业务（见 v0.7 §10.4）。
     """
 
@@ -46,11 +55,15 @@ class ConfigurableAuditor(AuditV2):
     # ----- 路由 -----
 
     def generate_audit_setting(self) -> AuditSetting:
-        """根据 policy 决定审批流。
+        """根据 policy 决定审批流 (8/24 改: 不再覆盖上游 WorkflowAuditSetting)。
 
         关闭特性 -> 完全走父类。
-        开启特性但未命中 policy -> 走父类（保留原行为）。
-        命中 policy -> 用 ``policy.flow.audit_auth_groups`` 覆盖。
+        开启特性但未命中 policy -> 走父类 (保留原行为)。
+        命中 policy -> 走父类 (用 Archery 上游 WorkflowAuditSetting, 不再覆盖)。
+
+        业务价值: 用户在 Archery 上游 config/ 页面改审批流是 source of truth,
+                  改了立即生效。ext_approval_flow.audit_auth_groups 字段保留但不再生效,
+                  业务 RD 不要再被 "配了不生效" 困惑 (8/24 教训)。
         """
         if not self._feature_enabled():
             return super().generate_audit_setting()
@@ -61,7 +74,7 @@ class ConfigurableAuditor(AuditV2):
         try:
             policy = match_policy(workflow=self.workflow)
         except Exception:  # noqa: BLE001
-            # 路由失败不能让工单卡住，落到父类
+            # 路由失败不能让工单卡住, 落到父类
             logger.exception(
                 "match_policy failed, fallback to AuditV2.generate_audit_setting"
             )
@@ -74,16 +87,10 @@ class ConfigurableAuditor(AuditV2):
         if not flow.is_active:
             return super().generate_audit_setting()
 
-        # 把 flow 的 groups 转换为 AuditSetting
-        groups = [g.strip() for g in (flow.audit_auth_groups or "").split(",") if g.strip()]
-        if not groups:
-            return super().generate_audit_setting()
-
-        return AuditSetting(
-            audit_auth_groups=groups,
-            auto_pass=False,
-            auto_reject=False,
-        )
+        # 8/24 拍板: 走父类, 用 Archery 上游 WorkflowAuditSetting
+        # ext_approval_flow.audit_auth_groups 字段保留但不再生效 (仅作历史参考)
+        # driver 路由 (archery / dingtalk_oa) 仍通过 flow.audit_driver 在 create_audit 里生效
+        return super().generate_audit_setting()
 
     # ----- driver 协同 -----
 
