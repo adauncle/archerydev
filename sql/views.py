@@ -865,11 +865,37 @@ def workflowsdetail(request, audit_id):
 
 @permission_required("sql.menu_document", raise_exception=True)
 def dbaprinciples(request):
-    """SQL文档页面"""
-    #  读取MD文件
-    file = os.path.join(settings.BASE_DIR, "docs/docs.md")
-    with open(file, "r", encoding="utf-8") as f:
-        md = f.read().replace("\n", "\\n")
+    """SQL文档页面 - 显示 MySQL 数据库设计规范。
+
+    ## CUSTOM-MODIFIED: 8/24 修 FileNotFoundError @ 2026-08-24 @ mavis
+    ## 关联: docs/changelogs/2026-08-24_dbaprinciples-file-not-found.md
+    ## 根因 (8/24): Archery 上游 views.py:870 读 docs/docs.md, 但仓库里没这个文件
+    ##       134 dev 实际有 docs/upstream/docs.md (项目自己维护的 MySQL 设计规范)
+    ## 修法: 优先读 docs/upstream/docs.md, 兜底读 docs/architecture.md, 都没有显示友好提示
+    """
+    candidates = [
+        os.path.join(settings.BASE_DIR, "docs/upstream/docs.md"),
+        os.path.join(settings.BASE_DIR, "docs/architecture.md"),
+    ]
+    md = None
+    for file in candidates:
+        if os.path.exists(file):
+            try:
+                with open(file, "r", encoding="utf-8") as f:
+                    md = f.read().replace("\n", "\\n")
+                logger.info("dbaprinciples 读 %s (%d chars)", file, len(md))
+                break
+            except OSError as exc:
+                logger.warning("dbaprinciples 读 %s 失败: %s", file, exc)
+                continue
+    if md is None:
+        md = (
+            "# 文档暂未提供\n\n"
+            "请运维管理员将 MySQL 数据库设计规范放到以下任一位置:\n\n"
+            "- `docs/upstream/docs.md`\n"
+            "- `docs/architecture.md`\n\n"
+            "推荐放 `docs/upstream/docs.md` (跟 134 dev 一致)。\n"
+        )
     return render(request, "dbaprinciples.html", {"md": md})
 
 
