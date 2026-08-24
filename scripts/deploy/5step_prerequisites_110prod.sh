@@ -243,3 +243,82 @@ fi
 soar_after=$(mysql --defaults-file=/root/.my.cnf -D archery -N -e "SELECT LENGTH(value) FROM sql_config WHERE item='soar';" 2>/dev/null)
 echo ""
 echo "验证: soar value_len=${soar_after} (期望 0)"
+
+# === 步骤 13: 部署 configurable_auditor.py 改动 + kill master 重启 (8/24 教训) ===
+echo ""
+echo "=== 步骤 13: 部署 configurable_auditor.py 改动 + kill master 重启 ==="
+echo "目的: 8/24 修法 — ConfigurableAuditor 命中 policy 时走父类, 用 Archery 上游 WorkflowAuditSetting"
+echo "      8/24 教训 — gunicorn HUP 不重载 Python 代码, 必须 kill master 让 systemd 拉起新进程"
+echo "      推 110 时必须: 部署代码 + kill master + 提一条新工单验证 detail 页生效"
+echo ""
+echo "  ⚠️  必须在阶段 3 (推代码) 之后跑, 否则代码还没更新, 验证无意义"
+echo "  ⚠️  110 prod gunicorn 是 archery user 手动启的 (没 systemd unit), kill 后需 DBA 手动 nohup 拉起"
+echo ""
+
+# 1. 确认代码已更新 (跟 8/24 134 dev 一致)
+if grep -q "走父类, 用 Archery 上游 WorkflowAuditSetting" ${PROD_PATH}/sql/extensions/audit_drivers/configurable_auditor.py 2>/dev/null; then
+    ok "configurable_auditor.py 已是 8/24 修法版"
+else
+    err "configurable_auditor.py 还是旧版, 请先推代码 (阶段 3) 再跑这步"
+    echo "  期望: 命中 policy 时 return super().generate_audit_setting()"
+    echo "  实际: $(grep -E 'audit_auth_groups|return AuditSetting' ${PROD_PATH}/sql/extensions/audit_drivers/configurable_auditor.py | head -3)"
+    exit 1
+fi
+
+# 2. 找 110 prod 当前 gunicorn master pid (PPID=1 的那个是 master)
+master_out=$(ps -ef | grep gunicorn | grep -v grep | awk '$3==1 {print $2}' | head -1)
+if [[ -z "${master_out}" ]]; then
+    warn "找不到 gunicorn master (PPID=1 的那个), 110 prod 是手动启的"
+    echo "  110 prod 当前所有 gunicorn 进程:"
+    ps -ef | grep gunicorn | grep -v grep
+    echo ""
+    echo "  请 DBA 手动操作:"
+    echo "    1. pkill -TERM -f gunicorn"
+    echo "    2. cd ${PROD_PATH}"
+    echo "    3. nohup sudo -u archery venv/bin/gunicorn archery.wsgi:application -w 4 -b 0.0.0.0:9123 --access-logfile - --error-logfile - --timeout 120 &"
+    echo "    4. 验证 curl -I http://172.20.2.110:9123/"
+    exit 1
+fi
+echo "  当前 master pid: ${master_out}"
+
+# 3. kill master
+echo "  kill ${master_out} ..."
+kill ${master_out}
+
+# 4. 等新进程起来 (134 dev 有 systemd 自动拉, 110 prod 没有, DBA 手动)
+sleep 3
+new_master=$(ps -ef | grep gunicorn | grep -v grep | awk '$3==1 {print $2}' | head -1)
+if [[ -n "${new_master}" && "${new_master}" != "${master_out}" ]]; then
+    ok "新 master pid: ${new_master} (旧 master ${master_out} 已退出)"
+else
+    warn "新 master 没自动起来, 110 prod 没 systemd unit, 需 DBA 手动 nohup"
+    echo "  启动命令:"
+    echo "    cd ${PROD_PATH}"
+    echo "    nohup sudo -u archery venv/bin/gunicorn archery.wsgi:application -w 4 -b 0.0.0.0:9123 --access-logfile - --error-logfile - --timeout 120 > /tmp/gunicorn.log 2>&1 &"
+    echo "  启动后跑步骤 13 验证"
+    exit 1
+fi
+
+# 5. 验证
+echo ""
+echo "验证 1: HTTP 健康检查"
+http_out=$(curl -sI --max-time 5 http://127.0.0.1:9123/ 2>&1 | head -3)
+echo "  ${http_out}"
+if echo "${http_out}" | grep -q "200\|302"; then
+    ok "HTTP 200/302, gunicorn alive"
+else
+    err "HTTP 不正常, 排查: 9123 端口 / 进程状态"
+fi
+
+echo ""
+echo "验证 2 (DBA 必做): 提一条新 SQL 上线工单, detail 页审批流应跟 config/ 配一致"
+echo "  8/24 教训: 提交页 (/group/auditors/) 走老接口 Audit.settings(), 容易显示对"
+echo "              详情页 (/detail/<id>/) 走 ConfigurableAuditor.generate_audit_setting, 才是真测试路径"
+echo "  验证步骤:"
+echo "    1. 浏览器登 110 prod, 选 '测试组' / 任一 group_id"
+echo "    2. SQL 上线提交页: 选 group → 选 instance → 选 db → 看 '审批流程' 应显示 config/ 配的级别"
+echo "    3. 提交一条 ALTER 工单 (随便一句 ALTER ... DROP COLUMN xxx, 不会真跑)"
+echo "    4. detail 页 '审批流' 区域: 应跟 config/ 配的级别一致 (不是 ext_approval_flow 配的)"
+echo "  ⚠️  如果 detail 页跟 config/ 不一致 → gunicorn master 启动时间跟代码部署时间对不上, HUP 没生效 (8/24 教训)"
+echo ""
+

@@ -5,6 +5,12 @@ ext_approval_flow 表 3 个 flow (default / normal / high_risk) 的 audit_auth_g
 都是 "3" (DBA 单级)——v0.1.4 (2026-07-22) 时 init_fallback_flow 占位是 "1,2"，
 但 134 dev / 110 prod 实际配置被改成了 "3" 单级。
 
+本次把 3 个 flow 改成 **研发组长(14) → DBA 组长(15) → DBA(3)** 3 级审批,
+跟 Archery 上游 workflow_audit_setting 表里用户配置的 3 级审批保持一致。
+
+8/18 用户截图确认: 134 dev 实际审批日志显示 "审批流程:研发组长>DBA组长>DBA",
+即 `14,15,3` 是正确的 (不是 `13,14,3`)。**`14,15,3` = 研发组长(14)→DBA组长(15)→DBA(3)**。
+
 本命令:
     1. 列出 ext_approval_flow 当前所有 flow
     2. 把 code IN ('default', 'normal', 'high_risk') 的 flow 改成 audit_auth_groups='14,15,3'
@@ -23,12 +29,13 @@ from sql.extensions.dingtalk_oa.models import ApprovalFlow
 
 
 # 3 个 flow 统一改成 3 级审批 (研发组长 14 → DBA组长 15 → DBA 3)
+# 8/18 用户截图确认: 审批日志显示 "研发组长>DBA组长>DBA", 14,15,3 是对的
 TARGET_FLOWS = ["default", "normal", "high_risk"]
 TARGET_GROUPS = "14,15,3"
 
 
 class Command(BaseCommand):
-    help = "把 ext_approval_flow 3 个 flow 的 audit_auth_groups 改成 14,15,3 (3 级审批)"
+    help = "把 ext_approval_flow 3 个 flow 的 audit_auth_groups 改成 14,15,3 (3 级审批: 研发组长→DBA组长→DBA)"
 
     def handle(self, *args, **options):
         # 1) 改前
@@ -62,5 +69,5 @@ class Command(BaseCommand):
             f"✅ 完成: 更新 {updated} 个 flow 的 audit_auth_groups = '{TARGET_GROUPS}'"
         ))
         self.stdout.write(self.style.WARNING(
-            f"⚠️  如果实际审批组不是 14/15/3, 请到 admin 改 (DBA / DBA 组长)"
+            f"⚠️  实际审批组 14=研发组长 / 15=DBA组长 / 3=DBA, 推 110 前 admin 复核"
         ))

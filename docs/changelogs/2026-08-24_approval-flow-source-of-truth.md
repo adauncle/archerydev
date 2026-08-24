@@ -73,11 +73,36 @@ return super().generate_audit_setting()
   done
 ```
 
-HUP gunicorn master 38114 后, 5s 内新 worker 50625 加载新代码, 演练通过。
+HUP gunicorn master 38114 后, 5s 内新 worker 50625 fork 出来, **但实际未加载新代码** (gunicorn HUP 不重载 Python 模块, 详见 8/24 教训)。
 
-## 推 110 prod 必做 (补一条)
+## 8/24 教训 — gunicorn HUP 不重载 Python 代码
 
-5 步必做脚本 (commit `035850f` 8/17) 加步骤 13: 部署 configurable_auditor.py 改动 + HUP gunicorn。5.7/8.0 兼容, 无 schema 改动。
+**根因**: gunicorn fork 模式 master 启动时 import Python module 进 `sys.modules`, worker fork 时继承 master 的内存, **HUP master 只重启 worker 进程, 不会重新 import**。`configurable_auditor.py` 修改后 HUP 看不到新代码。
+
+**复现 (8/24 13:00)**:
+- 提工单 #85 (group_id=25, `WorkflowAuditSetting.audit_auth_groups='14,3'`)
+- 提交页 `/group/auditors/` 显示 "研发组长->DBA" (2 级) ✓ — 这个端点用 `Audit.settings()` 直读 `WorkflowAuditSetting`, 不走 ConfigurableAuditor
+- 详情页 `/detail/85/` 显示 "研发组长 → DBA组长 → DBA" (3 级) ✗ — 创建时走 `ConfigurableAuditor.generate_audit_setting`, **老代码用 `flow.audit_auth_groups='14,15,3'` 覆盖了**, 写表
+- 业务 RD 困惑: "配置改了, 工单 detail 还是老的"
+
+**修法**:
+1. `kill <master_pid>` (systemd 自动拉起新 master, 新进程从磁盘加载新代码)
+2. 验证: 提**新**工单, detail 页应显示 2 级
+3. 老工单 #85: `workflow.audit_auth_groups` 已被旧代码写死, 不重算。业务上没影响 (是测试工单), 不建议 SQL UPDATE (破坏审计日志一致性)
+
+**8/24 13:33 实际执行**:
+- `kill 47458` (master Aug17 起的)
+- systemd 自动拉起新 master 48142 (13:33) + 4 workers
+- 13:34 user 提新工单, detail 页确认 2 级 ✓ 修法生效
+
+**预防**:
+- 改 Python 代码后, **永远 `kill master` + 验证**, 不要只 HUP
+- 推 110 必做补一条: 部署代码后, 验证一条新工单 detail 页配置生效 (不能只看提交页)
+- 排查"代码改了不生效" 时, **先看 gunicorn master 启动时间** — 跟代码部署时间对不上就是这个问题
+
+## 推 110 prod 必做 (补一条, 8/24 修订)
+
+5 步必做脚本 (commit `035850f` 8/17) 加步骤 13: 部署 configurable_auditor.py 改动 + **`kill <master_pid>` 重启 gunicorn** (不要 HUP)。5.7/8.0 兼容, 无 schema 改动。
 
 ## 文件改动
 
