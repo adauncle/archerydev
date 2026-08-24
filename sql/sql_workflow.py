@@ -507,6 +507,42 @@ def cancel(request):
         action = WorkflowAction.REJECT
     else:
         raise PermissionDenied
+    ## CUSTOM-MODIFIED: 8/24 reason 跟 action 联动 (不再写死 "拒绝/撤回") @ 2026-08-24 @ mavis
+    ## 关联: docs/changelogs/2026-08-24_ghost-task-operator-chinese-name.md
+    ## 根因: 之前写死 reason="拒绝/撤回", 但 action 有两种 (ABORT 工程师撤回 / REJECT DBA 驳回),
+    ##       工单 #89 user 是 DBA 走 REJECT 路径, 显示 "拒绝/撤回" 措辞不准
+    ## 修法: reason 跟 action 联动, REJECT → "审批驳回", ABORT → "提交人撤回"
+    if action == WorkflowAction.ABORT:
+        abort_reason = "提交人撤回"
+    else:
+        abort_reason = "审批驳回"
+    ## CUSTOM-MODIFIED: 8/24 operator 显示 "中文名 (审批节点)" @ 2026-08-24 @ mavis
+    ## 关联: docs/changelogs/2026-08-24_ghost-task-operator-chinese-name.md
+    ## 根因: 之前用 request.user.username 显示 "mkq", 业务用户看不懂
+    ##       即使改成 display 也不够, 应该显示 "哪个审批节点驳回的中文姓名"
+    ## 修法: 从 wf.audit.current_audit 拿 group_id, 查 group.name (中文名) + 拼 user.display
+    ##       已审核通过的工单 current_audit="-1" 拿不到 group, fallback 到 audit_auth_groups 解析
+    ##       都拿不到时, 只显示 display
+    operator_cn = request.user.display or request.user.username
+    operator_with_group = operator_cn  # fallback
+    try:
+        from django.contrib.auth.models import Group
+        wf_audit = sql_workflow.get_audit() if hasattr(sql_workflow, "get_audit") else None
+        group_id_str = None
+        if wf_audit and wf_audit.current_audit and wf_audit.current_audit != "-1":
+            group_id_str = wf_audit.current_audit
+        elif sql_workflow.audit_auth_groups:
+            # 兜底: 拿审批流的第一个 group (初始审批节点)
+            group_id_str = (sql_workflow.audit_auth_groups or "").split(",")[0].strip()
+        if group_id_str:
+            try:
+                g = Group.objects.get(id=int(group_id_str))
+                operator_with_group = f"{operator_cn} ({g.name})"
+            except (Group.DoesNotExist, ValueError):
+                pass
+    except Exception:  # noqa: BLE001
+        # 拿 group 失败不影响主流程, fallback 用纯中文名
+        pass
     with transaction.atomic():
         auditor = get_auditor(workflow=sql_workflow)
         try:
@@ -526,8 +562,9 @@ def cancel(request):
         from sql.services.ghost_task_sync import cleanup_pending_ghost_tasks
         cleanup_pending_ghost_tasks(
             sql_workflow,
-            operator=request.user.username,
-            reason="拒绝/撤回",
+            ## CUSTOM-MODIFIED: 8/24 operator 显示 "中文名 (审批节点)" @ 2026-08-24 @ mavis
+            operator=operator_with_group,
+            reason=abort_reason,
         )
     # 删除定时执行task
     if sql_workflow.status == "workflow_timingtask":
