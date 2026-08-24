@@ -18,6 +18,7 @@ v0.3.x 字段 diff 检测 —— 业务逻辑层。
 """
 import re
 import logging
+import sqlparse
 
 logger = logging.getLogger("default")
 
@@ -538,7 +539,28 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
         }
     """
     # 1. 解析 ALTER 子句
-    changes = _parse_alter_column_changes(sql_content)
+    ## CUSTOM-MODIFIED: 8/24 兼容 use \`xxx\` 前缀 @ 2026-08-24 @ mavis
+    ## 关联: docs/changelogs/2026-08-24_column-diff-prefix-compat.md
+    ## 根因 (8/24): 详情页字段 diff 按钮传整段 SQL (含 use \`xxx\``),
+    ##             _parse_alter_column_changes 用 regex 匹配 `^\s*ALTER\s+TABLE`,
+    ##             use 前缀导致 regex 失败, 返 ok=False
+    ## 修法: 先用 sqlparse.split 拆 SQL, 取第一条 ALTER (跟 gh-ost precheck 一致)
+    ##      sqlparse 可能把 `use \`x\`\nALTER TABLE` 拆成 1 段, 需要在段内再查 ALTER
+    alter_sql = None
+    statements = [s for s in sqlparse.split(sql_content) if s.strip()]
+    for stmt in statements:
+        # 在每段内找 ALTER TABLE 起始位置 (可能有 use 前缀)
+        m = re.search(r"\bALTER\s+TABLE\b", stmt, re.IGNORECASE)
+        if m:
+            alter_sql = stmt[m.start():].strip().rstrip(";").strip()
+            break
+    if not alter_sql:
+        return {
+            "ok": False,
+            "error": "SQL 不是 ALTER TABLE 或不包含 MODIFY/ADD/DROP COLUMN",
+            "hint": "只支持 ALTER TABLE ... MODIFY/ADD/DROP COLUMN",
+        }
+    changes = _parse_alter_column_changes(alter_sql)
     if not changes:
         return {
             "ok": False,
@@ -547,11 +569,13 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
         }
 
     # 2. 拿表名 (从 SQL 解析 或 显式)
+    ## CUSTOM-MODIFIED: 8/24 用 alter_sql 替代 sql_content @ 2026-08-24 @ mavis
+    ## 跟上面 _parse_alter_column_changes 同步, 8/24 兼容 use 前缀
     if not table_name:
         m = re.match(
             r"^\s*ALTER\s+TABLE\s+"
             r"(?:(?P<schema>[^`\s.()]+)\.)?`?(?P<table>[^`\s(]+)`?",
-            sql_content.strip(),
+            alter_sql.strip(),
             re.IGNORECASE,
         )
         if not m:
