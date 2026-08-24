@@ -426,6 +426,17 @@ class AuditV2:
             if not actor.has_perm(need_user_permission):
                 raise AuditException("用户无相关审批权限, 请合理配置权限")
 
+            # CUSTOM-MODIFIED: 8/24 修 cancel 已审核工单抛 "审批权限组不存在" 错 @ 2026-08-24 @ mavis
+            ## 关联: docs/changelogs/2026-08-24_cancel-reviewed-workflow-fix.md
+            ## 根因 (8/24): 工单已审核通过 (current_audit="-1") 时, DBA 走 cancel 流程会
+            ##             被映射到 REJECT action, 然后查 Group.objects.get(id="-1") 失败抛错
+            ## 修法: 已审核通过的工单 (current_audit="-1") 跳过 Group 检查, 走 REJECT 流程
+            ##       (caller 决定谁是合法的"驳回人", 比如 can_cancel 包含 DBA / 提交人)
+            if action == WorkflowAction.REJECT and self.audit.current_audit == "-1":
+                # 已审核通过的工单, 取消走 REJECT 路径
+                # 权限已经在 can_cancel + has_perm 检查过, 这里直接放过
+                return True
+
             # 确认权限, 是否在当前权限组内
             try:
                 audit_auth_group = Group.objects.get(id=self.audit.current_audit)
