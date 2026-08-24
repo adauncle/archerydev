@@ -31,8 +31,18 @@ logger = logging.getLogger("default")
 DISK_HEADROOM_RATIO = 1.2  # 磁盘剩余 ≥ 1.2 × 表大小
 TABLE_SIZE_FLOOR_BYTES = 1 * 1024 * 1024 * 1024  # 1GB 以下的表建议走传统 ALTER
 SUPPORTED_ENGINES = {"InnoDB"}  # gh-ost 仅支持 InnoDB（MyISAM 会转 InnoDB 但不推荐）
+## CUSTOM-MODIFIED: 8/24 修正 gh-ost precheck 过度限制 @ 2026-08-24 @ mavis
+## 关联: docs/changelogs/2026-08-24_gh-ost-precheck-fix-overblocking.md
+## 根因 (8/24): 之前 FORBIDDEN_ALTER_OPERATIONS 包含 "DROP",
+##             误以为 gh-ost 不支持 DROP COLUMN, 但 gh-ost 1.1.x 官方明确支持
+##             (https://github.com/github/gh-ost/blob/master/doc/requirements-and-limitations.md
+##              limitations 列表无 DROP, gh-ost 实际就是为 ADD/DROP/MODIFY 设计的)
+## 改法: FORBIDDEN_ALTER_OPERATIONS 移除 "DROP", 仅保留 RENAME / TRUNCATE
+##       业务 RD 提交 `ALTER TABLE t DROP COLUMN c` 也能走 gh-ost 流程
 FORBIDDEN_ALTER_OPERATIONS = (
-    "RENAME", "DROP", "TRUNCATE",  # 这些不是 ALTER
+    "RENAME",  # ALTER TABLE ... RENAME TO, gh-ost 不支持
+    "TRUNCATE",  # TRUNCATE TABLE 不是 ALTER, 不该走 gh-ost
+    # 8/24 移除 "DROP": gh-ost 官方支持 DROP COLUMN / DROP INDEX
     # 改主键：gh-ost 1.1.x 已支持，但 alpha 先禁
     # 改索引类型 / 全文索引：gh-ost 不支持
     # 外键约束：gh-ost 不支持 + 引用的其他表同步问题
@@ -231,8 +241,13 @@ def check_alter_sql(sql_content: str) -> Dict:
                 {"detected_type": stmt_type, "sql_head": first[:200]},
             )
 
-        # 检查是否带 RENAME TO / DROP / TRUNCATE
-        for keyword in ("RENAME TO", "DROP ", "TRUNCATE "):
+        # 检查是否带 RENAME TO / TRUNCATE
+        ## CUSTOM-MODIFIED: 8/24 移除 "DROP " 关键词检查 @ 2026-08-24 @ mavis
+        ## 关联: docs/changelogs/2026-08-24_gh-ost-precheck-fix-overblocking.md
+        ## 根因: gh-ost 1.1.x 官方支持 DROP COLUMN / DROP INDEX, 之前的 substring 匹配
+        ##       "DROP " 会误禁 DROP COLUMN 工单, 业务 RD 没法走 gh-ost 流程
+        ## 改法: 只禁 RENAME TO / TRUNCATE, DROP 允许
+        for keyword in ("RENAME TO", "TRUNCATE"):  # 不带尾空格, 避免 "TRUNCATE;" 这种边界 case 漏报
             if keyword in first.upper():
                 return _fail(
                     name,
