@@ -591,27 +591,29 @@
         </div>
     </form>
 
-{% endblock content %}
-
-{# CUSTOM-MODIFIED: v0.3.x 字段 diff Modal @ 2026-08-12 @ mavis #}
-{# 大表 alert "字段 diff" 按钮 + 此 modal 联动, AJAX 调同端点 #}
-{# 关联 changelog: docs/changelogs/2026-08-12_gh-ost-column-diff.md #}
-<div class="modal fade" id="columnDiffModal" tabindex="-1" role="dialog" aria-labelledby="columnDiffModalLabel">
-    <div class="modal-dialog modal-lg" role="document" style="width:90%;max-width:1100px;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
-                <h4 class="modal-title"><i class="fa fa-columns"></i> 字段变更检测</h4>
-            </div>
-            <div class="modal-body" id="column-diff-modal-body">
-                <div class="text-muted"><i class="fa fa-spinner fa-spin"></i> 检测中...</div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-default" data-dismiss="modal">关闭</button>
+    {# CUSTOM-MODIFIED: 8/24 字段 diff Modal 移到 content block 内 @ 2026-08-24 @ mavis #}
+    {# 8/12 原始位置: `{% endblock content %}` 之后, Django template 不渲染 #}
+    {# 8/24 根因: 8/12 写时 modal 在 endblock 之后, JS handler 注册但找不到 modal 元素, 详情页点 字段 diff 按钮没反应 #}
+    {# 8/24 修法: 移进 content block 内 (form 关闭后, endblock 之前) #}
+    {# 关联 changelog: docs/changelogs/2026-08-12_gh-ost-column-diff.md + docs/changelogs/2026-08-24_column-diff-modal-template.md #}
+    <div class="modal fade" id="columnDiffModal" tabindex="-1" role="dialog" aria-labelledby="columnDiffModalLabel">
+        <div class="modal-dialog modal-lg" role="document" style="width:90%;max-width:1100px;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+                    <h4 class="modal-title"><i class="fa fa-columns"></i> 字段变更检测</h4>
+                </div>
+                <div class="modal-body" id="column-diff-modal-body">
+                    <div class="text-muted"><i class="fa fa-spinner fa-spin"></i> 检测中...</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">关闭</button>
+                </div>
             </div>
         </div>
     </div>
-</div>
+
+{% endblock content %}
 
 {% block js %}
     {% load static %}
