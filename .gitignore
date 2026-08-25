@@ -113,6 +113,7 @@ scripts/deploy/generate*.sh
 !scripts/deploy/03_rollback.sh
 !scripts/deploy/04_backup.sh
 !scripts/deploy/check_health.sh
+!scripts/deploy/check_frontend_static.sh
 !scripts/deploy/verify_5endpoints_110prod.sh
 !scripts/deploy/systemd/
 !scripts/deploy/cloudflared/
