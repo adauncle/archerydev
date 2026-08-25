@@ -55,6 +55,9 @@ _RE_DONE = re.compile(r"\bDone\.?\s*$", re.IGNORECASE)
 _RE_DONE_MIGRATING = re.compile(r"\bDone migrating\b", re.IGNORECASE)
 _RE_FATAL = re.compile(r"\bFATAL\b\s*(.*)", re.IGNORECASE)
 _RE_ERROR = re.compile(r"\bERROR\b\s*(.*)", re.IGNORECASE)
+# 8/25 教训: gh-ost cut-over 后 cleanup 阶段常见 1146 noise (drop _x_ghc 表已不存在)
+# 匹配 1146 或 "doesn't exist" 即认为是 cleanup noise, 跳过
+_RE_CLEANUP_NOISE_1146 = re.compile(r"1146|doesn't exist", re.IGNORECASE)
 _RE_TIMESTAMP = re.compile(
     r"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+(\w+)\s+(.*)"
 )
@@ -98,6 +101,13 @@ def parse_ghost_log(text: str) -> GhostParseResult:
         if level == "ERROR":
             em = _RE_ERROR.search(line)
             err = em.group(1).strip() if em else line
+            ## CUSTOM-MODIFIED: 8/25 教训过滤 gh-ost cleanup 阶段 1146 noise @ 2026-08-25 @ mavis
+            ## 关联: docs/changelogs/2026-08-25_gh-ost-cleanup-1146-noise.md
+            ## 业务: gh-ost 1.1.10 cut-over 成功后 cleanup 阶段 (drop _x_ghc changelog 表)
+            ##       经常报 1146 "Table 'X' doesn't exist", 不影响主流程 (数据迁移 100% 成功)
+            ##       业务 RD 看着别扭, 过滤掉 (跟 FATAL 区分, FATAL 仍报 fail)
+            if _RE_CLEANUP_NOISE_1146.search(err):
+                continue
             # gh-ost 经常 ERROR 但不 FATAL，记录但不 fail
             if not result.error_message:
                 result.error_message = err[:1000]
