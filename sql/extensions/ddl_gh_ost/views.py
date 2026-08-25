@@ -634,7 +634,23 @@ def rebuild_list(request: HttpRequest) -> JsonResponse:
     错误:
         404: instance 不存在
         500: 连 MySQL 失败（dev 134 instance 历史密文需 .env 兜底）
+
+    权限 (8/25 16:09 改 perm 守卫, 跟 rebuild_select_page 一致):
+        需 ``ddl_gh_ost.view_ddlghosttask`` perm, 没 perm 返 403 JSON
+        (不能 raise PermissionDenied, 否则前端 AJAX 拿到整页 HTML 源码, 8/13 教训)
     """
+    # 8/25 改 perm 守卫
+    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask"):
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": (
+                    "您没有查看碎片回收表列表的权限, 请联系 DBA 在 admin 后台 "
+                    "/admin/auth/group/ 权限组中分配 'Can view gh-ost 任务'。"
+                ),
+            },
+            status=403,
+        )
     instance_id = request.GET.get("instance_id")
     if not instance_id:
         return JsonResponse({"ok": False, "error": "instance_id 必填"}, status=400)
@@ -736,7 +752,30 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
 
     返回:
         {"ok": true, "task_id": N, "status": "running", "pid": P, "target_table": "db.table"}
+
+    权限 (8/25 16:09 改 perm 守卫, 触发动作比 view 更严):
+        需 ``ddl_gh_ost.add_ddlghosttask`` perm (Django admin 自动注册的标准 perm)。
+        跟 view 守卫的区别: view 让人"看", add 让人"做"。
+        触发 rebuild 是"做"动作, 必须 add perm。
+        superuser 自动通过, 没 perm 返 403 JSON (不 raise PermissionDenied, 8/13 教训)。
     """
+    # 0. perm 守卫 (8/25 加, add_ddlghosttask 比 view_ddlghosttask 更严)
+    if not request.user.has_perm("ddl_gh_ost.add_ddlghosttask"):
+        logger.warning(
+            "用户 %s 访问 /gh_ost/rebuild/start/ 被拒: 无 add_ddlghosttask 权限",
+            request.user.username,
+        )
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": (
+                    "您没有触发碎片回收的权限, 请联系 DBA 在 admin 后台 "
+                    "/admin/auth/group/ 权限组中分配 'Can add gh-ost 任务'。"
+                ),
+            },
+            status=403,
+        )
+
     # 1. 灰度开关
     if not getattr(settings, "CUSTOM_GH_OST_REBUILD_ENABLED", True):
         return JsonResponse({
@@ -850,8 +889,18 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
 def rebuild_progress_page(request: HttpRequest, task_id: int) -> HttpResponse:
     """渲染 rebuild 进度面板（admin 内部可访问）。
 
-    模板路径：``sql/extensions/ddl_gh_ost/templates/ddl_gh_ost/progress_rebuild.html``
+    模板路径:``sql/extensions/ddl_gh_ost/templates/ddl_gh_ost/progress_rebuild.html``
+
+    权限 (8/25 16:09 改 perm 守卫, 跟 rebuild_select_page 一致):
+        需 ``ddl_gh_ost.view_ddlghosttask`` perm, 没 perm 返 403 HTML 错误页
+        (跟 admin_list 一致, render 端点用 raise PermissionDenied 即可)
     """
+    # 8/25 加 perm 守卫
+    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask"):
+        raise PermissionDenied(
+            "您没有查看 gh-ost 任务进度的权限, 请联系 DBA 在 admin 后台 "
+            "/admin/auth/group/ 权限组中分配 'Can view gh-ost 任务'。"
+        )
     task = get_object_or_404(DdlGhostTask, pk=task_id, task_type="rebuild")
     return render(request, "ddl_gh_ost/progress_rebuild.html", {
         "task": task,
@@ -863,12 +912,28 @@ def rebuild_progress_page(request: HttpRequest, task_id: int) -> HttpResponse:
 def rebuild_status(request: HttpRequest, task_id: int) -> JsonResponse:
     """rebuild 任务进度查询（前端 polling 3s 一次，复用 ghost status 字段）。
 
+    权限 (8/25 16:09 加 perm 守卫, 跟 rebuild_list 一致):
+        需 ``ddl_gh_ost.view_ddlghosttask`` perm, 没 perm 返 403 JSON
+        (AJAX polling 端点必须返 JSON, 不能 raise, 8/13 教训)
+
     入参:
         GET /gh_ost/rebuild/status/<task_id>/
 
     返回:
         与 ghost status 端点相同字段（pct / rows / speed / eta / threads_running / message 等）
     """
+    # 8/25 加 perm 守卫 (status 是 AJAX polling 端点, 返 JSON 不用 raise)
+    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask"):
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": (
+                    "您没有查看 gh-ost 任务状态的权限, 请联系 DBA 在 admin 后台 "
+                    "/admin/auth/group/ 权限组中分配 'Can view gh-ost 任务'。"
+                ),
+            },
+            status=403,
+        )
     task = DdlGhostTask.objects.filter(pk=task_id, task_type="rebuild").first()
     if not task:
         return JsonResponse({"ok": False, "error": "rebuild task 不存在"}, status=404)
@@ -1048,21 +1113,33 @@ def rebuild_select_page(request: HttpRequest) -> HttpResponse:
 
     URL: GET /gh_ost/rebuild/select/
 
-    权限: 走 ``_is_admin_or_dba`` 角色守卫（不是 perm 守卫），因为碎片回收是
-          纯 DBA 工具, 不开放给 RD 角色。即使用户有 ``view_ddlghosttask`` perm,
-          只要不在 DBA / DBA组长 组, 一律 403。
+    权限 (8/25 16:09 用户拍板改 perm 守卫, 跟 admin_list 一致):
+        需 ``ddl_gh_ost.view_ddlghosttask`` perm (Django admin 自动注册的标准 perm)。
+        superuser 自动通过。DBA 在 admin 后台 ``/admin/auth/group/`` 给目标组
+        勾上 "Can view gh-ost 任务" 即可分配, 无需改代码 / 无需 migration。
+        没有 perm 的用户: 菜单不显示 + 直接访问 URL 返回 403。
+
+    设计原因 (8/25 拍板, 跟 admin_list 守卫统一):
+        - 之前用 _is_admin_or_dba group 守卫 (写死 DBA/DBA组长), 不可分配
+        - 改为 perm 后, 4 个端点 (rebuild_select/list/status/progress) 用 view 守卫,
+          rebuild_start 用 add 守卫 (触发动作更严)
+        - 110 prod 默认所有 group 都没 perm, RD 默认 403 (跟现状一致)
+        - DBA 想临时给运维负责人开放, admin 后台勾 perm 即可, 不需要改代码
 
     模板: ddl_gh_ost/rebuild_select.html (Element UI + 3 步流程)
 
-    关联 changelog: docs/changelogs/2026-08-25_v0405-rebuild-select-page.md
+    关联 changelog: docs/changelogs/2026-08-25_v0405-rebuild-perm-guard.md
     """
-    # 0. 角色守卫 (DBA 专属, 比 view_ddlghosttask perm 更严)
-    if not _is_admin_or_dba(request.user):
+    # 0. perm 守卫 (跟 admin_list 一致, 可在 admin 后台分配)
+    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask"):
         logger.warning(
-            "用户 %s 访问 /gh_ost/rebuild/select/ 被拒: 非 DBA/超管",
+            "用户 %s 访问 /gh_ost/rebuild/select/ 被拒: 无 view_ddlghosttask 权限",
             request.user.username,
         )
-        raise PermissionDenied("碎片回收是 DBA 专属工具, 请用 DBA / DBA组长 / 超管账号登录。")
+        raise PermissionDenied(
+            "您没有访问碎片回收页面的权限, 请联系 DBA 在 admin 后台 "
+            "/admin/auth/group/ 权限组中分配 'Can view gh-ost 任务'。"
+        )
 
     # 1. 拿所有 instance 列表, 按 instance_name 排序
     #    设计: 跟 admin_list 一致, 列所有 instance, 不按用户过滤
