@@ -26,6 +26,11 @@ TS="20260827_2050"
 BACKUP_DIR="/backup"
 LOG_FILE="/var/log/archery/pre_push_backup_${TS}.log"
 
+# 8/25 教训固化: 134 dev 演练时 .my.cnf 不在 /root, 在 /etc/archery/
+#                加 MY_CNF env var 让 DBA 演练时覆盖
+#                8/06 教训: 134 dev 真凭据在 /etc/archery/, 推 110 当天用 /root/.my.cnf
+MY_CNF="${MY_CNF:-/root/.my.cnf}"
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -54,7 +59,7 @@ echo "================================================================"
 echo ""
 echo "=== 前置检查 ==="
 [[ ! -d "${PROD_PATH}" ]] && { err "代码目录不存在: ${PROD_PATH}"; exit 1; }
-[[ ! -f "/root/.my.cnf" ]] && { err "MySQL 凭据不存在: /root/.my.cnf"; exit 1; }
+[[ ! -f "${MY_CNF}" ]] && { err "MySQL 凭据不存在: ${MY_CNF}"; exit 1; }
 [[ ! -d "${BACKUP_DIR}" ]] && { err "备份目录不存在: ${BACKUP_DIR}"; exit 1; }
 
 disk_avail=$(df -BG ${BACKUP_DIR} | tail -1 | awk '{print $4}' | tr -d 'G')
@@ -97,7 +102,7 @@ echo "  目标: ${BACKUP_DIR}/archery_v030_${TS}_schema.sql"
 
 SCHEMA_BACKUP="${BACKUP_DIR}/archery_v030_${TS}_schema.sql"
 
-mysqldump --defaults-file=/root/.my.cnf \
+mysqldump --defaults-file=${MY_CNF} \
     --no-data \
     --triggers \
     --routines \
