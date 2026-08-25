@@ -18,8 +18,8 @@
 | 10:00-10:30 | 5 步必做 1-12 步演练 | `bash /tmp/5step_prerequisites_110prod.sh` (跳 13 步) | 1-12 步全 OK, idempotent |
 | 10:30-11:00 | 备份脚本演练 | `bash /tmp/pre_push_backup_110prod_20260827.sh` | 3 份备份 OK |
 | 11:00-11:30 | 回滚脚本演练 | `DRY_RUN=1 bash /tmp/rollback_110prod_v030_20260827.sh` | 2.4 秒, SLA 余 298 秒 |
-| 11:30-12:00 | 5 端点验证演练 | `bash /tmp/verify_5endpoints_110prod.sh` | 5 端点全 PASS |
-| 12:00-12:30 | **kill master 真演练 (业务午休)** | 跑 5 步必做步骤 13 | 新 master 起来 + 5 端点 200 |
+| 11:30-12:00 | 5+1 端点验证演练 (8/25 加端点 6) | `bash /tmp/verify_5endpoints_110prod.sh` | 5+1 端点全 PASS |
+| 12:00-12:30 | **kill master 真演练 (业务午休)** | 跑 5 步必做步骤 13 | 新 master 起来 + 5+1 端点 200 |
 | 12:30-13:00 | 演练报告 + 群发 | 写 `docs/changelogs/2026-08-26_134dev-rehearsal.md` | 全过 = 推 110 准备就绪 |
 
 **业务影响窗口**: 12:00-12:30 业务午休, kill master 真演练, 业务 RD 不可用 ≤ 30s
@@ -62,7 +62,7 @@ archery   13700 13665  0 Aug17 ?        00:00:42 /opt/archery/prod/venv/bin/pyth
 - 找不到 PPID=1 → master 不在跑, 演练前先 `systemctl restart archery` 拉起
 - 有多个 PPID=1 → 异常, kill 老的留新的 (8/24 教训)
 
-### 1.3 5 端点基线验证 (推 110 前快照)
+### 1.3 5+1 端点基线验证 (推 110 前快照, 8/25 加端点 6)
 
 **跑法** (在 134 dev, root):
 ```bash
@@ -71,23 +71,25 @@ ls /tmp/verify_5endpoints_110prod.sh
 # 如果不存在, scp 推:
 # (Windows 端) scp G:\MiniMax工作空间\archery_dev\scripts\deploy\verify_5endpoints_110prod.sh root@172.20.2.134:/tmp/
 
-# 跑验证 (5 端点基线)
+# 跑验证 (5+1 端点基线)
 ARCHERY_URL=http://127.0.0.1:9003 SKIP_AUTH=1 bash /tmp/verify_5endpoints_110prod.sh
-# (端点 4-5 输入 "OK" 模拟, 实际演练不强制)
+# (端点 4-6 输入 "OK" 模拟, 实际演练不强制)
 ```
 
 **期望**:
 - 端点 1-3 全 200/302 PASS
-- 端点 4-5 手动验证 (可选, 演练时浏览器快看)
-- 总结: `[SUMMARY] 5 endpoints: 5 OK / 0 FAIL`
+- 端点 4-6 手动验证 (可选, 演练时浏览器快看)
+- 总结: `[SUMMARY] 5+1 endpoints: 6 OK / 0 FAIL`
 
 **记录基线**: 拍屏或抄下来, 推 110 演练后对比 (应该跟基线一致)
 
+**端点 6 = /gh_ost/rebuild/select/**: 8/25 14:00 拍板加的 v0.4.5 选表页面 (方案 B), 8/27 推 110 必测. 验证 3 步指示器 + 3 筛选器 + pct 公式 + 模板元素.
+
 ---
 
-## 2. 6 drill 端到端演练 (9:15-10:00)
+## 2. 7 drill 端到端演练 (9:15-10:00)
 
-> **目标**: 验证 8/13 6 commit + 8/17 dashboard 修复 + 8/24 6 bug fix 全部到位
+> **目标**: 验证 8/13 6 commit + 8/17 dashboard 修复 + 8/24 6 bug fix + 8/25 v0.4.5 选表页面 全部到位
 
 ### 2.1 6 个 drill 脚本
 
@@ -99,6 +101,7 @@ ARCHERY_URL=http://127.0.0.1:9003 SKIP_AUTH=1 bash /tmp/verify_5endpoints_110pro
 | D | `drill_progress_page_perm.py` | cancel 端点 perm (3 Case, 8/13 修) | 30 秒 |
 | E | `drill_ghost_task_wf_abort_sync.py` | ghost task 同步 (8/13 修) | 30 秒 |
 | F | `drill_sqlsubmit_big_table.py` | SQL 提交页大表 DDL 防呆 (6 Case, 8/13 修) | 30 秒 |
+| **G** | **`drill_rebuild_select.py`** | **v0.4.5 选表页面 (8/25 加: view + 3 筛选器 + pct 公式 + admin URL)** | **30 秒** |
 
 ### 2.2 跑法 (在 134 dev, root)
 
@@ -128,6 +131,10 @@ sudo -u archery venv/bin/python scripts/drill_ghost_task_wf_abort_sync.py 2>&1 |
 # F. SQL 提交页大表 DDL 防呆 (6 Case, 8/13 修)
 sudo -u archery venv/bin/python scripts/drill_sqlsubmit_big_table.py 2>&1 | tee /tmp/drill_F.log
 # 期望: 6 Case 全过 (3 按钮: 启用 gh-ost / 立即执行 / 终止工单)
+
+# G. v0.4.5 选表页面 (8/25 新增, 8/27 推 110 必测)
+sudo -u archery venv/bin/python scripts/drill_rebuild_select.py 2>&1 | tee /tmp/drill_G.log
+# 期望: 8/9 元素 PASS (9 模板元素 + 3 筛选器 + RD 守卫 403)
 ```
 
 **总期望**: 6 drill 全部 PASS, 无 UnboundLocalError / 500 / ImportError / AssertionError
@@ -146,7 +153,7 @@ sudo -u archery venv/bin/python scripts/drill_sqlsubmit_big_table.py 2>&1 | tee 
 
 **跑完后, 写演练总结到 `/tmp/drill_summary.txt`**:
 ```
-=== 8/26 134 dev 6 drill 演练 ===
+=== 8/26 134 dev 7 drill 演练 ===
 时间: 2026-08-26 09:15-10:00
 A. drill_admin_list_scope.py: PASS (4/4)
 B. drill_column_diff.py: PASS (5/5)
@@ -154,7 +161,8 @@ C. drill_dashboard_graceful_degrade.py: PASS (4/4)
 D. drill_progress_page_perm.py: PASS (3/3)
 E. drill_ghost_task_wf_abort_sync.py: PASS (all)
 F. drill_sqlsubmit_big_table.py: PASS (6/6)
-总: 6/6 PASS
+G. drill_rebuild_select.py: PASS (8/9 模板元素 + 3 筛选器)
+总: 7/7 PASS
 ```
 
 ---
@@ -300,7 +308,7 @@ SLA 余: 297-298 秒
 
 ## 6. kill master 真演练 (12:00-12:30, 业务午休)
 
-> **目标**: 验证 5 步必做步骤 13 走 kill master 路径, systemd 自动拉起新 master + 5 端点 200
+> **目标**: 验证 5 步必做步骤 13 走 kill master 路径, systemd 自动拉起新 master + 5+1 端点 200
 > **8/24 教训固化**: 永远 `kill master` (不是 HUP), 134 dev 有 systemd, 110 prod 没有 (手动 nohup)
 
 ### 6.1 演练前 5 分钟 (11:55) — 通知业务群
@@ -308,7 +316,7 @@ SLA 余: 297-298 秒
 **群发业务群** (模板):
 ```
 [演练通知] 12:00-12:30 134 dev 演练 kill master (业务午休时段, 业务 RD 不可用 ≤ 30s)
-演练完后 5 端点验证 200, 业务 RD 12:30 后正常使用
+演练完后 5+1 端点验证 200, 业务 RD 12:30 后正常使用
 跟 8/27 推 110 一样的演练, 提前 1 天真跑一次
 ```
 
@@ -353,9 +361,9 @@ bash /tmp/5step_prerequisites_110prod.sh
 
 **跑法** (在 134 dev, root):
 ```bash
-# 1. 5 端点验证
+# 1. 5+1 端点验证
 ARCHERY_URL=http://127.0.0.1:9003 SKIP_AUTH=1 bash /tmp/verify_5endpoints_110prod.sh
-# 期望: 5 端点全 PASS
+# 期望: 5+1 端点全 PASS (端点 6 = /gh_ost/rebuild/select/, 8/25 新加)
 
 # 2. gunicorn log 看有没有 5xx
 tail -100 /var/log/archery/gunicorn.err 2>&1 | grep -E ' 5[0-9][0-9] ' | head -5
@@ -370,7 +378,7 @@ tail -100 /var/log/archery/gunicorn.err 2>&1 | grep -E ' 5[0-9][0-9] ' | head -5
 **群发业务群**:
 ```
 [演练完成] 12:00-12:30 134 dev kill master 真演练完成
-- 5 端点验证全 PASS
+- 5+1 端点验证全 PASS
 - gunicorn log 无 5xx
 - 新 master pid 14523, 业务 RD 可正常使用
 演练结果: 8/27 推 110 准备就绪, 21:00 准时推
@@ -391,7 +399,7 @@ tail -100 /var/log/archery/gunicorn.err 2>&1 | grep -E ' 5[0-9][0-9] ' | head -5
 ## 演练时间
 2026-08-26 9:00-13:00 (mavis 远程 + DBA 现场)
 
-## 6 drill 演练结果
+## 7 drill 演练结果
 | # | drill 脚本 | 验证什么 | 期望 | 实测 |
 |---|-----------|---------|------|------|
 | A | drill_admin_list_scope.py | gh-ost 任务列表 perm | PASS (4/4) | ✓ |
@@ -400,6 +408,7 @@ tail -100 /var/log/archery/gunicorn.err 2>&1 | grep -E ' 5[0-9][0-9] ' | head -5
 | D | drill_progress_page_perm.py | cancel 端点 perm | PASS (3/3) | ✓ |
 | E | drill_ghost_task_wf_abort_sync.py | ghost task 同步 | PASS | ✓ |
 | F | drill_sqlsubmit_big_table.py | 大表 DDL 防呆 | PASS (6/6) | ✓ |
+| **G** | **drill_rebuild_select.py** | **v0.4.5 选表页面 (8/25 加)** | **PASS (8/9 + 3 筛选器)** | **✓** |
 
 ## 5 步必做 1-12 步演练
 1-12 步全 OK, idempotent 验证通过
@@ -413,7 +422,7 @@ tail -100 /var/log/archery/gunicorn.err 2>&1 | grep -E ' 5[0-9][0-9] ' | head -5
 ## kill master 真演练 (12:00-12:30 业务午休)
 - 旧 master 13665 kill OK
 - 新 master 14523 起来 OK (systemd 自动拉)
-- 5 端点验证全 PASS
+- 5+1 端点验证全 PASS
 - gunicorn log 无 5xx
 - 业务 RD 12:30 后正常使用
 
@@ -464,7 +473,7 @@ ps -ef | grep gunicorn | grep -v grep | awk '$3==1 {print $2}' | head -1
 
 ```bash
 cd /opt/archery/prod
-for drill in drill_admin_list_scope drill_column_diff drill_dashboard_graceful_degrade drill_progress_page_perm drill_ghost_task_wf_abort_sync drill_sqlsubmit_big_table; do
+for drill in drill_admin_list_scope drill_column_diff drill_dashboard_graceful_degrade drill_progress_page_perm drill_ghost_task_wf_abort_sync drill_sqlsubmit_big_table drill_rebuild_select; do
     echo "=== $drill ==="
     sudo -u archery venv/bin/python scripts/$drill.py 2>&1 | tail -5
 done
@@ -496,7 +505,7 @@ DRY_RUN=1 bash /tmp/rollback_110prod_v030_20260827.sh
 # 期望 2.4 秒, SLA 余 298 秒
 ```
 
-### 8.7 跑 5 端点验证
+### 8.7 跑 5+1 端点验证
 
 ```bash
 ARCHERY_URL=http://127.0.0.1:9003 SKIP_AUTH=1 bash /tmp/verify_5endpoints_110prod.sh
@@ -533,16 +542,16 @@ curl -sI http://127.0.0.1:9003/login/ | head -1
 3. 演练通过才能推 110
 
 **演练失败典型场景**:
-- 6 drill 有 1 个 fail → 排查对应 commit, 重跑
+- 7 drill 有 1 个 fail → 排查对应 commit, 重跑
 - kill master 后 systemd 没拉起 → 看 gunicorn log, 手动 nohup 拉
-- 5 端点验证 fail → 看 gunicorn log, 排查哪个端点 500
+- 5+1 端点验证 fail → 看 gunicorn log, 排查哪个端点 500
 
 ### 9.2 演练推迟决策
 
 **8/26 演练如果 13:00 前没通过**:
 - 选项 A: 8/26 下午修, 8/26 晚上再演练
 - 选项 B: 8/27 推 110 推迟到 8/28 / 下周
-- 选项 C: 8/27 推 110 但只推 "已经演练通过" 的部分 (5 步必做 + 备份 + 回滚 + verify 5 端点 4 脚本演练过, 部分 drill 演练失败的 commit 暂不推)
+- 选项 C: 8/27 推 110 但只推 "已经演练通过" 的部分 (5 步必做 + 备份 + 回滚 + verify 5+1 端点 4 脚本演练过, 部分 drill 演练失败的 commit 暂不推)
 
 **8/24 拍板**: 回滚 SLA 5 分钟, 推 110 推迟是可接受选项 (业务不中断 > 推 110 准时)
 
@@ -554,7 +563,7 @@ curl -sI http://127.0.0.1:9003/login/ | head -1
 - **5 步必做脚本**: `scripts/deploy/5step_prerequisites_110prod.sh` (1-13 步)
 - **3 份备份脚本**: `scripts/deploy/pre_push_backup_110prod_20260827.sh`
 - **一键回滚脚本**: `scripts/deploy/rollback_110prod_v030_20260827.sh`
-- **5 端点验证脚本**: `scripts/deploy/verify_5endpoints_110prod.sh`
+- **5+1 端点验证脚本**: `scripts/deploy/verify_5endpoints_110prod.sh` (8/25 加端点 6 rebuild/select/)
 - **8/25 演练报告**: `docs/changelogs/2026-08-25_110prod-pre-push-drill.md` + `2026-08-25_rollback-drill-and-incident.md`
 
 ---

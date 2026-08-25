@@ -20,7 +20,7 @@
 | 8/27 周四 21:05 | DBA | **推代码** (rsync/scp 新代码到 /dbdata/archery_v114_c9236a0) | `rsync -avz ...` 见 §3.3 |
 | 8/27 周四 21:08 | DBA | **跑 migration** (建 4 个 ext_* 表 + gh-ost 4 perm) | `sudo -u archery venv/bin/python manage.py migrate` |
 | 8/27 周四 21:10 | DBA | **kill master** 102228 + **nohup 拉起新 master** | 见 §3.4 |
-| 8/27 周四 21:15-21:30 | DBA | **5 端点验证** (/login/ + /dbaprinciples/ + /admin/ + /gh_ost/ + /sqlsubmit/) | `bash /tmp/verify_5endpoints_110prod.sh` |
+| 8/27 周四 21:15-21:30 | DBA | **5+1 端点验证** (/login/ + /dbaprinciples/ + /admin/ + /gh_ost/admin_list/ + /sqlsubmit/ + /gh_ost/rebuild/select/) | `bash /tmp/verify_5endpoints_110prod.sh` |
 | 8/27 周四 21:30 | DBA | **业务群发** "推 110 完成, 新功能上线" | 模板 §6.2 |
 | 8/27 周四 22:00 | DBA | 值守结束, 交班 | (8/28 09:00 再看) |
 
@@ -39,19 +39,41 @@ bash /tmp/rollback_110prod_v030_20260827.sh
 
 ## 1. 推 110 内容清单 (要推的代码 + 配套修复)
 
-### 1.1 这次推的内容 (8/25 HEAD)
+### 1.1 这次推的内容 (8/25 15:43 HEAD)
 
 | 类别 | 数量 | 关键 commit / changelog |
 |------|------|-----------------------|
 | gh-ost v0.3.0-beta (DBA 兜底 + 大表 DDL 防呆) | 1 大功能 | 47728bb, f87e875, 1f32976, cd683f9, fba0564 |
 | gh-ost v0.4.5 (碎片回收 + 智能回滚 A+B) | 1 大功能 | 4bece6a, e54a663 |
+| **gh-ost v0.4.5 选表页面 (方案 B, 业务前端 3 步入口)** | **1 大功能** | **3c00e69, 36c554e, 03c223f, 24a2498, 81a5097** |
 | gh-ost 任务管理列表页 + 权限组细分 | 1 大功能 | c80c1ad, 727f046, 2d27a4a, eb5937b |
 | 8/24 6 bug fix (审批流 3 级 / gh-ost precheck / cancel perm / 字段 diff modal / ghost task 显示) | 6 commit | a41c4d0, 9d66064, eaf9853, e669567, 0b62856, 76d48cc, 324a53a |
 | 8/17 dashboard 优雅降级 | 1 commit | a16b803 |
 | 钉钉 OA framework (低风险) | 1 大功能 | (框架, NOT enabled) |
 | /dbaprinciples/ 修复 (8/24) | 1 commit | 0c94576 |
 | W1 + W2 摸头 5 步必做扩展 | 13 步 | 7c2003c, 71e5b3b |
-| **总计** | **30+ commit, 20+ changelog** | |
+| **总计** | **35+ commit, 25+ changelog** | |
+
+**8/25 14:00 拍板加上的 v0.4.5 选表页面 (5 commit)**:
+- `3c00e69` feat: 碎片回收 选表页面 (方案 B) — 业务前端 3 步入口, 主菜单 gh-ost 任务下加"碎片回收"链接
+- `36c554e` fix: progress_rebuild "查看 admin 详情" 404 — 改对 `_meta.app_label` URL
+- `03c223f` feat: 选表页 3 筛选器 (库/表名/碎片率) — 前端实时过滤
+- `24a2498` fix: 筛选行挪到第 1 步卡片 — 选 instance 前就能看到, 拉表后启用
+- `81a5097` fix: 筛选优先级 bug — 改用 `state.filtered` 替代三目 + 优先级坑
+
+**对应 changelog** (推 110 物料必带):
+- `docs/changelogs/2026-08-25_v0405-rebuild-select-page.md`
+- `docs/changelogs/2026-08-25_admin-url-404-fix.md`
+- `docs/changelogs/2026-08-25_v0405-rebuild-filters.md`
+- `docs/changelogs/2026-08-25_v0405-rebuild-filter-priority-bug.md`
+
+**关键文件** (推 110 时 scp 推 /opt/archery/prod/ 同名路径):
+- `sql/extensions/ddl_gh_ost/views.py` (新 view `rebuild_select_page` + 修 pct 公式)
+- `sql/extensions/ddl_gh_ost/urls.py` (新路由 `rebuild/select/`)
+- `sql/extensions/ddl_gh_ost/templates/ddl_gh_ost/rebuild_select.html` (新模板, 22KB, 3 步 + 3 筛选器)
+- `sql/extensions/ddl_gh_ost/templates/ddl_gh_ost/progress_rebuild.html` (admin URL 修对)
+- `sql/extensions/ddl_gh_ost/services/notify.py` (admin URL 修对)
+- `common/templates/base.html` (主菜单加"碎片回收"链接)
 
 ### 1.2 110 prod 当前状态 (8/24 摸底基线)
 
@@ -84,7 +106,7 @@ bash /tmp/rollback_110prod_v030_20260827.sh
 
 > **目标**: 验证 8/25 3 份脚本 + 8/24 6 bug fix 都在 134 dev 真实跑通, kill master 真演练 (不是 DRY_RUN)
 
-### 2.1 134 dev 端到端演练 6 drill
+### 2.1 134 dev 端到端演练 7 drill (8/25 加 drill G 选表页面)
 
 **跑法** (在 134 dev, root):
 ```bash
@@ -109,7 +131,7 @@ sudo -u archery venv/bin/python scripts/drill_ghost_task_wf_abort_sync.py 2>&1 |
 sudo -u archery venv/bin/python scripts/drill_sqlsubmit_big_table.py 2>&1 | tail -30
 ```
 
-**期望**: 全部 6 个 drill 通过, 无 UnboundLocalError / 500 / ImportError / AssertionError
+**期望**: 全部 7 个 drill 通过 (含 drill G 选表页面), 无 UnboundLocalError / 500 / ImportError / AssertionError
 
 ### 2.2 kill master 真演练 (8/26 12:00-12:30, 业务午休)
 

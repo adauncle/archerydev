@@ -1,12 +1,15 @@
 #!/bin/bash
-# verify_5endpoints_110prod.sh — 推 110 prod 后 5 端点验证 (8/27 推 110 阶段 5 必跑)
+# verify_5endpoints_110prod.sh — 推 110 prod 后 5+1 端点验证 (8/27 推 110 阶段 5 必跑)
 #
-# 5 端点:
+# 5 端点 (原计划):
 #   1. /login/                           期望 200  (gunicorn alive + Django 启动 OK)
 #   2. /dbaprinciples/                    期望 302  (跳登录, 8/24 修法生效, 不再 500)
 #   3. /admin/                           期望 302  (跳登录, Django admin 后台 OK)
 #   4. /gh_ost/admin_list/                期望 200  (DBA 浏览器手动验证, 见手册 §3.6)
 #   5. /sqlsubmit/                       期望 200  (DBA 浏览器手动验证, 见手册 §3.6)
+#
+# + 1 加测端点 (8/25 14:00 拍板加的 v0.4.5 选表页面):
+#   6. /gh_ost/rebuild/select/            期望 200  (DBA 浏览器手动验证, 8/25 新功能必须测)
 #
 # 跑法 (DBA 8/27 推 110 当天):
 #   ssh root@172.20.2.110
@@ -179,6 +182,30 @@ else
     FAIL_ENDPOINTS="${FAIL_ENDPOINTS} /sqlsubmit/(manual-fail)"
 fi
 
+# === 端点 6: /gh_ost/rebuild/select/ (DBA 浏览器手动验证, 8/25 新功能) ===
+echo ""
+echo "=== 端点 6: /gh_ost/rebuild/select/ (DBA 浏览器手动验证, v0.4.5 选表页面) ==="
+echo "  目的: 验证 8/25 14:00 拍板的 v0.4.5 选表页面 (方案 B) 110 prod 也能进"
+echo "  步骤:"
+echo "    1. 浏览器还在 admin 登录状态 (复用上一个 session)"
+echo "    2. 浏览器访问: ${ARCHERY_URL}/gh_ost/rebuild/select/"
+echo "    3. 期望: 200 + 看到 '碎片回收 · 选表' 标题 + 3 步指示器 + instance 下拉 + 筛选行"
+echo "    4. 关键验证: 选 instance 拉表后, 3 筛选器 (库/表名/碎片率) 启用, 表格按 DATA_FREE 倒序"
+echo "  ⚠️  如果返 403: 检查 superuser / DBA 组 (走 _is_admin_or_dba 守卫, 8/25 新增)"
+echo "  ⚠️  如果返 500: 看 gunicorn log, 排查 8/25 新 view rebuild_select_page + pct 公式"
+echo "  ⚠️  如果筛选不生效: 排查 8/25 三重坑 (优先级 bug 81a5097 修了)"
+echo ""
+echo "  验证后请输入结果: 6=OK, 6=FAIL"
+read -p "  端点 6 验证结果 (OK/FAIL): " ep6_result
+if [[ "${ep6_result}" == "OK" ]]; then
+    ok "端点 6 (v0.4.5 选表页面, 8/25 新功能) PASS"
+    PASS_COUNT=$((PASS_COUNT + 1))
+else
+    err "端点 6 FAIL, 排查 gunicorn log + 8/25 选表页面代码 (3c00e69/36c554e/03c223f/24a2498/81a5097)"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+    FAIL_ENDPOINTS="${FAIL_ENDPOINTS} /gh_ost/rebuild/select/(manual-fail)"
+fi
+
 # === 额外验证: gunicorn log 5xx 数 ===
 echo ""
 echo "=== 额外验证: gunicorn log 5xx 数 ==="
@@ -198,7 +225,7 @@ fi
 # === 总结 ===
 echo ""
 echo "================================================================"
-echo "[SUMMARY] 5 endpoints: ${PASS_COUNT} OK / ${FAIL_COUNT} FAIL"
+echo "[SUMMARY] 5+1 endpoints: ${PASS_COUNT} OK / ${FAIL_COUNT} FAIL"
 if [[ -n "${FAIL_ENDPOINTS}" ]]; then
     err "失败端点:${FAIL_ENDPOINTS}"
     echo ""
@@ -219,10 +246,10 @@ if [[ -n "${FAIL_ENDPOINTS}" ]]; then
     echo "================================================================"
     exit 1
 else
-    ok "5 端点全 PASS, 推 110 阶段 5 通过"
+    ok "5+1 端点全 PASS, 推 110 阶段 5 通过"
     echo ""
     echo "  下一步:"
-    echo "    1. 群发业务群: '推 110 完成, 新功能上线'"
+    echo "    1. 群发业务群: '推 110 完成, 新功能上线 (含 8/25 v0.4.5 选表页面)'"
     echo "    2. 提一条新 SQL 上线工单 (浏览器), 验证 detail 页审批流跟 config/ 配一致 (8/24 修法)"
     echo "    3. 21:30-22:00 DBA 值守, 看 gunicorn log + 业务 RD 反馈"
     echo "    4. 8/28 09:00 1 日观察 (docs/changelogs/2026-08-28_push-v030-day1-observation.md)"
