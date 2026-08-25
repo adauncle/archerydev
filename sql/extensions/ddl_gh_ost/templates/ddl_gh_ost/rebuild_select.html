@@ -360,12 +360,16 @@
 
   function renderTables() {
     var c = document.getElementById('tables-container');
-    var list = state.filtered.length || state.tables.length === 0 ? state.filtered : state.tables;
-    // 边界: 拉表前 (state.tables=[], filtered=[]) 给个提示
+    // 8/25 修: 之前写反了 `state.filtered.length || state.tables.length === 0 ? ... : state.tables`
+    // 当 filtered=[] 时 0 是 falsy, 0 || (142===0)=false, 然后走 state.tables (错!)
+    // 现在直接用 filtered, 边界由下方 if 处理
+    var list = state.filtered;
+    // 边界 1: 拉表前 (state.tables=[], filtered=[]) 给个提示
     if (state.tables.length === 0) {
       c.innerHTML = '<div class="rebuild-state"><i class="fa fa-table"></i>请先选 instance</div>';
       return;
     }
+    // 边界 2: 拉表后筛完 0 张
     if (list.length === 0) {
       c.innerHTML = '<div class="rebuild-state" style="color: #b88230;">' +
         '<i class="fa fa-search"></i>无匹配表 — 调整筛选条件或点"重置"</div>';
