@@ -49,4 +49,6 @@ urlpatterns = [
     path("admin_list/", views.admin_list, name="admin_list"),
     # v0.3.x 字段 diff 检测 @ 2026-08-12
     path("column_diff/", views.column_diff, name="column_diff"),
+    # v0.4.5 选表页面 (DBA 主动重建入口) @ 2026-08-25
+    path("rebuild/select/", views.rebuild_select_page, name="rebuild_select"),
 ]

@@ -1,0 +1,390 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}碎片回收 · 选表 · Archery{% endblock %}
+
+{% block content %}
+<style>
+  /* ====== 选表页样式 (跟 task_list 视觉统一) ====== */
+  .rebuild-page { padding: 20px 0; }
+
+  .rebuild-h1 { font-size: 22px; font-weight: 600; color: #303133; margin-bottom: 6px; }
+  .rebuild-sub { color: #909399; font-size: 13px; margin-bottom: 20px; }
+  .rebuild-sub b { color: #F56C6C; font-weight: 600; }
+
+  /* 步骤指示器 (跟 Element UI Step 组件风格一致, 纯 CSS 实现) */
+  .rebuild-steps { display: flex; align-items: center; background: #fff;
+    border-radius: 8px; padding: 18px 24px; margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); gap: 0; }
+  .rebuild-step { display: flex; align-items: center; gap: 10px; flex: 1; }
+  .rebuild-step-num { width: 28px; height: 28px; border-radius: 50%; background: #dcdfe6;
+    color: #fff; font-weight: 600; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; }
+  .rebuild-step.active .rebuild-step-num { background: #409EFF; }
+  .rebuild-step.done .rebuild-step-num { background: #67C23A; }
+  .rebuild-step-text { font-size: 14px; color: #606266; }
+  .rebuild-step.active .rebuild-step-text { color: #303133; font-weight: 600; }
+  .rebuild-step-line { flex: 0 0 60px; height: 1px; background: #dcdfe6; margin: 0 8px; }
+  .rebuild-step.done + .rebuild-step-line { background: #67C23A; }
+
+  /* 步骤卡片 */
+  .rebuild-card { background: #fff; border-radius: 8px; padding: 20px 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 16px; }
+  .rebuild-card-title { font-size: 15px; font-weight: 600; color: #303133; margin-bottom: 14px;
+    padding-bottom: 10px; border-bottom: 1px solid #ebeef5; }
+
+  /* 步骤 1: 选 instance */
+  .rebuild-instance-row { display: flex; gap: 12px; align-items: center; }
+  .rebuild-instance-row select { flex: 1; max-width: 480px; padding: 8px 12px;
+    border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px; }
+  .rebuild-btn { padding: 8px 18px; border: none; border-radius: 4px; font-size: 14px;
+    cursor: pointer; color: #fff; font-weight: 500; transition: opacity .2s; }
+  .rebuild-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .rebuild-btn.primary { background: #409EFF; }
+  .rebuild-btn.primary:hover:not(:disabled) { background: #66b1ff; }
+  .rebuild-btn.success { background: #67C23A; }
+  .rebuild-btn.success:hover:not(:disabled) { background: #85ce61; }
+  .rebuild-btn.danger { background: #F56C6C; }
+
+  /* 步骤 2: 表格 */
+  .rebuild-table-info { color: #909399; font-size: 12px; margin-bottom: 12px; }
+  .rebuild-table-info b { color: #E6A23C; }
+  table.rebuild-tables { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.rebuild-tables th {
+    background: #fafafa; color: #606266; font-weight: 600; text-align: left;
+    padding: 10px 12px; border-bottom: 1px solid #ebeef5; white-space: nowrap;
+  }
+  table.rebuild-tables td {
+    padding: 10px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: middle;
+  }
+  table.rebuild-tables tr:hover td { background: #fafbfc; }
+  table.rebuild-tables tr.selected td { background: #ecf5ff; }
+  table.rebuild-tables tr.disabled td { color: #c0c4cc; background: #fafafa; }
+  table.rebuild-tables tr.disabled input[type=checkbox] { cursor: not-allowed; }
+
+  /* 碎片率颜色 */
+  .rebuild-pct { font-weight: 600; }
+  .rebuild-pct.high { color: #F56C6C; }
+  .rebuild-pct.mid { color: #E6A23C; }
+  .rebuild-pct.low { color: #909399; }
+
+  /* 步骤 3: 操作栏 */
+  .rebuild-action-bar { display: flex; gap: 12px; align-items: center;
+    margin-top: 16px; padding-top: 16px; border-top: 1px solid #ebeef5; }
+  .rebuild-selected-count { color: #606266; font-size: 13px; }
+  .rebuild-selected-count b { color: #409EFF; font-size: 16px; }
+
+  /* loading / empty 状态 */
+  .rebuild-state { padding: 40px 20px; text-align: center; color: #909399; font-size: 14px; }
+  .rebuild-state i { font-size: 32px; margin-bottom: 10px; display: block; }
+
+  /* alert */
+  .rebuild-alert { padding: 10px 14px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
+  .rebuild-alert.warn { background: #fdf6ec; color: #b88230; border: 1px solid #faecd8; }
+  .rebuild-alert.error { background: #fef0f0; color: #c45656; border: 1px solid #fde2e2; }
+  .rebuild-alert.info { background: #f4f4f5; color: #909399; border: 1px solid #e9e9eb; }
+</style>
+
+<div class="rebuild-page">
+
+  {# ============ 页面标题 ============ #}
+  <div class="rebuild-h1">碎片回收 · 选表</div>
+  <div class="rebuild-sub">
+    DBA 选 instance → 看 top 碎片表 → 勾选触发 <b>gh-ost 空 alter 重建</b>，全程不锁表，
+    物理页重写 + DATA_FREE 归零 + 字符集不漂。
+  </div>
+
+  {# ============ 步骤指示器 ============ #}
+  <div class="rebuild-steps">
+    <div class="rebuild-step active" id="step-1">
+      <div class="rebuild-step-num">1</div>
+      <div class="rebuild-step-text">选 instance</div>
+    </div>
+    <div class="rebuild-step-line"></div>
+    <div class="rebuild-step" id="step-2">
+      <div class="rebuild-step-num">2</div>
+      <div class="rebuild-step-text">看 top 碎片表</div>
+    </div>
+    <div class="rebuild-step-line"></div>
+    <div class="rebuild-step" id="step-3">
+      <div class="rebuild-step-num">3</div>
+      <div class="rebuild-step-text">勾表 + 开始</div>
+    </div>
+  </div>
+
+  {# ============ 步骤 1: 选 instance ============ #}
+  <div class="rebuild-card" id="card-1">
+    <div class="rebuild-card-title">第 1 步 · 选 MySQL 实例</div>
+    <div class="rebuild-instance-row">
+      <select id="instance-select">
+        <option value="">-- 请选择 instance --</option>
+        {% for inst in instances %}
+        <option value="{{ inst.id }}" {% if inst.id == current_instance_id %}selected{% endif %}>
+          {{ inst.instance_name }} ({{ inst.host }}:{{ inst.port }})
+        </option>
+        {% endfor %}
+      </select>
+      <button class="rebuild-btn primary" id="btn-load-tables" disabled>
+        <i class="fa fa-refresh"></i> 拉取表列表
+      </button>
+    </div>
+    <div class="rebuild-alert info" style="margin-top: 14px; margin-bottom: 0;">
+      提示：DBA 默认有所有 instance 凭据，连接失败的 instance 会显示具体错误信息。
+    </div>
+  </div>
+
+  {# ============ 步骤 2: 看 top 碎片表 ============ #}
+  <div class="rebuild-card" id="card-2" style="display: none;">
+    <div class="rebuild-card-title">第 2 步 · Top 碎片表（按 DATA_FREE 倒序，最多 200 张）</div>
+    <div id="tables-info" class="rebuild-table-info"></div>
+    <div id="tables-container">
+      <div class="rebuild-state"><i class="fa fa-table"></i>请先选 instance</div>
+    </div>
+  </div>
+
+  {# ============ 步骤 3: 勾表 + 开始 ============ #}
+  <div class="rebuild-card" id="card-3" style="display: none;">
+    <div class="rebuild-card-title">第 3 步 · 确认 + 触发</div>
+    <div class="rebuild-alert warn" id="rebuild-warn" style="display: none;"></div>
+    <div class="rebuild-action-bar">
+      <div class="rebuild-selected-count">
+        已选 <b id="selected-count">0</b> 张表
+      </div>
+      <button class="rebuild-btn" id="btn-select-all" style="background: #909399;">全选</button>
+      <button class="rebuild-btn" id="btn-deselect-all" style="background: #909399;">清空</button>
+      <div style="flex: 1;"></div>
+      <button class="rebuild-btn success" id="btn-start-rebuild" disabled>
+        <i class="fa fa-play"></i> 开始回收
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ====== 状态 ======
+  var state = {
+    instanceId: 0,
+    instanceName: '',
+    tables: [],           // [{db, table, data_free_mb, size_mb, data_free_pct}]
+    selected: new Set(),  // "db.table" 集合
+  };
+
+  // ====== 工具：拿 CSRF token (Django 默认 cookie 名 csrftoken) ======
+  function getCookie(name) {
+    var v = '; ' + document.cookie;
+    var p = v.split('; ' + name + '=');
+    if (p.length === 2) return p.pop().split(';').shift();
+  }
+  var CSRF = getCookie('csrftoken') || '';
+
+  // ====== 步骤指示器更新 ======
+  function setStep(n) {
+    [1, 2, 3].forEach(function (i) {
+      var el = document.getElementById('step-' + i);
+      el.classList.remove('active', 'done');
+      if (i < n) el.classList.add('done');
+      if (i === n) el.classList.add('active');
+    });
+  }
+
+  // ====== 步骤 1: instance 切换 ======
+  document.getElementById('instance-select').addEventListener('change', function () {
+    state.instanceId = parseInt(this.value || '0', 10);
+    state.instanceName = this.options[this.selectedIndex].text;
+    state.tables = [];
+    state.selected.clear();
+
+    document.getElementById('btn-load-tables').disabled = !state.instanceId;
+
+    if (state.instanceId) {
+      document.getElementById('card-2').style.display = '';
+      document.getElementById('card-3').style.display = '';
+      setStep(2);
+      loadTables();
+    } else {
+      document.getElementById('card-2').style.display = 'none';
+      document.getElementById('card-3').style.display = 'none';
+      setStep(1);
+    }
+  });
+
+  // ====== 步骤 2: 拉表 ======
+  document.getElementById('btn-load-tables').addEventListener('click', loadTables);
+
+  function loadTables() {
+    if (!state.instanceId) return;
+    var c = document.getElementById('tables-container');
+    var info = document.getElementById('tables-info');
+    c.innerHTML = '<div class="rebuild-state"><i class="fa fa-spinner fa-spin"></i>正在拉取表列表...</div>';
+    info.textContent = '';
+    setStep(2);
+
+    fetch('/gh_ost/rebuild/list/?instance_id=' + state.instanceId, {
+      credentials: 'same-origin',
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) {
+          c.innerHTML = '<div class="rebuild-state" style="color: #c45656;"><i class="fa fa-times-circle"></i>' +
+            '拉取失败: ' + (j.error || '未知错误') + '</div>';
+          info.innerHTML = '';
+          return;
+        }
+        state.tables = j.tables || [];
+        renderTables();
+        info.innerHTML = '共 <b>' + state.tables.length + '</b> 张 InnoDB 表，' +
+          'instance: <b>' + j.instance_name + '</b>。' +
+          '按 DATA_FREE 倒序。<span style="color: #909399;">（灰色行为碎片率 &lt; 5%，不建议操作）</span>';
+      })
+      .catch(function (e) {
+        c.innerHTML = '<div class="rebuild-state" style="color: #c45656;"><i class="fa fa-times-circle"></i>' +
+          '网络错误: ' + e.message + '</div>';
+      });
+  }
+
+  function renderTables() {
+    var c = document.getElementById('tables-container');
+    if (!state.tables.length) {
+      c.innerHTML = '<div class="rebuild-state"><i class="fa fa-info-circle"></i>该 instance 无 InnoDB 表</div>';
+      return;
+    }
+    var rows = state.tables.map(function (t) {
+      var key = t.db + '.' + t.table;
+      var pctClass = t.data_free_pct >= 20 ? 'high' : (t.data_free_pct >= 5 ? 'mid' : 'low');
+      var disabled = t.data_free_pct < 5 ? 'disabled' : '';
+      var checked = state.selected.has(key) ? 'checked' : '';
+      return '<tr class="' + disabled + (state.selected.has(key) ? ' selected' : '') + '" data-key="' + key + '">' +
+        '<td style="width: 40px;"><input type="checkbox" data-key="' + key + '" ' +
+        (disabled ? 'disabled' : '') + ' ' + checked + '></td>' +
+        '<td><b>' + t.db + '</b>.<code>' + t.table + '</code></td>' +
+        '<td style="text-align: right;">' + t.data_free_mb + ' MB</td>' +
+        '<td style="text-align: right;">' + t.size_mb + ' MB</td>' +
+        '<td style="text-align: right;"><span class="rebuild-pct ' + pctClass + '">' +
+        t.data_free_pct + '%</span></td>' +
+        '</tr>';
+    }).join('');
+    c.innerHTML =
+      '<table class="rebuild-tables"><thead><tr>' +
+      '<th></th><th>库.表</th>' +
+      '<th style="text-align: right;">DATA_FREE</th>' +
+      '<th style="text-align: right;">总大小</th>' +
+      '<th style="text-align: right;">碎片率</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+
+    // 绑定 checkbox
+    c.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var key = this.getAttribute('data-key');
+        if (this.checked) state.selected.add(key);
+        else state.selected.delete(key);
+        var tr = this.closest('tr');
+        if (tr) tr.classList.toggle('selected', this.checked);
+        updateSelectedCount();
+      });
+    });
+  }
+
+  function updateSelectedCount() {
+    document.getElementById('selected-count').textContent = state.selected.size;
+    document.getElementById('btn-start-rebuild').disabled = state.selected.size === 0;
+    var warn = document.getElementById('rebuild-warn');
+    if (state.selected.size > 0) {
+      warn.style.display = '';
+      warn.innerHTML = '即将触发 <b>' + state.selected.size + '</b> 张表的 gh-ost rebuild，' +
+        '每张表独立 task（默认 2 小时超时）。同表已有 running 任务会自动排队。';
+    } else {
+      warn.style.display = 'none';
+    }
+  }
+
+  // ====== 全选/清空 ======
+  document.getElementById('btn-select-all').addEventListener('click', function () {
+    state.tables.forEach(function (t) {
+      if (t.data_free_pct >= 5) state.selected.add(t.db + '.' + t.table);
+    });
+    renderTables();
+    updateSelectedCount();
+  });
+  document.getElementById('btn-deselect-all').addEventListener('click', function () {
+    state.selected.clear();
+    renderTables();
+    updateSelectedCount();
+  });
+
+  // ====== 步骤 3: 开始 rebuild ======
+  document.getElementById('btn-start-rebuild').addEventListener('click', function () {
+    if (state.selected.size === 0) return;
+    if (!confirm('即将触发 ' + state.selected.size + ' 张表的 gh-ost rebuild，确认？')) return;
+
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> 提交中...';
+    setStep(3);
+
+    // 串行触发: 每张表一个 POST, 任一失败就停
+    var keys = Array.from(state.selected);
+    var results = [];
+    function next(i) {
+      if (i >= keys.length) {
+        // 全部提交完
+        var okCount = results.filter(function (r) { return r.ok; }).length;
+        var failCount = results.length - okCount;
+        var msg = '提交完成: 成功 ' + okCount + ' 张，失败 ' + failCount + ' 张。\n\n';
+        results.forEach(function (r) {
+          msg += (r.ok ? '✓' : '✗') + ' ' + r.key + (r.ok ? ' → task #' + r.task_id : ' → ' + r.error) + '\n';
+        });
+        alert(msg);
+        if (okCount > 0) {
+          // 跳进度页看第一个成功的 task
+          var firstOk = results.find(function (r) { return r.ok; });
+          if (firstOk) {
+            window.location.href = '/gh_ost/rebuild/progress/' + firstOk.task_id + '/';
+            return;
+          }
+        }
+        // 全失败, 留本页
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-play"></i> 开始回收';
+      } else {
+        var key = keys[i];
+        var parts = key.split('.');
+        var db = parts[0];
+        var table = parts[1];
+        fetch('/gh_ost/rebuild/start/', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+          body: JSON.stringify({
+            instance_id: state.instanceId,
+            db: db,
+            table: table,
+          }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            if (j.ok) {
+              results.push({ ok: true, key: key, task_id: j.task_id });
+            } else {
+              results.push({ ok: false, key: key, error: j.error || '未知错误' });
+            }
+            next(i + 1);
+          })
+          .catch(function (e) {
+            results.push({ ok: false, key: key, error: '网络错误: ' + e.message });
+            next(i + 1);
+          });
+      }
+    }
+    next(0);
+  });
+
+  // ====== 初始化 (URL 带 instance_id 时自动拉) ======
+  {% if current_instance_id %}
+  (function () {
+    document.getElementById('instance-select').value = '{{ current_instance_id }}';
+    var evt = new Event('change');
+    document.getElementById('instance-select').dispatchEvent(evt);
+  })();
+  {% endif %}
+</script>
+{% endblock %}

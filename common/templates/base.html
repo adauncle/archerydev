@@ -131,6 +131,21 @@
                                 <li>
                                     <a href="/gh_ost/admin_list/"><i class="fa fa-list fa-fw"></i> 任务管理</a>
                                 </li>
+                                {# CUSTOM-MODIFIED: 碎片回收 选表入口 (v0.4.5 方案 B) @ 2026-08-25 @ mavis #}
+                                {# 守卫: superuser 或 DBA/DBA组长 组 (跟 _is_admin_or_dba helper 一致) #}
+                                {# 关联: docs/changelogs/2026-08-25_v0405-rebuild-select-page.md #}
+                                {# 业务: 业务前端 3 步流程, 不进 admin 后台, superuser 默认看 #}
+                                {% if user.is_superuser %}
+                                    <li>
+                                        <a href="/gh_ost/rebuild/select/"><i class="fa fa-magic fa-fw"></i> 碎片回收</a>
+                                    </li>
+                                {% else %}
+                                    {% for g in user.groups.all %}{% if g.name == "DBA" or g.name == "DBA组长" %}
+                                        <li>
+                                            <a href="/gh_ost/rebuild/select/"><i class="fa fa-magic fa-fw"></i> 碎片回收</a>
+                                        </li>
+                                    {% endif %}{% endfor %}
+                                {% endif %}
                             </ul>
                             <!-- /.nav-second-level -->
                         </li>

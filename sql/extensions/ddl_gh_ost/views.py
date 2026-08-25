@@ -691,7 +691,14 @@ def rebuild_list(request: HttpRequest) -> JsonResponse:
         idx_len = idx_len or 0
         total_mb = (data_len + idx_len) / 1024 / 1024
         free_mb = data_free / 1024 / 1024
-        pct = (data_free / (data_len + 1)) * 100
+        # 碎片率 = DATA_FREE / (DATA_FREE + DATA_LENGTH + INDEX_LENGTH) * 100
+        # CUSTOM-MODIFIED: 8/25 修 pct 公式 @ mavis
+        # 关联: docs/changelogs/2026-08-25_v0405-rebuild-select-page.md
+        # 原公式 DATA_FREE / DATA_LENGTH 会让小表碎片率畸形 (e.g. 19199%),
+        # 改成 DATA_FREE 占总占用空间比例, 更接近 InnoDB 实际碎片率,
+        # 一般表碎片率 0~30%, 高于 50% 才建议 rebuild.
+        occupied = data_free + data_len + idx_len
+        pct = (data_free / occupied * 100) if occupied > 0 else 0.0
         tables.append({
             "db": schema,
             "table": name,
@@ -1015,6 +1022,65 @@ def _is_admin_or_dba(user) -> bool:
     if user.is_superuser:
         return True
     return user.groups.filter(name__in=("DBA", "DBA组长")).exists()
+
+
+# ===========================================================================
+# CUSTOM-MODIFIED: v0.4.5 选表页面 (DBA 主动重建入口) @ 2026-08-25 @ mavis
+# 关联设计: docs/designs/2026-08-13_v0405-ghost-rebuild-design.md §6.3
+# 业务背景:
+#   设计稿 §6.3 计划建一个"DBA 选表页面" — 业务前端 3 步流程 (选 instance → 看 top
+#   碎片表 → 点开始)。原计划 8/12 写但被 gh-ost 任务管理列表页 + 字段 diff 等优先级
+#   挤掉, 8/13 v0.4.5 拍板 3 决策时只补了 admin 后台 batch_rebuild action (方案 A),
+#   独立选表页面 (方案 B) 留到 8/25 补。
+#   8/25 用户拍板走方案 B: 不进 admin 后台, 主菜单入口一气呵成。
+#
+# 流程:
+#   1. GET /gh_ost/rebuild/select/  → 渲染 select.html, 传可用 instance 列表
+#   2. 前端选 instance → AJAX GET /gh_ost/rebuild/list/?instance_id=N 拿 top 表
+#   3. 前端勾表 + 点开始 → AJAX POST /gh_ost/rebuild/start/ 触发
+#   4. 拿到 task_id → 跳 /gh_ost/rebuild/progress/<task_id>/ 看 polling
+# ===========================================================================
+
+@login_required
+@require_GET
+def rebuild_select_page(request: HttpRequest) -> HttpResponse:
+    """DBA 选表页面 —— 业务前端入口（不走 admin 后台）。
+
+    URL: GET /gh_ost/rebuild/select/
+
+    权限: 走 ``_is_admin_or_dba`` 角色守卫（不是 perm 守卫），因为碎片回收是
+          纯 DBA 工具, 不开放给 RD 角色。即使用户有 ``view_ddlghosttask`` perm,
+          只要不在 DBA / DBA组长 组, 一律 403。
+
+    模板: ddl_gh_ost/rebuild_select.html (Element UI + 3 步流程)
+
+    关联 changelog: docs/changelogs/2026-08-25_v0405-rebuild-select-page.md
+    """
+    # 0. 角色守卫 (DBA 专属, 比 view_ddlghosttask perm 更严)
+    if not _is_admin_or_dba(request.user):
+        logger.warning(
+            "用户 %s 访问 /gh_ost/rebuild/select/ 被拒: 非 DBA/超管",
+            request.user.username,
+        )
+        raise PermissionDenied("碎片回收是 DBA 专属工具, 请用 DBA / DBA组长 / 超管账号登录。")
+
+    # 1. 拿所有 instance 列表, 按 instance_name 排序
+    #    设计: 跟 admin_list 一致, 列所有 instance, 不按用户过滤
+    #    (DBA 一般有所有 instance 凭据, 走 _get_creds 内部 .env 兜底)
+    instances = list(
+        Instance.objects.all().order_by("instance_name")
+    )
+
+    # 2. 当前 instance_id (URL ?instance_id=N, 用来刷新页面时保留选中)
+    try:
+        current_instance_id = int(request.GET.get("instance_id", "0") or "0")
+    except (TypeError, ValueError):
+        current_instance_id = 0
+
+    return render(request, "ddl_gh_ost/rebuild_select.html", {
+        "instances": instances,
+        "current_instance_id": current_instance_id,
+    })
 
 
 # ===========================================================================
