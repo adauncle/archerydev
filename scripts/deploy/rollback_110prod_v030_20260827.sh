@@ -26,6 +26,11 @@
 
 set -euo pipefail
 
+# 8/25 演练支持: DRY_RUN=1 时, kill master + nohup 拉起 + mv 代码目录 都 NOOP
+# 8/25 教训: 演练时 mv 代码目录会破坏 gunicorn 运行时 (cwd 跟着走, venv 路径变化)
+# 演练模式下只演练"前置检查 + 解压验证" 逻辑, 不真改文件系统
+DRY_RUN="${DRY_RUN:-0}"
+
 PROD_PATH="/dbdata/archery_v114_c9236a0"
 TS="20260827_2050"
 BACKUP_DIR="/backup"
@@ -49,6 +54,9 @@ echo "rollback_110prod_v030_20260827.sh"
 echo "  时间: $(date)"
 echo "  推 110 失败 → 一键回滚 (SLA 5 分钟)"
 echo "  关联: pre_push_backup_110prod_20260827.sh"
+if [[ "${DRY_RUN}" == "1" ]]; then
+    warn "DRY_RUN=1 模式, kill master + nohup 拉起步骤全部 NOOP, 仅演练 1-3 步"
+fi
 echo "================================================================"
 
 # === 前置检查 ===
@@ -92,7 +100,10 @@ fi
 echo ""
 echo "=== 步骤 1: 停 gunicorn ==="
 
-if [[ -n "${current_master}" ]]; then
+if [[ "${DRY_RUN}" == "1" ]]; then
+    warn "DRY_RUN=1 模式, 跳过 kill master (演练)"
+    echo "  演练场景: gunicorn master 仍跑, 业务用户无感"
+elif [[ -n "${current_master}" ]]; then
     kill ${current_master}
     sleep 2
     # 验证 master 已退出
@@ -113,22 +124,34 @@ echo "=== 步骤 2: 恢复代码 ==="
 echo "  源: ${CODE_BACKUP}"
 echo "  目标: ${PROD_PATH}"
 
-# 先备份当前 (回滚后的) 状态, 万一回滚后又发现要再回滚
-mv ${PROD_PATH} ${PROD_PATH}.rollback_$(date +%H%M%S).bak 2>&1 | tail -3
+if [[ "${DRY_RUN}" == "1" ]]; then
+    warn "DRY_RUN=1 模式, 跳过 mv + tar -xzf (演练不真改文件系统, 8/25 教训)"
+    echo "  演练场景: 134 dev gunicorn 13665 仍在跑, 业务不中断"
+    # 演练模式下只验证 tarball 完整性
+    if tar -tzf ${CODE_BACKUP} > /dev/null 2>&1; then
+        ok "代码备份 tarball 完整性校验通过 ($(tar -tzf ${CODE_BACKUP} | wc -l) 个文件)"
+    else
+        err "代码备份 tarball 损坏, 演练不通过"
+        exit 1
+    fi
+else
+    # 先备份当前 (回滚后的) 状态, 万一回滚后又发现要再回滚
+    mv ${PROD_PATH} ${PROD_PATH}.rollback_$(date +%H%M%S).bak 2>&1 | tail -3
 
-# 解压备份
-cd $(dirname ${PROD_PATH})
-tar -xzf ${CODE_BACKUP} 2>&1 | tail -3
+    # 解压备份
+    cd $(dirname ${PROD_PATH})
+    tar -xzf ${CODE_BACKUP} 2>&1 | tail -3
 
-# 还原 venv 符号链接 (备份时 --exclude='venv', 还原后 venv 目录需要重建或符号链接)
-if [[ -d "/dbdata/archery_v114/venv" ]] && [[ ! -e "${PROD_PATH}/venv" ]]; then
-    ln -sf /dbdata/archery_v114/venv ${PROD_PATH}/venv
-    ok "venv 符号链接已重建"
+    # 还原 venv 符号链接 (备份时 --exclude='venv', 还原后 venv 目录需要重建或符号链接)
+    if [[ -d "/dbdata/archery_v114/venv" ]] && [[ ! -e "${PROD_PATH}/venv" ]]; then
+        ln -sf /dbdata/archery_v114/venv ${PROD_PATH}/venv
+        ok "venv 符号链接已重建"
+    fi
+
+    # chown 恢复 (备份时 archery:archery, 解压后可能 root 拥有)
+    chown -R archery:archery ${PROD_PATH}
+    ok "代码恢复完成, chown archery:archery"
 fi
-
-# chown 恢复 (备份时 archery:archery, 解压后可能 root 拥有)
-chown -R archery:archery ${PROD_PATH}
-ok "代码恢复完成, chown archery:archery"
 
 # === 步骤 3: 恢复 schema (10 秒, 仅当 migration 失败时) ===
 echo ""
@@ -152,24 +175,31 @@ fi
 echo ""
 echo "=== 步骤 4: 拉起 gunicorn (跟之前一样的配置) ==="
 
-cd ${PROD_PATH}
-nohup sudo -u archery venv/bin/gunicorn archery.wsgi:application \
-    -w 4 \
-    -b 0.0.0.0:9123 \
-    --access-logfile - \
-    --error-logfile - \
-    --timeout 120 \
-    > /tmp/gunicorn_rollback.log 2>&1 &
-
-sleep 5
-
-new_master=$(ps -ef | grep gunicorn | grep -v grep | awk '$3==1 {print $2}' | head -1)
-if [[ -n "${new_master}" ]]; then
-    ok "gunicorn master 拉起: ${new_master}"
+if [[ "${DRY_RUN}" == "1" ]]; then
+    warn "DRY_RUN=1 模式, 跳过 nohup 拉起 (演练)"
+    echo "  演练场景: 134 dev systemd 已经在跑 gunicorn, 不需要手动拉起"
+    new_master="(dry_run_noop)"
+    # 不真睡 5 秒, 节省演练时间
 else
-    err "gunicorn master 拉起失败, 看 /tmp/gunicorn_rollback.log"
-    tail -20 /tmp/gunicorn_rollback.log
-    exit 1
+    cd ${PROD_PATH}
+    nohup sudo -u archery venv/bin/gunicorn archery.wsgi:application \
+        -w 4 \
+        -b 0.0.0.0:9123 \
+        --access-logfile - \
+        --error-logfile - \
+        --timeout 120 \
+        > /tmp/gunicorn_rollback.log 2>&1 &
+
+    sleep 5
+
+    new_master=$(ps -ef | grep gunicorn | grep -v grep | awk '$3==1 {print $2}' | head -1)
+    if [[ -n "${new_master}" ]]; then
+        ok "gunicorn master 拉起: ${new_master}"
+    else
+        err "gunicorn master 拉起失败, 看 /tmp/gunicorn_rollback.log"
+        tail -20 /tmp/gunicorn_rollback.log
+        exit 1
+    fi
 fi
 
 # === 步骤 5: 验证 (10 秒) ===
