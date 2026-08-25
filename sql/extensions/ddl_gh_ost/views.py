@@ -685,42 +685,53 @@ def rebuild_list(request: HttpRequest) -> JsonResponse:
 
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT TABLE_SCHEMA, TABLE_NAME,
-                       DATA_FREE, DATA_LENGTH, INDEX_LENGTH
-                FROM INFORMATION_SCHEMA.TABLES
-                WHERE ENGINE = 'InnoDB'
-                  AND TABLE_SCHEMA NOT IN ('mysql', 'information_schema',
+            # 8/25 改: LEFT JOIN INNODB_TABLESPACES 拿 FILE_SIZE (ibd 实际大小),
+            #       8.0.22 INFORMATION_SCHEMA.TABLES.DATA_FREE 字段严重虚高
+            #       (返回 tablespace 预分配, 不是真可清理碎片, 误导 DBA 看到 99.3% 假象).
+            #       真实碎片率 = (FILE_SIZE - DATA - INDEX) / FILE_SIZE
+            cur.execute('''
+                SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
+                       t.DATA_FREE, t.DATA_LENGTH, t.INDEX_LENGTH,
+                       COALESCE(its.FILE_SIZE, t.DATA_LENGTH + t.INDEX_LENGTH) AS ibd_size
+                FROM INFORMATION_SCHEMA.TABLES t
+                LEFT JOIN INFORMATION_SCHEMA.INNODB_TABLESPACES its
+                  ON its.NAME = CONCAT(t.TABLE_SCHEMA, '/', t.TABLE_NAME)
+                WHERE t.ENGINE = 'InnoDB'
+                  AND t.TABLE_SCHEMA NOT IN ('mysql', 'information_schema',
                                            'performance_schema', 'sys')
-                  AND TABLE_TYPE = 'BASE TABLE'
-                ORDER BY DATA_FREE DESC
+                  AND t.TABLE_TYPE = 'BASE TABLE'
+                ORDER BY t.DATA_FREE DESC
                 LIMIT 200
-            """)
+            ''')
             rows = cur.fetchall()
     finally:
         conn.close()
 
     tables = []
-    for schema, name, data_free, data_len, idx_len in rows:
+    for schema, name, data_free, data_len, idx_len, ibd_size in rows:
         data_free = data_free or 0
         data_len = data_len or 0
         idx_len = idx_len or 0
+        ibd_size = ibd_size or 0
         total_mb = (data_len + idx_len) / 1024 / 1024
-        free_mb = data_free / 1024 / 1024
-        # 碎片率 = DATA_FREE / (DATA_FREE + DATA_LENGTH + INDEX_LENGTH) * 100
-        # CUSTOM-MODIFIED: 8/25 修 pct 公式 @ mavis
-        # 关联: docs/changelogs/2026-08-25_v0405-rebuild-select-page.md
-        # 原公式 DATA_FREE / DATA_LENGTH 会让小表碎片率畸形 (e.g. 19199%),
-        # 改成 DATA_FREE 占总占用空间比例, 更接近 InnoDB 实际碎片率,
-        # 一般表碎片率 0~30%, 高于 50% 才建议 rebuild.
-        occupied = data_free + data_len + idx_len
-        pct = (data_free / occupied * 100) if occupied > 0 else 0.0
+        # 真实 ibd 文件大小
+        ibd_mb = ibd_size / 1024 / 1024
+        # 8/25 改: 用 ibd 实际大小算碎片率, 不用 INFORMATION_SCHEMA.TABLES.DATA_FREE
+        # 关联: docs/changelogs/2026-08-25_v0405-fragmentation-algorithm-fix.md
+        # 真实 free = ibd 实际 - data - index
+        # pct = free / ibd_size
+        # 8.0.22 文档: DATA_FREE 字段是 tablespace 预分配, 不代表可清理
+        #              实际 ibd 128KB 的表 DATA_FREE 报 9MB (虚高 70 倍)
+        real_free_bytes = max(0, ibd_size - data_len - idx_len)
+        real_free_mb = real_free_bytes / 1024 / 1024
+        pct = (real_free_bytes / ibd_size * 100) if ibd_size > 0 else 0.0
         tables.append({
             "db": schema,
             "table": name,
-            "data_free_mb": round(free_mb, 1),
-            "size_mb": round(total_mb, 1),
-            "data_free_pct": round(pct, 1),
+            "data_free_mb": round(real_free_mb, 2),  # 8/25: 真实 free (ibd - data - idx)
+            "size_mb": round(total_mb, 2),
+            "ibd_size_mb": round(ibd_mb, 2),          # 8/25 新增: ibd 实际大小
+            "data_free_pct": round(pct, 1),             # 8/25: 真实 pct
         })
 
     return JsonResponse({
@@ -1224,8 +1235,12 @@ def _require_change_perm(request, action: str = ""):
 # 关联: docs/changelogs/2026-08-13_v0405-rebuilt-fields.md
 #       docs/designs/2026-08-13_v0405-ghost-rebuild-design.md §4
 # 业务: rebuild 任务触发时查 information_schema.tables 拿原表属性,
-#       拼 ENGINE+ROW_FORMAT+CHARSET 形式的 alter (3 层防护确保 5.7/8.0
-#       都触发物理重写, 字符集不漂, COMMENT 业务描述保留).
+#       拼 ENGINE+ROW_FORMAT+CHARSET+COLLATION 形式的 alter (3 层防护确保
+#       5.7 触发物理重写, 字符集不漂, COMMENT 业务描述保留).
+#
+# 8/25 16:55 用户拍板回滚方案 C (改字符集), 因 8.0.22 改 CHARSET 也走 INSTANT
+# 跳过, 改碎片率算法 (用 INNODB_TABLESPACES.FILE_SIZE) 才能让 DBA 看到真实碎片率.
+# 关联: docs/changelogs/2026-08-25_v0405-fragmentation-algorithm-fix.md
 # ===========================================================================
 def _fetch_table_info_for_rebuild(instance, db_name: str, table_name: str) -> dict:
     """rebuild 场景专用: 查 information_schema.tables 拿原表 ENGINE/ROW_FORMAT/CHARSET/COLLATION.
@@ -1239,7 +1254,7 @@ def _fetch_table_info_for_rebuild(instance, db_name: str, table_name: str) -> di
         }
 
     Raises:
-        TableNotExistError: 表不存在
+        TableNotExistForRebuildError: 表不存在
     """
     import pymysql
     user, password = (
@@ -1281,19 +1296,24 @@ def _fetch_table_info_for_rebuild(instance, db_name: str, table_name: str) -> di
 
 
 def _build_rebuild_alter_clause(table_info: dict) -> str:
-    """rebuild 场景的 alter 子句 (8/13 拍板方案).
+    """rebuild 场景的 alter 子句 (8/13 拍板方案, 8/25 16:55 回滚方案 C 改字符集).
 
-    设计 (3 层防护确保 5.7/8.0 都触发物理重写 + 字符集不漂):
+    设计 (3 层防护, 8/13 拍板, 字符集不漂):
         ALTER TABLE t
-          ENGINE=InnoDB,                          # 原表就是 InnoDB, no-op
-          ROW_FORMAT=Dynamic,                     # 原表就是 Dynamic, 但 5.7/8.0 都触发 rebuild
+          ENGINE=InnoDB,                          # 原表就是 InnoDB, no-op (但 5.7 走 COPY 触发)
+          ROW_FORMAT=Dynamic,                     # 原表就是 Dynamic, 5.7 走 COPY 触发整表重写
           DEFAULT CHARACTER SET=utf8mb4           # 原表就是 utf8mb4, no-op
           COLLATE=utf8mb4_general_ci;             # 跟原表一致, 0 风险飘字段
 
-    8.0 INSTANT 优化:
-        - 单独 ENGINE 改 InnoDB (原表就是 InnoDB) 走 INSTANT, 跳过重写
-        - ROW_FORMAT 改自己: 8.0.22 走 COPY 触发 (INSTANT 优化对 ROW_FORMAT 不完整)
-        - 至少一个子句不是 INSTANT → 走 COPY/INPLACE 触发整表重写
+    5.7 vs 8.0 行为 (8/25 16:50 重新验证):
+        - 5.7: ENGINE 改 InnoDB 走 COPY 触发整表重写, DATA_FREE 归零
+        - 8.0.12+: ENGINE 改 InnoDB 改自己走 INSTANT 跳过, 不重写 (8/25 16:50 验)
+        - 8.0.22: CHARSET 改自己 / COLLATION 改自己 走 INPLACE 跳过, 不重写 (8/25 16:50 验)
+        - 8.0.22: 4 子句全 no-op → MySQL 走完全 INSTANT 跳过, gh-ost 看到 success 但不重写
+
+    8/25 16:55 撤方案 C 原因: 改字符集 (utf8→utf8mb4) 对 8.0.22 也走 INSTANT 跳过,
+    反而永久改字符集, 得不偿失. 真实修法: 改碎片率算法 (用 INNODB_TABLESPACES.FILE_SIZE),
+    让 DBA 看到真实碎片率, 不被 8.0.22 虚高的 DATA_FREE 字段误导.
 
     不动 COMMENT 业务描述 (数据治理关键).
     """
