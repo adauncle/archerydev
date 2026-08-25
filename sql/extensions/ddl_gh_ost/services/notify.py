@@ -95,6 +95,6 @@ def _format_message(task) -> str:
         lines.append("- **影子表**: 保留 7 天可手动回滚")
 
     lines.append("")
-    lines.append(f"[查看详情](/admin/sql/extensions%20ddl_gh_ost/ddlghosttask/{task.id}/change/)")
+    lines.append(f"[查看详情](/admin/ddl_gh_ost/ddlghosttask/{task.id}/change/)")
 
     return "\n".join(lines)

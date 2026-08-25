@@ -156,7 +156,7 @@
           {% if task.status in "running,cut_over,queued" %}
             <button class="btn btn-danger" id="cancelBtn">取消回收</button>
           {% endif %}
-          <a class="btn btn-default" href="/admin/sql/extensions%20ddl_gh_ost/ddlghosttask/{{ task.id }}/change/">
+          <a class="btn btn-default" href="/admin/ddl_gh_ost/ddlghosttask/{{ task.id }}/change/">
             查看 admin 详情
           </a>
         </div>
