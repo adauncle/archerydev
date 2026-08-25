@@ -48,6 +48,23 @@
   /* 步骤 2: 表格 */
   .rebuild-table-info { color: #909399; font-size: 12px; margin-bottom: 12px; }
   .rebuild-table-info b { color: #E6A23C; }
+
+  /* 筛选行 (8/25 新增) */
+  .rebuild-filters { display: flex; gap: 10px; flex-wrap: wrap;
+    align-items: center; padding: 10px 12px; margin-bottom: 12px;
+    background: #fafbfc; border: 1px solid #ebeef5; border-radius: 4px; }
+  .rebuild-filters label { color: #606266; font-size: 12px; margin-right: 4px; white-space: nowrap; }
+  .rebuild-filters select, .rebuild-filters input {
+    padding: 5px 8px; border: 1px solid #dcdfe6; border-radius: 3px;
+    font-size: 12px; background: #fff; }
+  .rebuild-filters input[type=number] { width: 60px; }
+  .rebuild-filters input[type=text] { width: 140px; }
+  .rebuild-filters .pct-range { display: inline-flex; align-items: center; gap: 4px; }
+  .rebuild-filters .pct-range .tilde { color: #909399; font-size: 12px; }
+  .rebuild-filters .rebuild-filter-btn {
+    padding: 5px 12px; border: 1px solid #dcdfe6; border-radius: 3px;
+    background: #fff; color: #606266; font-size: 12px; cursor: pointer; }
+  .rebuild-filters .rebuild-filter-btn:hover { color: #409EFF; border-color: #409EFF; }
   table.rebuild-tables { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.rebuild-tables th {
     background: #fafafa; color: #606266; font-weight: 600; text-align: left;
@@ -136,6 +153,23 @@
   <div class="rebuild-card" id="card-2" style="display: none;">
     <div class="rebuild-card-title">第 2 步 · Top 碎片表（按 DATA_FREE 倒序，最多 200 张）</div>
     <div id="tables-info" class="rebuild-table-info"></div>
+    {# 8/25 筛选行: 库 / 表名 / 碎片率范围 (前端实时筛) #}
+    <div class="rebuild-filters" id="filters-row" style="display: none;">
+      <label>库:</label>
+      <select id="filter-db">
+        <option value="">全部</option>
+      </select>
+      <label>表名:</label>
+      <input type="text" id="filter-table" placeholder="模糊匹配" />
+      <label>碎片率:</label>
+      <span class="pct-range">
+        <input type="number" id="filter-pct-min" min="0" max="100" step="0.1" value="0" />
+        <span class="tilde">~</span>
+        <input type="number" id="filter-pct-max" min="0" max="100" step="0.1" value="100" />
+        <span class="tilde">%</span>
+      </span>
+      <button class="rebuild-filter-btn" id="filter-reset" type="button">重置</button>
+    </div>
     <div id="tables-container">
       <div class="rebuild-state"><i class="fa fa-table"></i>请先选 instance</div>
     </div>
@@ -165,8 +199,10 @@
   var state = {
     instanceId: 0,
     instanceName: '',
-    tables: [],           // [{db, table, data_free_mb, size_mb, data_free_pct}]
+    tables: [],           // [{db, table, data_free_mb, size_mb, data_free_pct}] 后端原始
+    filtered: [],         // 应用筛选后的表 (用于 renderTables)
     selected: new Set(),  // "db.table" 集合
+    filter: { db: '', table: '', pctMin: 0, pctMax: 100 },
   };
 
   // ====== 工具：拿 CSRF token (Django 默认 cookie 名 csrftoken) ======
@@ -231,10 +267,12 @@
           return;
         }
         state.tables = j.tables || [];
-        renderTables();
-        info.innerHTML = '共 <b>' + state.tables.length + '</b> 张 InnoDB 表，' +
-          'instance: <b>' + j.instance_name + '</b>。' +
-          '按 DATA_FREE 倒序。<span style="color: #909399;">（灰色行为碎片率 &lt; 5%，不建议操作）</span>';
+        // 8/25 拉表成功后填充 db 下拉 (从 tables 里 unique 出 db)
+        populateDbFilter();
+        // 拉新 instance 重置 filter
+        resetFilterInputs();
+        applyFilter();
+        document.getElementById('filters-row').style.display = '';
       })
       .catch(function (e) {
         c.innerHTML = '<div class="rebuild-state" style="color: #c45656;"><i class="fa fa-times-circle"></i>' +
@@ -242,13 +280,82 @@
       });
   }
 
+  // ====== 8/25 新增: 筛选逻辑 ======
+  function populateDbFilter() {
+    var sel = document.getElementById('filter-db');
+    // 从 state.tables 提取 unique db, 按字母序
+    var dbs = Array.from(new Set(state.tables.map(function (t) { return t.db; }))).sort();
+    sel.innerHTML = '<option value="">全部 (' + dbs.length + ')</option>' +
+      dbs.map(function (d) { return '<option value="' + d + '">' + d + '</option>'; }).join('');
+  }
+
+  function resetFilterInputs() {
+    document.getElementById('filter-db').value = '';
+    document.getElementById('filter-table').value = '';
+    document.getElementById('filter-pct-min').value = '0';
+    document.getElementById('filter-pct-max').value = '100';
+    state.filter = { db: '', table: '', pctMin: 0, pctMax: 100 };
+  }
+
+  function readFilter() {
+    state.filter.db = document.getElementById('filter-db').value;
+    state.filter.table = document.getElementById('filter-table').value.trim().toLowerCase();
+    state.filter.pctMin = parseFloat(document.getElementById('filter-pct-min').value || '0');
+    state.filter.pctMax = parseFloat(document.getElementById('filter-pct-max').value || '100');
+    // 兜底: min > max 时互换
+    if (state.filter.pctMin > state.filter.pctMax) {
+      var t = state.filter.pctMin;
+      state.filter.pctMin = state.filter.pctMax;
+      state.filter.pctMax = t;
+    }
+  }
+
+  function applyFilter() {
+    readFilter();
+    var f = state.filter;
+    state.filtered = state.tables.filter(function (t) {
+      if (f.db && t.db !== f.db) return false;
+      if (f.table && t.table.toLowerCase().indexOf(f.table) === -1) return false;
+      if (t.data_free_pct < f.pctMin) return false;
+      if (t.data_free_pct > f.pctMax) return false;
+      return true;
+    });
+    renderTables();
+    // 顶部 info 加 "显示 X / 共 Y"
+    var info = document.getElementById('tables-info');
+    var lowCount = state.tables.filter(function (t) { return t.data_free_pct < 5; }).length;
+    info.innerHTML = '显示 <b>' + state.filtered.length + '</b> / 共 <b>' + state.tables.length + '</b> 张，' +
+      (lowCount > 0 ? '<b>' + lowCount + '</b> 张碎片率&lt;5% 灰显，' : '') +
+      '按 DATA_FREE 倒序。' +
+      ((f.db || f.table || f.pctMin > 0 || f.pctMax < 100)
+        ? '<span style="color: #409EFF;">（已应用筛选）</span>'
+        : '<span style="color: #909399;">（灰色行为碎片率 &lt; 5%，不建议操作）</span>');
+  }
+
+  // 监听 3 个筛选器
+  ['filter-db', 'filter-table', 'filter-pct-min', 'filter-pct-max'].forEach(function (id) {
+    var ev = (id === 'filter-db') ? 'change' : 'input';
+    document.getElementById(id).addEventListener(ev, applyFilter);
+  });
+  document.getElementById('filter-reset').addEventListener('click', function () {
+    resetFilterInputs();
+    applyFilter();
+  });
+
   function renderTables() {
     var c = document.getElementById('tables-container');
-    if (!state.tables.length) {
-      c.innerHTML = '<div class="rebuild-state"><i class="fa fa-info-circle"></i>该 instance 无 InnoDB 表</div>';
+    var list = state.filtered.length || state.tables.length === 0 ? state.filtered : state.tables;
+    // 边界: 拉表前 (state.tables=[], filtered=[]) 给个提示
+    if (state.tables.length === 0) {
+      c.innerHTML = '<div class="rebuild-state"><i class="fa fa-table"></i>请先选 instance</div>';
       return;
     }
-    var rows = state.tables.map(function (t) {
+    if (list.length === 0) {
+      c.innerHTML = '<div class="rebuild-state" style="color: #b88230;">' +
+        '<i class="fa fa-search"></i>无匹配表 — 调整筛选条件或点"重置"</div>';
+      return;
+    }
+    var rows = list.map(function (t) {
       var key = t.db + '.' + t.table;
       var pctClass = t.data_free_pct >= 20 ? 'high' : (t.data_free_pct >= 5 ? 'mid' : 'low');
       var disabled = t.data_free_pct < 5 ? 'disabled' : '';
@@ -299,7 +406,9 @@
 
   // ====== 全选/清空 ======
   document.getElementById('btn-select-all').addEventListener('click', function () {
-    state.tables.forEach(function (t) {
+    // 8/25 改: 按当前 filtered (筛后) 全选, 跟用户"看到的列表"一致
+    var list = state.filtered.length ? state.filtered : state.tables;
+    list.forEach(function (t) {
       if (t.data_free_pct >= 5) state.selected.add(t.db + '.' + t.table);
     });
     renderTables();
