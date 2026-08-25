@@ -100,6 +100,90 @@ bash /tmp/rollback_110prod_v030_20260827.sh
 | 3 份备份 | `scripts/deploy/pre_push_backup_110prod_20260827.sh` | 110 prod 内部 `bash /tmp/pre_push_backup_110prod_20260827.sh` | 代码 + schema + admin config (8/27 20:50 跑) |
 | 一键回滚 | `scripts/deploy/rollback_110prod_v030_20260827.sh` | 110 prod 内部 `bash /tmp/rollback_110prod_v030_20260827.sh` | 4 步: kill+恢复代码+恢复 schema+拉起老 master+SLA 5 分钟 |
 
+### 1.4 ⚠️ 5.7 vs 8.0 演练差异 + 8.0 INSTANT 架构性限制 (8/25 17:30 拍板方案 A)
+
+> **关键背景** (8/25 16:50 调研): 134 dev (MySQL 8.0.22) 跑 gh-ost rebuild 看到 `status=success` 但 ibd 文件不收缩,
+> 8.0.22 + gh-ost **不能清 ibd 真实碎片**。**不是 bug, 是 MySQL 8.0 INSTANT 优化的架构性限制**。
+> 110 prod (MySQL 5.7.44) gh-ost rebuild **真 work**, 5.7 改 ENGINE 改自己走 COPY 触发整表物理重写。
+
+#### 1.4.1 现象 (134 dev 实测, 8/25 16:50-17:30)
+
+| alter 子句 | MySQL 行为 | gh-ost 看到 | 实际效果 |
+|------------|------------|-------------|----------|
+| `ENGINE=InnoDB` (改自己) | 8.0.12+ INSTANT 跳过 | success | **无 ibd 收缩** |
+| `ROW_FORMAT=DYNAMIC` (改自己) | 8.0.16+ INPLACE 跳过 | success | **无 ibd 收缩** |
+| `DEFAULT CHARACTER SET=utf8mb4` (改自己) | 8.0.22 INPLACE/INSTANT 跳过 | success | **无 ibd 收缩** |
+| `ENGINE=InnoDB, ALGORITHM=COPY` | 8.0.22 走 COPY 触发物理重写 | success | **ibd 收缩** ✓ (但 gh-ost cut-over 仍走 INSTANT) |
+
+**accesscard_black_detail 实战** (8/25 16:40 反馈):
+- 134 dev (8.0.22) rebuild 8+ 次 (task #70-72/87-89/94/95/96), 全部 status=success
+- ibd 物理大小不变 (128KB / 144MB), DATA_FREE 报 9MB
+- 真碎片率 (FILE_SIZE 算法) = 6.7%, 跟 rebuild 前一致
+
+#### 1.4.2 用户拍板 (8/25 17:30 方案 A)
+
+> "生产环境没有 mysql 5.7 的版本, 110 虽然是 mysql 5.7 但仅供 archery 使用。所以方案 A 即可"
+
+**方案 A 含义**:
+1. **接受架构性限制**, 不在 gh-ost 层面修 INSTANT 跳过
+2. **134 dev 演练验收改标准**:
+   - ✅ task `status=success`
+   - ✅ gh-ost log 显示 "migrating `<table>`", "Copy: N/M", "All-OK" → "Cut-over" → "completed"
+   - ❌ ~~不依赖 ibd 收缩验证 (8.0 预期 no-op)~~
+3. **110 prod 5.7.44 gh-ost rebuild 真 work**:
+   - 5.7 改 ENGINE 改自己走 **COPY** 触发整表物理重写
+   - 推 110 后, DBA 跑 rebuild 看到 ibd **真收缩** (5.7 行为)
+4. **9 月 5.7→8.0 升级后需要架构性修法** (不在 8/27 推 110 范围):
+   - 方案 a: gh-ost cut-over 强制 `ALGORITHM=COPY` (改 gh-ost, 跨工具, 需立项)
+   - 方案 b: 不用 gh-ost, 直接 `ALTER TABLE ... ENGINE=InnoDB, ALGORITHM=COPY` (锁表, 大表不可接受)
+   - 方案 c: 5.7 继续用, 8.0 走 gh-ost + DBA 手动验证 (现状)
+   - 推 110 后, 跟 DBA 单独约 9 月升级时间表
+
+#### 1.4.3 8.0.22 DATA_FREE 虚高问题 (8/25 16:55 顺手修, 已 commit `14e3007`)
+
+| 老算法 (DATA_FREE 虚高) | 新算法 (FILE_SIZE 真实) |
+|------------------------|------------------------|
+| 128KB ibd 报 9MB DATA_FREE (虚高 70 倍) | FILE_SIZE = 128KB (真实) |
+| `pct = DATA_FREE / (DATA_FREE + DATA + INDEX)` | `pct = (FILE_SIZE - DATA - INDEX) / FILE_SIZE` |
+| workflow_log 99.3% (误报) | workflow_log 50.0% (真) |
+| archive_log 4.5% (漏报 16 倍) | archive_log 74.7% (真) |
+
+**修法**: `rebuild_list` 端点 SQL 改 `LEFT JOIN INNODB_TABLESPACES` 拿 `FILE_SIZE`。
+**5.7 / 8.0 都用 FILE_SIZE 算法**, 不依赖 MySQL 版本。
+
+#### 1.4.4 推 110 / 8.0 升级 影响
+
+| 阶段 | MySQL 版本 | gh-ost rebuild 行为 | 验收标准 |
+|------|-----------|---------------------|----------|
+| 8/27 推 110 后 | 110 prod 5.7.44 | **真物理重写**, ibd 收缩 | task success + ibd 缩小 |
+| 8/26 134 dev 演练 | 134 dev 8.0.22 | **INSTANT no-op**, ibd 不收缩 | task success + log cut-over |
+| 9 月 5.7→8.0 升级 (计划) | 110 prod 8.0.22 | **INSTANT no-op** (待解决) | 待立项, 走 ALGORITHM=COPY |
+
+#### 1.4.5 为什么不动 gh-ost 代码
+
+- gh-ost 1.1.x 走 **binlog 异步重写 + cut-over 切表**, 不依赖 MySQL 原生 DDL
+- 但 cut-over 阶段会改原表 metadata, 8.0 走 INSTANT 跳过导致 gh-ost 看不到要重写的子句而空转
+- 改 gh-ost 让 cut-over 强制 `ALGORITHM=COPY` 涉及 gh-ost 内部 binlog + 影子表切换逻辑, **跨工具范围**
+- 110 prod 5.7 不受影响, **8/27 推 110 业务可用**
+
+#### 1.4.6 推 110 后 DBA 必看 (110 prod 5.7 真 work 验证)
+
+```bash
+# 推 110 后, 在 110 prod 跑一个真 rebuild (任一碎片表), 验证 ibd 真收缩
+# 1. 选 accesscard_black_detail 或 archive_log (8/25 演练验证真碎片率高)
+# 2. /gh_ost/rebuild/select/ 勾表, 触发 rebuild
+# 3. 看 task progress: 5.7 cut-over 阶段会真重写表, gh-ost log 报 "Copying rows" 真拷贝
+# 4. 完事后查 INFORMATION_SCHEMA.INNODB_TABLESPACES.FILE_SIZE 对比
+#    期望: FILE_SIZE 显著下降 (5.7 真物理重写)
+#    异常: FILE_SIZE 不变 → 110 prod 5.7 features.py patch 漏了, 看 5 步必做步骤 9
+```
+
+**关联**:
+- changelog: `docs/changelogs/2026-08-25_v0405-fragmentation-algorithm-fix.md` (FILE_SIZE 算法修法)
+- changelog: `docs/changelogs/2026-08-25_v0405-rebuild-8p0-instant-caveat.md` (8.0 INSTANT 架构性限制 + 方案 A 拍板)
+- 演练脚本: `scripts/_archive/_drill_frag_algorithm.py` (新算法 16/16 PASS)
+- 5 步必做: 步骤 9 (features.py patch 5.7) + 步骤 13 (验证 8.0/5.7 兼容性)
+
 ---
 
 ## 2. T-1 准备 (8/26 周三 9:00-12:00) — 134 dev 完整演练
