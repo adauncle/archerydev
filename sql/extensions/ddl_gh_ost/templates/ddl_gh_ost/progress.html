@@ -238,6 +238,15 @@
           render(d);
           if (["running", "cut_over", "queued"].includes(d.status)) {
             setTimeout(poll, 3000);
+          } else {
+            {# CUSTOM-MODIFIED: 终态自动 reload 整个页面 @ 2026-08-25 @ mavis #}
+            {# 关联: docs/changelogs/2026-08-25_progress-page-auto-reload.md #}
+            {# 业务: 8/13 拍板进度面板 polling 3s, 终态停 poll (status 不会变) #}
+            {#       但页面 template 渲染根据 task.status 决定 (排队中 / 执行中 / 成功), #}
+            {#       8/25 实战发现: poller 切 status 失败时 (比如 progress 100% 但 status 仍 queued), #}
+            {#       页面停留在旧 template 渲染 (排队中 + 100% 矛盾) #}
+            {#       终态时调 location.reload() 重新从 server 拉最新 task.status, 重新渲染 template #}
+            setTimeout(() => location.reload(), 1000);
           }
         } catch (e) {
           console.error('poll failed', e);
