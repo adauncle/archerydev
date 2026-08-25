@@ -204,16 +204,143 @@ return f"ENGINE={table_info['engine']}"
 - 改 gh-ost 让 cut-over 强制 `ALGORITHM=COPY` 涉及 gh-ost 内部 binlog + 影子表切换逻辑, **跨工具范围**
 - 110 prod 5.7 不受影响, **8/27 推 110 业务可用**
 
-#### 1.4.7 推 110 后 DBA 必看 (110 prod 5.7 真 work 验证)
+#### 1.4.7 推 110 后 DBA 必看 (110 prod 5.7 真 work 验证) — 8/27 推完后 30 分钟内必做
+
+> **目的**: 110 prod (5.7.44) gh-ost rebuild 实际能不能清 ibd 真实碎片, 推 110 后 30 分钟内必做 1 次。
+> 8.0.22 架构性限制不适用 5.7, 5.7 改 ENGINE 改自己走 **COPY 触发整表物理重写**。
+> 走 1 个真 rebuild 验证 FILE_SIZE 真收缩, 给业务 RD 信心。
+
+**Pre-conditions 必查 (推 110 后, 验证前 5 分钟)**:
 
 ```bash
-# 推 110 后, 在 110 prod 跑一个真 rebuild (任一碎片表), 验证 ibd 真收缩
-# 1. 选 accesscard_black_detail 或 archive_log (8/25 演练验证真碎片率高)
-# 2. /gh_ost/rebuild/select/ 勾表, 触发 rebuild
-# 3. 看 task progress: 5.7 cut-over 阶段会真重写表, gh-ost log 报 "Copying rows" 真拷贝
-# 4. 完事后查 INFORMATION_SCHEMA.INNODB_TABLESPACES.FILE_SIZE 对比
-#    期望: FILE_SIZE 显著下降 (5.7 真物理重写)
-#    异常: FILE_SIZE 不变 → 110 prod 5.7 features.py patch 漏了, 看 5 步必做步骤 9
+# 1. 5 步必做步骤 9 跑过 (5.7 features.py patch 5,7 行)
+#    跑法: bash /tmp/5step_prerequisites_110prod.sh 看 log, 步骤 9 要 PASS
+#    异常: 步骤 9 FAIL → 推 110 没改对 features.py, gh-ost 跑起来会触发原 5.7 client lib 兼容 bug
+
+# 2. gh-ost 二进制在 /opt/archery/bin/ (archery user 写得了)
+ssh root@172.20.2.110 'ls -la /opt/archery/bin/gh-ost'
+# 期望: -rwxr-xr-x 1 archery archery ... gh-ost
+# 异常: 没有或 root owned → 8/18 教训, 110 prod 装到 /opt/archery/bin/ 不是 /usr/local/bin/
+
+# 3. instance 凭据 (走 .my.cnf 验证)
+ssh root@172.20.2.110 'cat /root/.my.cnf'
+# 期望: user=archery, password=ldlAaBDXqKmycI6cJdDlcRgVWchsC8, host=127.0.0.1
+# 异常: 密码错或没配 → gh-ost 连不上 MySQL, task 直接 fail
+
+# 4. 5+1 端点验证全 PASS (推 110 阶段 5 必跑)
+bash /tmp/verify_5endpoints_110prod.sh
+# 期望: 端点 1-3 200/302, 端点 4-6 DBA 浏览器手动验证 OK
+```
+
+**Pre-验证 (rebuild 之前 5 分钟)**:
+
+```bash
+# 5. 选真高碎片表 (FILE_SIZE 算法 ≥ 20%, 8/25 新算法)
+#    跑 5+1 端点验证时, 端点 6 已经在浏览器看到 top 表了
+#    推荐: archery.archive_log (74.7% 真碎片率) 或 ext_* 表 (DBA 选小一点的测试)
+#    避免: 业务大表 (accesscard_black_detail 144MB), 5.7 走 COPY 触发整表重写会慢 + 锁表
+
+# 6. 记下 FILE_SIZE 前值 (对比用)
+ssh root@172.20.2.110 "mysql -uroot -p'8k3pWGC2gxs2SsnelQtPg9Acti6fYD' -e \"
+SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
+       ROUND(its.FILE_SIZE/1024/1024, 2) AS ibd_size_mb,
+       ROUND((its.FILE_SIZE - t.DATA_LENGTH - t.INDEX_LENGTH) / 1024 / 1024, 2) AS free_mb,
+       ROUND((its.FILE_SIZE - t.DATA_LENGTH - t.INDEX_LENGTH) / its.FILE_SIZE * 100, 1) AS pct
+FROM INFORMATION_SCHEMA.TABLES t
+LEFT JOIN INFORMATION_SCHEMA.INNODB_TABLESPACES its
+  ON its.NAME = CONCAT(t.TABLE_SCHEMA, '/', t.TABLE_NAME)
+WHERE t.TABLE_SCHEMA='archery' AND t.TABLE_NAME='archive_log';
+\""
+# 记录: FILE_SIZE 前值 (例 10.00 MB), 验证后对比
+
+# 7. 记下原表 CHARSET/ROW_FORMAT/COLLATION (防漂)
+ssh root@172.20.2.110 "mysql -uroot -p'8k3pWGC2gxs2SsnelQtPg9Acti6fYD' -e \"
+SELECT TABLE_SCHEMA, TABLE_NAME, ENGINE, ROW_FORMAT, TABLE_COLLATION
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA='archery' AND TABLE_NAME='archive_log';
+\""
+# 记录: 期望 (InnoDB, Dynamic, utf8mb4_general_ci)
+```
+
+**触发 rebuild (5 分钟)**:
+
+```bash
+# 8. 浏览器走 /gh_ost/rebuild/select/ (DBA admin 登录)
+#    步骤: 选 instance (走 _is_admin_or_dba 守卫) → 拉表 → 勾表 → 触发
+
+# 9. 跳到 /gh_ost/rebuild/progress/<task_id>/ 看进度
+#    期望: status queued → running → success (5-30 分钟, 取决于表大小)
+```
+
+**监控过程 (3s polling)**:
+
+| 阶段 | status | gh-ost log 关键节点 | 5.7 行为 |
+|------|--------|---------------------|----------|
+| 启动 | queued → running | "Table found. Engine=InnoDB" | 跟 8.0 一致 |
+| 拷贝 | running | "Copy: N/M (XX%)" | 5.7 走 **COPY 触发整表重写**, **真物理拷贝** |
+| 同步 | running | "Row copy is lagging behind" | 跟 8.0 一致 |
+| 切表 | running | "Cut-over" → "Tables renamed" | 5.7 cut-over 阶段会真改原表 metadata |
+| 完成 | success | "Done migrating `<table>`" | 5.7 ibd **真收缩** ✓ (8.0 no-op) |
+
+**Post-验证 (rebuild 成功后 1 分钟)**:
+
+```bash
+# 10. 查 FILE_SIZE 后值 (跟前值对比)
+ssh root@172.20.2.110 "mysql -uroot -p'8k3pWGC2gxs2SsnelQtPg9Acti6fYD' -e \"
+SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
+       ROUND(its.FILE_SIZE/1024/1024, 2) AS ibd_size_mb,
+       ROUND((its.FILE_SIZE - t.DATA_LENGTH - t.INDEX_LENGTH) / 1024 / 1024, 2) AS free_mb,
+       ROUND((its.FILE_SIZE - t.DATA_LENGTH - t.INDEX_LENGTH) / its.FILE_SIZE * 100, 1) AS pct
+FROM INFORMATION_SCHEMA.TABLES t
+LEFT JOIN INFORMATION_SCHEMA.INNODB_TABLESPACES its
+  ON its.NAME = CONCAT(t.TABLE_SCHEMA, '/', t.TABLE_NAME)
+WHERE t.TABLE_SCHEMA='archery' AND t.TABLE_NAME='archive_log';
+\""
+# 期望: FILE_SIZE 显著下降 (例 10.00 → 6.50 MB, 5.7 真物理重写)
+# 异常: FILE_SIZE 不变 → 5.7 features.py patch 漏了, 看 5 步必做步骤 9
+
+# 11. 验证表结构不漂 (跟 pre-验证对比)
+ssh root@172.20.2.110 "mysql -uroot -p'8k3pWGC2gxs2SsnelQtPg9Acti6fYD' -e \"
+SELECT TABLE_SCHEMA, TABLE_NAME, ENGINE, ROW_FORMAT, TABLE_COLLATION
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA='archery' AND TABLE_NAME='archive_log';
+\""
+# 期望: 跟 pre-验证完全一致 (CHARSET/ROW_FORMAT/COLLATION 都没变)
+# 异常: CHARSET/ROW_FORMAT 变了 → alter 子句拼错, 立刻回滚推 110 (SLA 5 分钟)
+```
+
+**验证清单 (DBA 打勾)**:
+
+- [ ] Pre-conditions 4 项全 OK (步骤 1-4)
+- [ ] Pre-验证记下 FILE_SIZE 前值 (步骤 5-7)
+- [ ] 触发 rebuild 成功, status 跑到 success (步骤 8-9)
+- [ ] gh-ost log 显示 "Copying rows" 真拷贝 (5.7 行为) (监控过程)
+- [ ] Post-验证 FILE_SIZE **显著下降** (步骤 10) — 5.7 真 work 核心证据
+- [ ] Post-验证表结构 **0 漂移** (步骤 11)
+- [ ] 业务群通知 "5.7 gh-ost rebuild 验证通过, 业务可用"
+
+**异常处理**:
+
+| 异常 | 原因 | 应对 |
+|------|------|------|
+| 步骤 9 task status=failed | gh-ost 连不上 MySQL 或权限不够 | 看 gh-ost log `/var/log/archery/gh_ost/<task_id>.log`, 排查 instance 凭据 / binlog 权限 |
+| 步骤 10 FILE_SIZE 不变 | 5.7 features.py patch 漏了 (步骤 9) | 重跑 5 步必做步骤 9, 再触发 rebuild |
+| 步骤 10 FILE_SIZE 变大 | gh-ost 切表失败回滚 | 排查 gh-ost log, 看 cut-over 阶段错 |
+| 步骤 11 CHARSET/ROW_FORMAT 变了 | alter 子句拼错 | **立刻回滚推 110** (SLA 5 分钟), 看 §5.2 |
+| 步骤 8 浏览器返 403 | rebuild 端点 perm 守卫 (8/25 加) | 检查 admin 后台 /admin/auth/user/<id>/change/ 勾 `add_ddlghosttask` perm |
+| 步骤 9 gh-ost 进程 zombie | /tmp/gh-ost.*.sock 残留 | 看 5 步必做步骤 1 (清空 socket), 重跑 |
+
+**关联命令模板** (推 110 后业务群发, 5.7 真 work 验证通过后):
+
+```
+[推 110 完成 @ 21:30 + 5.7 gh-ost 验证 @ 22:00]
+gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 + 碎片回收 上线
+5+1 端点验证 200, 无 5xx
+推完后跑一个真 rebuild (archery.archive_log 74.7% 真碎片率) 验证:
+  - FILE_SIZE 10.00 → 6.50 MB (5.7 走 COPY 触发整表物理重写) ✓
+  - 表结构 0 漂移 (CHARSET/ROW_FORMAT/COLLATION 都没变) ✓
+DBA 21:00-22:00 值守
+8/28 09:00 再看 1 日观察
 ```
 
 **关联**:
