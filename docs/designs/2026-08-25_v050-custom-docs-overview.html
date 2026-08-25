@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>v0.5.0 自定义文档库 · 一页纸过目版</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-light: #dbeafe;
+    --success: #10b981;
+    --success-light: #d1fae5;
+    --warning: #f59e0b;
+    --warning-light: #fef3c7;
+    --danger: #ef4444;
+    --danger-light: #fee2e2;
+    --text: #1f2937;
+    --text-light: #6b7280;
+    --border: #e5e7eb;
+    --bg: #f9fafb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.7;
+    color: var(--text);
+    background: var(--bg);
+    padding: 32px 16px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); overflow: hidden; }
+  .hero {
+    background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+    color: white;
+    padding: 40px 48px;
+  }
+  .hero h1 { font-size: 32px; margin-bottom: 8px; }
+  .hero .subtitle { font-size: 16px; opacity: 0.92; }
+  .hero .meta { margin-top: 16px; font-size: 14px; opacity: 0.85; }
+  .hero .meta span { margin-right: 16px; }
+  .section { padding: 32px 48px; border-bottom: 1px solid var(--border); }
+  .section:last-child { border-bottom: none; }
+  .section h2 {
+    font-size: 22px;
+    color: var(--primary);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--primary-light);
+  }
+  .section h3 { font-size: 17px; margin: 20px 0 12px; color: var(--text); }
+  .one-liner {
+    background: var(--primary-light);
+    border-left: 4px solid var(--primary);
+    padding: 16px 20px;
+    border-radius: 6px;
+    font-size: 17px;
+    font-weight: 500;
+    margin: 16px 0;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th, td { padding: 10px 12px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--bg); font-weight: 600; color: var(--text); }
+  tr:hover td { background: #f9fafb; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 16px 0; }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    background: white;
+  }
+  .card.success { background: var(--success-light); border-color: var(--success); }
+  .card.warning { background: var(--warning-light); border-color: var(--warning); }
+  .card.danger { background: var(--danger-light); border-color: var(--danger); }
+  .card h4 { font-size: 15px; margin-bottom: 8px; }
+  .card p, .card li { font-size: 14px; color: var(--text); }
+  .check { color: var(--success); font-weight: 700; }
+  .cross { color: var(--danger); font-weight: 700; }
+  ul { padding-left: 24px; }
+  li { margin: 6px 0; }
+  .pill {
+    display: inline-block;
+    background: var(--primary-light);
+    color: var(--primary);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .pill.success { background: var(--success-light); color: var(--success); }
+  .pill.warning { background: var(--warning-light); color: var(--warning); }
+  .pill.danger { background: var(--danger-light); color: var(--danger); }
+  .timeline { position: relative; padding-left: 32px; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--primary);
+  }
+  .timeline-item { position: relative; margin-bottom: 16px; }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -28px;
+    top: 6px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--primary);
+  }
+  .timeline-item .time { font-size: 13px; color: var(--primary); font-weight: 600; }
+  .timeline-item .desc { font-size: 14px; color: var(--text); }
+  .callout {
+    background: var(--warning-light);
+    border-left: 4px solid var(--warning);
+    padding: 14px 18px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  .callout strong { color: var(--warning); }
+  code {
+    background: #f3f4f6;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: "SF Mono", "Consolas", monospace;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- Hero -->
+<div class="hero">
+  <h1>📚 v0.5.0 自定义文档库</h1>
+  <div class="subtitle">一页纸过目版 · 5-10 分钟看完关键决策</div>
+  <div class="meta">
+    <span>📅 2026-08-25 整理</span>
+    <span>🎯 目标 v0.5.0</span>
+    <span>⏱️ 工作量 2-3 周 (Phase 1)</span>
+    <span>📊 状态: 详细设计稿已完成, 等推 110 后开干</span>
+  </div>
+</div>
+
+<!-- 0. TL;DR 一句话 -->
+<div class="section">
+  <h2>0. 一句话定位</h2>
+  <div class="one-liner">
+    "Archery 平台内置的轻量级文档库，<strong>DBA 单边维护设计规范 / 运维手册，全员随时查。</strong>"
+  </div>
+  <p>📌 详细设计稿：<code>docs/designs/2026-08-24_v050-custom-docs-design.md</code> (50KB) + <code>...html</code> (145KB)，10 章节，本过目版是浓缩版</p>
+</div>
+
+<!-- 1. 核心约束 (8/24 18:11 拍板) -->
+<div class="section">
+  <h2>1. 核心约束（8/24 拍板 3 条硬规则）</h2>
+  <div class="grid">
+    <div class="card success">
+      <h4>✅ 约束 1 · 只 DBA 上传</h4>
+      <p>设计规范 / 运维手册所有权 <strong>100% 在 DBA 团队</strong>，业务 RD 不上传不删除不编辑</p>
+      <p style="margin-top:8px;font-size:13px;color:var(--text-light);">业务用户只读，避免"多个人改同一个文件" 冲突</p>
+    </div>
+    <div class="card success">
+      <h4>✅ 约束 2 · 完全不绑定</h4>
+      <p>跟库 / 表 / SQL 工单<strong>无任何外键关联</strong>，纯平台文档库</p>
+      <p style="margin-top:8px;font-size:13px;color:var(--text-light);">类似百度网盘内部版，不是 Notion/Confluence</p>
+    </div>
+    <div class="card success">
+      <h4>✅ 约束 3 · 5 种文件类型</h4>
+      <p>Markdown / HTML / PDF / Word / Excel</p>
+      <p style="margin-top:8px;font-size:13px;color:var(--text-light);">覆盖 DBA 日常维护场景（规范/扫描件/外审报告/巡检报表/富文本）</p>
+    </div>
+  </div>
+</div>
+
+<!-- 2. 业务痛点 + 收益 -->
+<div class="section">
+  <h2>2. 业务痛点 & 收益（为什么做）</h2>
+  <h3>现状（8/24 `/dbaprinciples/` 修过的那个页面）</h3>
+  <ul>
+    <li>当前 <code>/dbaprinciples/</code> 硬编码读 <code>docs/docs.md</code> 单文件，<span class="cross">❌</span> 业务用户只能看不能维护</li>
+    <li>DBA 加新规范要<strong>改代码走部署</strong>，一改就是 1 小时</li>
+    <li>文档内容跟平台代码绑死，跟其他平台模块解耦度 0</li>
+  </ul>
+  <h3>业务收益估算</h3>
+  <table>
+    <thead>
+      <tr><th>指标</th><th>现状</th><th>上线后</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>DBA 维护文档耗时</td><td>1 小时/规范/季度（走代码）</td><td>10 分钟/规范/季度（走平台）</td></tr>
+      <tr><td>业务 RD 查规范耗时</td><td>1-2 小时（问人 + 找文件）</td><td>5 分钟（平台搜索）</td></tr>
+      <tr><td>重复咨询次数</td><td>20+ / 周</td><td>5 / 周</td></tr>
+      <tr><td>新人入职培训</td><td>1 对 1，半天</td><td>自助式，1 小时</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 3. Phase 1 工作量 -->
+<div class="section">
+  <h2>3. 工作量 & 排期（Phase 1 MVP）</h2>
+  <h3>9 个端点 · 12 天工作量</h3>
+  <table>
+    <thead>
+      <tr><th>#</th><th>功能</th><th>端点</th><th>权限</th><th>工作量</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>文档列表页（分页+搜索+分类）</td><td><code>GET /custom_docs/</code></td><td><span class="pill">view_document</span></td><td>1 天</td></tr>
+      <tr><td>2</td><td>文档上传（DBA）</td><td><code>POST /custom_docs/upload/</code></td><td><span class="pill">upload_document</span></td><td>2 天</td></tr>
+      <tr><td>3</td><td>文档详情页（5 种类型预览）</td><td><code>GET /custom_docs/&lt;id&gt;/</code></td><td><span class="pill">view_document</span></td><td>3 天</td></tr>
+      <tr><td>4</td><td>文档下载（DBA + RD）</td><td><code>GET /custom_docs/&lt;id&gt;/download/</code></td><td><span class="pill">view_document</span></td><td>1 天</td></tr>
+      <tr><td>5</td><td>文档编辑（DBA）</td><td><code>GET/POST /custom_docs/&lt;id&gt;/edit/</code></td><td><span class="pill">change_document</span></td><td>1 天</td></tr>
+      <tr><td>6</td><td>文档删除（DBA 软删除）</td><td><code>POST /custom_docs/&lt;id&gt;/delete/</code></td><td><span class="pill">delete_document</span></td><td>1 天</td></tr>
+      <tr><td>7</td><td>Admin 后台管理</td><td><code>/admin/custom_docs/document/</code></td><td><span class="pill">is_staff</span></td><td>0.5 天</td></tr>
+      <tr><td>8</td><td>audit_log middleware</td><td>middleware</td><td>自动</td><td>0.5 天</td></tr>
+      <tr><td>9</td><td>跟 <code>/dbaprinciples/</code> 兼容（跳新页面）</td><td>/dbaprinciples/</td><td>无</td><td>0.5 天</td></tr>
+      <tr><td>10</td><td>端到端测试（5 种 × 3 Case）</td><td>pytest</td><td>无</td><td>1 天</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:12px;"><strong>总计：12 天（1.5 周单人 + 0.5 周 buffer = 2 周）</strong></p>
+  <h3 style="margin-top:20px;">Phase 2（v0.5.1 增强，1 周）</h3>
+  <ul>
+    <li>文档版本管理 / 批量上传 / 收藏 / 评论</li>
+  </ul>
+  <h3>不做（out of scope，明确划线）</h3>
+  <div class="grid">
+    <div class="card danger">
+      <h4>❌ Office 完整编辑</h4>
+      <p>只能预览不能编辑（避免 LibreOffice 集成坑）</p>
+    </div>
+    <div class="card danger">
+      <h4>❌ 在线 Markdown WYSIWYG</h4>
+      <p>DBA 本地写好再上传（避免前端编辑器坑）</p>
+    </div>
+    <div class="card danger">
+      <h4>❌ 全文搜索（ES）</h4>
+      <p>标题/描述/分类模糊匹配够用，ES 集成过重</p>
+    </div>
+    <div class="card danger">
+      <h4>❌ 跟 SQL 工单绑定</h4>
+      <p>用户拍板不绑定，保持简单</p>
+    </div>
+  </div>
+</div>
+
+<!-- 4. 5 大 perm -->
+<div class="section">
+  <h2>4. 权限模型（5 个 perm，跟 8/24 gh-ost 同样套路）</h2>
+  <table>
+    <thead>
+      <tr><th>角色</th><th>拥有的 perm</th><th>行为</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>业务 RD（默认）</td><td><span class="pill">view_document</span></td><td>列表 / 详情 / 下载（只读）</td></tr>
+      <tr><td>DBA（在 DBA 组）</td><td><span class="pill success">view_document</span> <span class="pill success">upload_document</span> <span class="pill success">change_document</span> <span class="pill success">delete_document</span> <span class="pill success">view_document_audit</span></td><td>全部 + audit log</td></tr>
+      <tr><td>业务 RD leader</td><td><span class="pill">view_document</span></td><td>只读</td></tr>
+      <tr><td>Admin（is_superuser）</td><td>全部</td><td>全部 + admin 后台</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>⚠️ 8/24 教训复用：</strong>端点 perm 守卫 <strong>不能 raise PermissionDenied</strong>（会返整页 HTML，AJAX 拿到源码 alert 弹源码），必须返 <code>JsonResponse({"ok": False, "error": "..."}, status=403)</code>
+  </div>
+</div>
+
+<!-- 5. 文件存储 + 5 预览方案 -->
+<div class="section">
+  <h2>5. 文件存储 & 5 预览方案</h2>
+  <h3>存储路径</h3>
+  <p><code>/opt/archery/shared/uploads/documents/&lt;uuid&gt;.&lt;ext&gt;</code></p>
+  <p style="font-size:13px;color:var(--text-light);">uuid 避免冲突 + 不暴露原始文件名 + 下载时用 title + 扩展名</p>
+  <h3>5 种类型预览前端方案</h3>
+  <table>
+    <thead>
+      <tr><th>类型</th><th>预览方案</th><th>前端库</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><span class="pill">Markdown</span></td><td>渲染为 HTML</td><td>marked.js + DOMPurify（XSS 防护）</td></tr>
+      <tr><td><span class="pill">HTML</span></td><td>iframe 沙箱</td><td>原生 iframe + sandbox 属性</td></tr>
+      <tr><td><span class="pill">PDF</span></td><td>浏览器原生</td><td>pdf.js（兼容旧浏览器）</td></tr>
+      <tr><td><span class="pill">Word</span></td><td>转 HTML 显示</td><td>mammoth.js（client 端解析）</td></tr>
+      <tr><td><span class="pill">Excel</span></td><td>表格预览</td><td>sheetjs（xlsx 解析）</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 6. 跟 8/24 / 8/25 已做工作的关系 -->
+<div class="section">
+  <h2>6. 跟当前进度的关系（重点）</h2>
+  <div class="grid">
+    <div class="card success">
+      <h4>✅ 8/24 `/dbaprinciples/` 500 修复</h4>
+      <p>解决了"读"的问题，本设计稿是<strong>升级版</strong>（多了"写"+ 完整功能）</p>
+      <p style="margin-top:8px;font-size:13px;">v0.5.0 上线后 <code>/dbaprinciples/</code> 跳到 <code>/custom_docs/</code>，单文件 read-only 行为保留</p>
+    </div>
+    <div class="card success">
+      <h4>✅ 8/24 gh-ost 任务管理列表页</h4>
+      <p>同样"权限细分 + DBA 专属"模式，<strong>直接复用</strong></p>
+      <p style="margin-top:8px;font-size:13px;">Django admin 自动注册 perm + 端点 perm 守卫 + _is_admin_or_dba helper</p>
+    </div>
+    <div class="card success">
+      <h4>✅ 8/24 DDL 智能回滚 (v0.4.5)</h4>
+      <p>同样"扩展 Django app"模式，<strong>复用 <code>extensions/</code> 目录</strong></p>
+    </div>
+    <div class="card warning">
+      <h4>⏳ 跟 v0.5.0 排期</h4>
+      <p>8/24 RaccoonX / DDL 跨库同步 / v0.5.0 文档库，<strong>3 个并行</strong></p>
+      <p style="margin-top:8px;font-size:13px;">推 110 (8/27) 之后开干，按用户优先级排</p>
+    </div>
+  </div>
+</div>
+
+<!-- 7. 排期建议 -->
+<div class="section">
+  <h2>7. 排期建议（推 110 之后）</h2>
+  <div class="timeline">
+    <div class="timeline-item">
+      <div class="time">8/27 周四</div>
+      <div class="desc">推 110 prod v0.3.0-beta + v0.4.5 + 8/24 6 bug fix（DBA 值守 SLA 5 分钟）</div>
+    </div>
+    <div class="timeline-item">
+      <div class="time">8/28 周五</div>
+      <div class="desc">推 110 1 日观察报告 + 1 日观察清单</div>
+    </div>
+    <div class="timeline-item">
+      <div class="time">8/31 周一</div>
+      <div class="desc">v0.5.0 文档库开干（Phase 1 12 天，1.5 周 + buffer）</div>
+    </div>
+    <div class="timeline-item">
+      <div class="time">9/14 周一</div>
+      <div class="desc">v0.5.0 Phase 1 完成，134 dev 端到端演练</div>
+    </div>
+    <div class="timeline-item">
+      <div class="time">9/18 周五</div>
+      <div class="desc">推 110 v0.5.0，文档库上线</div>
+    </div>
+  </div>
+  <div class="callout">
+    <strong>📌 注意：</strong>v0.5.0 文档库 跟 RaccoonX 接入 / DDL 跨库同步 是<strong>3 个并行 Roadmap</strong>，按用户优先级排。如果文档库先开干，RaccoonX 跟跨库同步推到 9 月中下旬
+  </div>
+</div>
+
+<!-- 8. 关键风险 -->
+<div class="section">
+  <h2>8. 关键风险（必看）</h2>
+  <div class="grid">
+    <div class="card danger">
+      <h4>🔴 风险 1 · 文件类型解析失败</h4>
+      <p>PDF / Word / Excel 用 client 端库解析失败时显示"下载"提示</p>
+      <p style="margin-top:8px;font-size:13px;">Mammoth.js / sheetjs 对复杂格式支持有限，<strong>不能保证 100% 完美预览</strong></p>
+    </div>
+    <div class="card warning">
+      <h4>🟡 风险 2 · 文件上传大小限制</h4>
+      <p>PDF 扫描件可能 10+ MB，<strong>默认 20MB 上限</strong></p>
+      <p style="margin-top:8px;font-size:13px;">超过给清晰提示，DBA 自己压缩或拆文件</p>
+    </div>
+    <div class="card warning">
+      <h4>🟡 风险 3 · 病毒文件上传</h4>
+      <p>Archery 平台无病毒扫描，<strong>DBA 内部使用风险低</strong></p>
+      <p style="margin-top:8px;font-size:13px;">如果对外开放需加 ClamAV 集成（Phase 2 考虑）</p>
+    </div>
+    <div class="card success">
+      <h4>🟢 风险 4 · 已解决</h4>
+      <p>权限细分 / 软删除 / audit log / 跟 SQL 工单解耦 — 设计稿都已覆盖</p>
+    </div>
+  </div>
+</div>
+
+<!-- 9. 需要用户拍板的 3 个问题 -->
+<div class="section">
+  <h2>9. 需要用户拍板的 3 个问题（开干前）</h2>
+  <table>
+    <thead>
+      <tr><th>#</th><th>问题</th><th>我的建议</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>开干时间</td><td><strong>推 110 之后（8/31 周一）</strong>，避免同时改两个版本</td></tr>
+      <tr><td>2</td><td>v0.5.0 Roadmap 3 个功能（文档库 / RaccoonX / 跨库同步）的优先级</td><td><strong>文档库先</strong>（DBA 痛点最直接 + 工作量可控 + 不依赖外部）</td></tr>
+      <tr><td>3</td><td>要不要 Phase 1 加"文档预览水印"（业务 RD 截图防泄漏）</td><td><strong>不加</strong>（Phase 2 再说，Phase 1 保持简单）</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 10. 一页纸回顾 -->
+<div class="section">
+  <h2>10. 一页纸回顾</h2>
+  <div class="one-liner">
+    5-10 分钟看完关键决策：<strong>3 约束 + 5 阶段 + 5 perm + 5 文件类型 + 12 天工作量 + 3 待拍板</strong>
+  </div>
+  <p style="margin-top:12px;font-size:14px;color:var(--text-light);">
+    详细设计稿在 <code>docs/designs/2026-08-24_v050-custom-docs-design.md</code>（50KB） / <code>...html</code>（145KB），本过目版是 10 章节浓缩。
+    推 110 (8/27) 之后开干 Phase 1，预计 9/18 上线。
+  </p>
+</div>
+
+</div>
+</body>
+</html>
