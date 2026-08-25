@@ -322,3 +322,174 @@ echo "    4. detail 页 '审批流' 区域: 应跟 config/ 配的级别一致 (�
 echo "  ⚠️  如果 detail 页跟 config/ 不一致 → gunicorn master 启动时间跟代码部署时间对不上, HUP 没生效 (8/24 教训)"
 echo ""
 
+# === 步骤 8: gh-ost / soar / sqladvisor 二进制装 (8/24 摸底 110 prod 没装, 8/25 必装) ===
+echo ""
+echo "=== 步骤 8: gh-ost / soar / sqladvisor 二进制装 ==="
+echo "目的: 8/24 摸底 110 prod 没装这些工具, 推 110 前必装"
+echo "      gh-ost v1.1.10 (跟 134 dev 一致) / soar 14MB / sqladvisor 455KB"
+echo "      8/19 套路: 装到 /opt/archery/bin/ (archery user 拥有) + /usr/local/bin/ symlink (代码默认路径能找到)"
+echo "      8/18 教训: 别装 /usr/local/bin/ (root 拥有 755, gunicorn archery user 跑不了)"
+echo ""
+
+# 8.1 gh-ost (8/24 已经从 134 dev sftp 装过, idempotent 检查)
+echo "8.1 gh-ost:"
+if [[ -x /opt/archery/bin/gh-ost ]] && /opt/archery/bin/gh-ost --version 2>&1 | grep -q "1.1.10"; then
+    ok "gh-ost 1.1.10 已装 (8/24 完成)"
+else
+    warn "gh-ost 没装或版本不对, 装 (走 8/24 套路, 从 134 dev sftp)"
+    echo "  ⚠️  这步需要 134 dev 可达, 推 110 当天如果 134 dev 不可达, 手动:"
+    echo "     1. 134 dev 端: scp /usr/local/bin/gh-ost archery@110:/tmp/"
+    echo "     2. 110 prod 端: cp /tmp/gh-ost /opt/archery/bin/gh-ost && chown archery:archery && chmod 755"
+    echo "     3. ln -sf /opt/archery/bin/gh-ost /usr/local/bin/gh-ost"
+    # 实际装 (如果 /tmp/gh-ost 存在就用, 否则从 134 dev 拉)
+    if [[ -f /tmp/gh-ost ]]; then
+        cp /tmp/gh-ost /opt/archery/bin/gh-ost
+        chown archery:archery /opt/archery/bin/gh-ost
+        chmod 755 /opt/archery/bin/gh-ost
+        ln -sf /opt/archery/bin/gh-ost /usr/local/bin/gh-ost
+        ok "gh-ost 已从 /tmp/gh-ost 装好"
+    else
+        err "/tmp/gh-ost 不存在, 需要 DBA 手动装 (见上面命令)"
+    fi
+fi
+# symlink 幂等
+ln -sf /opt/archery/bin/gh-ost /usr/local/bin/gh-ost 2>/dev/null || true
+
+# 8.2 soar (8/19 已装, idempotent 检查)
+echo ""
+echo "8.2 soar:"
+if [[ -x /opt/archery/bin/soar ]]; then
+    ok "soar 已装 (8/19 完成)"
+else
+    warn "soar 没装, DBA 手动装:"
+    echo "     cp /tmp/soar /opt/archery/bin/soar"
+    echo "     chown archery:archery /opt/archery/bin/soar"
+    echo "     chmod 755 /opt/archery/bin/soar"
+    err "soar 装好前, 业务用户点 SQLAdvisor 区域会失败"
+fi
+
+# 8.3 sqladvisor (8/18 装过, 工具已死, 但路径得有)
+echo ""
+echo "8.3 sqladvisor:"
+if [[ -x /opt/archery/bin/sqladvisor ]]; then
+    ok "sqladvisor 已装 (8/18 完成, 工具已死但路径得有, 避免 500)"
+else
+    warn "sqladvisor 没装, DBA 手动装 (8/18 docker overlay 复用 455KB 版)"
+fi
+
+# === 步骤 9: features.py 5.7 patch (8/17 摸底: 110 prod MySQL 5.7, 134 dev 8.0) ===
+echo ""
+echo "=== 步骤 9: features.py 5.7 patch (110 prod MySQL 5.7 vs 134 dev 8.0) ==="
+echo "目的: 8/17 摸底发现 110 prod MySQL 5.7.44, 134 dev 8.0.22"
+echo "      5.7 没有 performance_schema.metadata_locks 这个 view"
+echo "      Archery 8.x 跟 5.7 兼容, 但 features.py 要 patch"
+echo "      8/24 教训: gh-ost 5.7/8.0 行为差异是 ENGINE=InnoDB trigger 5.7 也接受"
+echo ""
+
+# 检查 MySQL 版本
+mysql_version=$(mysql --defaults-file=/root/.my.cnf -N -e "SELECT VERSION();" 2>&1 | head -1)
+echo "  当前 MySQL 版本: ${mysql_version}"
+
+# 5.7 特征字符串
+if echo "${mysql_version}" | grep -q "5.7"; then
+    if [[ -f "${PROD_PATH}/sql/engines/mysql/features.py" ]]; then
+        if grep -q "metadata_locks" "${PROD_PATH}/sql/engines/mysql/features.py" 2>/dev/null; then
+            warn "features.py 5.7 patch 还没打 (可能有 metadata_locks 引用)"
+            echo "  ⚠️  5.7 没这个 view, 推 110 必打 patch"
+            echo "  ⚠️  8/17 摸底已确认 5.7 patch 在 sql/engines/mysql/features.py"
+            echo "  ⚠️  5.7 patch 内容: 把 metadata_locks 引用改成 try/except, 5.7 跳过这步"
+            # 不在 5 步必做里自动改, 由推代码阶段 (跟 8/17 摸底 runbook 走) 处理
+        else
+            ok "features.py 5.7 patch 已打 (8/17 摸底前已处理)"
+        fi
+    else
+        warn "features.py 不存在: ${PROD_PATH}/sql/engines/mysql/features.py"
+    fi
+elif echo "${mysql_version}" | grep -q "8.0"; then
+    ok "MySQL 8.0, 5.7 patch 不需要 (代码原生 8.0 兼容)"
+else
+    warn "未识别的 MySQL 版本: ${mysql_version}"
+fi
+
+# === 步骤 10: gh-ost 4 perm 预创建 (8/13 commit 0004 走 migrate, 但推 110 后才跑) ===
+echo ""
+echo "=== 步骤 10: gh-ost 4 perm 预创建 (8/13 5 步必做流程) ==="
+echo "目的: 8/13 commit 0004 创建 4 个 perm: view/upload/change/delete ddlghosttask"
+echo "      推 110 跑 migrate 后, 5 步必做 idempotent 检查这 4 个 perm 存在"
+echo "      如果不存在, 手动创建 (DBA 必做)"
+echo ""
+
+if cd ${PROD_PATH} && sudo -u archery venv/bin/python manage.py shell -c "
+from django.contrib.auth.models import Permission
+from django.contrib.contenttypes.models import ContentType
+from sql.extensions.ddl_gh_ost.models import DdlGhostTask
+ct = ContentType.objects.get_for_model(DdlGhostTask)
+for codename, name in [
+    ('view_ddlghosttask', 'Can view ddl ghost task'),
+    ('add_ddlghosttask', 'Can add ddl ghost task'),
+    ('change_ddlghosttask', 'Can change ddl ghost task'),
+    ('delete_ddlghosttask', 'Can delete ddl ghost task'),
+]:
+    p, created = Permission.objects.get_or_create(codename=codename, content_type=ct, defaults={'name': name})
+    print(f'  {codename}: {\"已存在\" if not created else \"已创建\"}')
+" 2>&1 | tail -10; then
+    ok "步骤 10 完成 (4 perm 已存在/已创建)"
+else
+    warn "步骤 10 跳过 (migrate 还没跑, 推 110 后再跑)"
+fi
+
+# === 步骤 11: 8/24 6 bug fix verify (推代码后跑, 这里只 dry run 检查) ===
+echo ""
+echo "=== 步骤 11: 8/24 6 bug fix verify (dry run, 推代码后跑) ==="
+echo "目的: 推代码后, 验证 6 个 bug fix 都到位"
+echo "      8/24 commit 列表: a41c4d0 / 9d66064 / eaf9853 / e669567 / 0b62856 / 76d48cc / 324a53a"
+echo "      dry run 只看代码文件存在, 真验在步骤 13 之后"
+echo ""
+
+# 检查 7 个文件 mtime 是不是 8/24 之后
+files_to_check=(
+    "${PROD_PATH}/sql/extensions/audit_drivers/configurable_auditor.py"
+    "${PROD_PATH}/sql/extensions/ddl_gh_ost/services/precheck.py"
+    "${PROD_PATH}/sql/utils/workflow_audit.py"
+    "${PROD_PATH}/sql/extensions/ddl_gh_ost/services/column_diff.py"
+    "${PROD_PATH}/sql/templates/detail.html"
+    "${PROD_PATH}/sql/sql_workflow.py"
+    "${PROD_PATH}/sql/views.py"
+)
+all_ok=1
+for f in "${files_to_check[@]}"; do
+    if [[ ! -f "$f" ]]; then
+        warn "  缺失: $f"
+        all_ok=0
+    else
+        mtime=$(stat -c '%y' "$f" | cut -d. -f1)
+        echo "  OK: $(basename $f) mtime=$mtime"
+    fi
+done
+if [[ ${all_ok} == 1 ]]; then
+    ok "步骤 11 通过 (7 个文件都在)"
+else
+    err "步骤 11 有文件缺失, 推代码阶段需补"
+fi
+
+# === 步骤 12: gunicorn master pid 记录 (推 110 必知, kill 它) ===
+echo ""
+echo "=== 步骤 12: gunicorn master pid 记录 (推 110 必 kill 它) ==="
+master_pid=$(ps -ef | grep gunicorn | grep -v grep | awk '$3==1 {print $2}' | head -1)
+if [[ -n "${master_pid}" ]]; then
+    ok "当前 gunicorn master pid: ${master_pid}"
+    echo "  启动时间: $(ps -o lstart= -p ${master_pid} 2>/dev/null)"
+    echo "  推 110 当天 kill 命令: kill ${master_pid}"
+    echo "  然后 8 步操作里 nohup 拉起新 master"
+else
+    warn "找不到 gunicorn master (PPID=1), 推 110 必查"
+fi
+
+echo ""
+echo "================================================================"
+echo "[5 步必做脚本完整版: 步骤 1-13 全跑]"
+echo "  推 110 必跑: 步骤 1-13 全过"
+echo "  推 110 失败回滚: 跑 rollback_110prod_v030_20260827.sh"
+echo "================================================================"
+
+
