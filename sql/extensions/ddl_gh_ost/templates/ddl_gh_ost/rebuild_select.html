@@ -144,6 +144,24 @@
         <i class="fa fa-refresh"></i> 拉取表列表
       </button>
     </div>
+    {# 8/25 筛选行挪到第 1 步卡片底部, 选 instance 前就能看到 #}
+    <div class="rebuild-filters" id="filters-row" style="margin-top: 12px;">
+      <label>库:</label>
+      <select id="filter-db" disabled>
+        <option value="">请先选 instance</option>
+      </select>
+      <label>表名:</label>
+      <input type="text" id="filter-table" placeholder="模糊匹配" disabled />
+      <label>碎片率:</label>
+      <span class="pct-range">
+        <input type="number" id="filter-pct-min" min="0" max="100" step="0.1" value="0" disabled />
+        <span class="tilde">~</span>
+        <input type="number" id="filter-pct-max" min="0" max="100" step="0.1" value="100" disabled />
+        <span class="tilde">%</span>
+      </span>
+      <button class="rebuild-filter-btn" id="filter-reset" type="button" disabled>重置</button>
+      <span style="color:#909399; font-size:11px; margin-left:6px;">（拉表后启用）</span>
+    </div>
     <div class="rebuild-alert info" style="margin-top: 14px; margin-bottom: 0;">
       提示：DBA 默认有所有 instance 凭据，连接失败的 instance 会显示具体错误信息。
     </div>
@@ -153,23 +171,6 @@
   <div class="rebuild-card" id="card-2" style="display: none;">
     <div class="rebuild-card-title">第 2 步 · Top 碎片表（按 DATA_FREE 倒序，最多 200 张）</div>
     <div id="tables-info" class="rebuild-table-info"></div>
-    {# 8/25 筛选行: 库 / 表名 / 碎片率范围 (前端实时筛) #}
-    <div class="rebuild-filters" id="filters-row" style="display: none;">
-      <label>库:</label>
-      <select id="filter-db">
-        <option value="">全部</option>
-      </select>
-      <label>表名:</label>
-      <input type="text" id="filter-table" placeholder="模糊匹配" />
-      <label>碎片率:</label>
-      <span class="pct-range">
-        <input type="number" id="filter-pct-min" min="0" max="100" step="0.1" value="0" />
-        <span class="tilde">~</span>
-        <input type="number" id="filter-pct-max" min="0" max="100" step="0.1" value="100" />
-        <span class="tilde">%</span>
-      </span>
-      <button class="rebuild-filter-btn" id="filter-reset" type="button">重置</button>
-    </div>
     <div id="tables-container">
       <div class="rebuild-state"><i class="fa fa-table"></i>请先选 instance</div>
     </div>
@@ -228,6 +229,7 @@
     state.instanceId = parseInt(this.value || '0', 10);
     state.instanceName = this.options[this.selectedIndex].text;
     state.tables = [];
+    state.filtered = [];
     state.selected.clear();
 
     document.getElementById('btn-load-tables').disabled = !state.instanceId;
@@ -236,11 +238,18 @@
       document.getElementById('card-2').style.display = '';
       document.getElementById('card-3').style.display = '';
       setStep(2);
+      // 8/25 切换 instance 时禁用筛选器, 拉表后再启用
+      setFiltersDisabled(true);
+      // db select 恢复占位提示
+      var dbSel = document.getElementById('filter-db');
+      dbSel.innerHTML = '<option value="">请先选 instance</option>';
+      resetFilterInputs();
       loadTables();
     } else {
       document.getElementById('card-2').style.display = 'none';
       document.getElementById('card-3').style.display = 'none';
       setStep(1);
+      setFiltersDisabled(true);
     }
   });
 
@@ -271,8 +280,9 @@
         populateDbFilter();
         // 拉新 instance 重置 filter
         resetFilterInputs();
+        // 启用筛选器
+        setFiltersDisabled(false);
         applyFilter();
-        document.getElementById('filters-row').style.display = '';
       })
       .catch(function (e) {
         c.innerHTML = '<div class="rebuild-state" style="color: #c45656;"><i class="fa fa-times-circle"></i>' +
@@ -281,6 +291,12 @@
   }
 
   // ====== 8/25 新增: 筛选逻辑 ======
+  function setFiltersDisabled(disabled) {
+    ['filter-db', 'filter-table', 'filter-pct-min', 'filter-pct-max', 'filter-reset'].forEach(function (id) {
+      document.getElementById(id).disabled = disabled;
+    });
+  }
+
   function populateDbFilter() {
     var sel = document.getElementById('filter-db');
     // 从 state.tables 提取 unique db, 按字母序
