@@ -156,25 +156,28 @@ class DdlGhostTask(models.Model):
     # ===== rebuild 场景专属字段 (CUSTOM-MODIFIED: v0.4.5 拍板 3 决策 @ 2026-08-13 @ mavis)
     # 关联: docs/changelogs/2026-08-13_v0405-rebuilt-fields.md
     #       docs/designs/2026-08-13_v0405-ghost-rebuild-design.md §3.2
+    # CUSTOM-MODIFIED: v0.4.5 简化 alter 到 1 层 ENGINE=InnoDB @ 2026-08-25 @ mavis
+    # 关联: docs/changelogs/2026-08-25_v0405-rebuild-8p0-instant-caveat.md
     # 业务: rebuild 任务在 rebuild_start 时查 information_schema.tables 拿原表属性,
-    #       拼出 ENGINE+ROW_FORMAT+CHARSET 形式的 alter 子句 (3 层防护确保 5.7/8.0
-    #       都触发物理重写且字符集不漂), 5 字段记录"这次 rebuild 改了什么",
-    #       DBA 排查 / 列表页展示都用得上.
+    #       拼出 ENGINE=InnoDB 形式的 alter 子句 (8/25 17:30 简化: 1 层).
+    #       5.7 改 ENGINE 改自己走 COPY 触发整表重写, 8.0 走 INSTANT 跳过 (架构性限制).
+    #       rebuilt_charset/row_format/collation 仍存"原表属性", 排查用;
+    #       rebuilt_alter_full 存"实际用的 alter", 列表页 truncated 显示.
     rebuilt_charset = models.CharField(
         "原表 CHARSET", max_length=32, blank=True, null=True,
-        help_text="rebuild 场景: 原表 DEFAULT CHARSET (utf8mb4 等), 记录用",
+        help_text="rebuild 场景: 原表 DEFAULT CHARSET (utf8mb4 等), 记录用 (排查原表字符集用)",
     )
     rebuilt_row_format = models.CharField(
         "原表 ROW_FORMAT", max_length=16, blank=True, null=True,
-        help_text="rebuild 场景: 原表 ROW_FORMAT (Dynamic/Compact 等), 记录用",
+        help_text="rebuild 场景: 原表 ROW_FORMAT (Dynamic/Compact 等), 记录用 (排查原表 row_format 用)",
     )
     rebuilt_collation = models.CharField(
         "原表 COLLATION", max_length=64, blank=True, null=True,
-        help_text="rebuild 场景: 原表 DEFAULT COLLATION (utf8mb4_general_ci 等), 记录用",
+        help_text="rebuild 场景: 原表 DEFAULT COLLATION (utf8mb4_general_ci 等), 记录用 (排查原表 collation 用)",
     )
     rebuilt_alter_full = models.TextField(
         "rebuild 用的完整 alter 子句", blank=True,
-        help_text="rebuild 场景: 完整 alter 子句 (不带 ALTER TABLE t 前缀), 列表页 truncated 显示",
+        help_text="rebuild 场景: 8/25 简化后只 ENGINE=InnoDB (不带 ALTER TABLE t 前缀), 列表页 truncated 显示",
     )
     rebuilt_at = models.DateTimeField(
         "rebuild 完成时间", null=True, blank=True,

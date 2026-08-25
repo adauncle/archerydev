@@ -1,9 +1,12 @@
 # CUSTOM-MODIFIED: v0.4.5 拍板 3 决策加 rebuilt_* 字段 @ 2026-08-13 @ mavis
 # 关联: docs/changelogs/2026-08-13_v0405-rebuilt-fields.md
 #       docs/designs/2026-08-13_v0405-ghost-rebuild-design.md §3.2
+# CUSTOM-MODIFIED: v0.4.5 简化 alter 到 1 层 ENGINE=InnoDB @ 2026-08-25 @ mavis
+# 关联: docs/changelogs/2026-08-25_v0405-rebuild-8p0-instant-caveat.md
 # 业务: rebuild 场景在 rebuild_start 时查 information_schema.tables 拿原表属性,
-#       拼出 ENGINE+ROW_FORMAT+CHARSET 形式的 alter 子句 (8/13 拍板, 替换原 COMMENT 触发方案,
-#       避免破坏表 COMMENT 业务描述), 5 字段记录"这次 rebuild 改了什么".
+#       拼出 ENGINE=InnoDB 形式的 alter 子句 (8/25 17:30 简化: 1 层, 替换原 3 层防护 ENGINE+ROW_FORMAT+CHARSET,
+#       避免破坏表 COMMENT 业务描述), 5 字段记录"原表属性" (charset/row_format/collation 排查用)
+#       + "实际用的 alter" (rebuilt_alter_full, 列表页 truncated 显示).
 
 from django.db import migrations, models
 

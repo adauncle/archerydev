@@ -190,8 +190,11 @@
           </td>
           <td class="gh-ost-muted" style="font-size:11px;max-width:300px;">
             {# CUSTOM-MODIFIED: v0.4.5 拍板 3 决策加 ALTER 子句列 @ 2026-08-13 @ mavis #}
+            {# CUSTOM-MODIFIED: v0.4.5 简化 alter 到 ENGINE=InnoDB (1 层) @ 2026-08-25 @ mavis #}
             {# 关联: docs/changelogs/2026-08-13_v0405-rebuilt-fields.md #}
-            {# 业务: rebuild 场景显示 ENGINE+ROW_FORMAT+CHARSET 形式的 alter, #}
+            {#       docs/changelogs/2026-08-25_v0405-rebuild-8p0-instant-caveat.md #}
+            {# 业务: rebuild 场景显示 ENGINE=InnoDB (8/25 简化), #}
+            {#       下方显示原表 charset / row_format (排查用) + rebuilt 时间; #}
             {#       ghost 场景显示原始 alter_statement; 都 truncated 防止列太宽 #}
             {% if t.task_type == "rebuild" and t.rebuilt_alter_full %}
               <code style="color:#c97b3f;background:#f6ede3;padding:1px 4px;border-radius:3px;">{{ t.rebuilt_alter_full|truncatechars:60 }}</code><br>

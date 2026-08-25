@@ -1,11 +1,14 @@
-# v0.4.5 rebuild — 8.0.22 INSTANT 架构性限制 + accesscard_black_detail 验收 (8/25 17:30)
+# v0.4.5 rebuild — 8.0.22 INSTANT 架构性限制 + alter 简化到 ENGINE=InnoDB (8/25 17:30)
 
-> **类型**: docs (架构性限制说明 + 拍板记录)
+> **类型**: docs + code (架构性限制说明 + 拍板记录 + 代码简化)
 > **状态**: 8/25 17:30 拍板方案 A (用户 11 字回复: "生产环境没有 mysql 5.7 的版本, 110 虽然是 mysql 5.7 但仅供 archery 使用. 所以方案 A 即可")
+> **状态**: 8/25 17:50 用户再次拍板简化 alter: "碎片回收命令明确下,只需要 alter table xx engine=innodb;"
 > **关联**: `2026-08-25_v0405-fragmentation-algorithm-fix.md` (FILE_SIZE 算法修法)
 > **关联**: `2026-08-25_v0405-rebuild-select-page.md` (选表页面)
+> **关联**: `2026-08-13_v0405-rebuilt-fields.md` (3 决策拍板 → 8/25 简化)
 > **目的**: 8.0.22 (134 dev) + gh-ost rebuild 看不到 ibd 收缩, 不是 bug, 是 MySQL 8.0 INSTANT 优化导致。
 >         110 prod (5.7.44) 不受影响, 8/27 推 110 业务可用。
+>         8/25 17:50 进一步简化: alter 子句从 3 层防护 → 1 层 `ENGINE=InnoDB`。
 
 ## 背景
 
@@ -82,6 +85,44 @@ gh-ost 走 **binlog 异步重写 + cut-over 切表** 架构:
    - 方案 c: 5.7 继续用, 8.0 走 gh-ost + DBA 手动验证 (现状)
    - 推 110 后, 跟 DBA 单独约 9 月升级时间表
 
+## 8/25 17:50 用户拍板简化 alter 子句 (1 层防护)
+
+> 用户原话: "碎片回收命令明确下,只需要 alter table xx engine=innodb;"
+
+### 简化背景
+
+8/13 拍板时 (见 `2026-08-13_v0405-rebuilt-fields.md`) 是 3 层防护
+(`ENGINE+ROW_FORMAT+CHARSET`), 当时以为能让 8.0 也触发物理重写.
+8/25 16:50 调研发现 8.0.22 4 种 alter 全 no-op, 3 层防护对 8.0 是没用的 metadata change,
+反而在 5.7 是冗余.
+
+### 简化方案 (1 层防护)
+
+直接 `ALTER TABLE t ENGINE=InnoDB;` (8/25 17:50 拍板):
+- **5.7.44**: 改 ENGINE 改自己走 **COPY 触发整表物理重写**, ibd 真收缩 ✓
+- **8.0.22**: 改 ENGINE 改自己走 INSTANT 跳过, **不重写** (架构性限制, 接受)
+- **业务**: 110 prod (5.7) 真 work, DBA 推完后跑 rebuild 看到 ibd 真收缩
+
+### 代码修改
+
+| 文件 | 修改 |
+|------|------|
+| `sql/extensions/ddl_gh_ost/views.py` | `_build_rebuild_alter_clause` 简化为只返 `f"ENGINE={table_info['engine']}"` |
+| `sql/extensions/ddl_gh_ost/services/runner.py` | `_make_rebuild_alter` docstring 更新 |
+| `sql/extensions/ddl_gh_ost/models.py` | rebuilt_* 字段 docstring 改"原表属性" 排查用 |
+| `sql/extensions/ddl_gh_ost/templates/ddl_gh_ost/task_list.html` | ALTER 子句列显示简化版 |
+| `sql/extensions/ddl_gh_ost/migrations/0004_ddlghosttask_rebuilt_fields.py` | migration 头部注释更新 |
+
+### 8/25 18:01 134 dev 真演练验证
+
+task #103 (accesscard_black_detail):
+- `rebuilt_alter_full = [ENGINE=InnoDB]` ✓
+- `rebuilt_charset = utf8mb4, rebuilt_row_format = Dynamic, rebuilt_collation = utf8mb4_bin`
+- gh-ost log: "Table found. Engine=InnoDB" + "Ghost table altered" + "Done migrating"
+- status: success (18s, 18:01:12 → 18:01:28)
+- 表结构: ENGINE=InnoDB, ROW_FORMAT=Dynamic, TABLE_COLLATION=utf8mb4_bin (跟 rebuild 前一致, 不漂)
+- 8.0.22 ibd 仍 144MB (预期, INSTANT no-op, 8.0 架构限制)
+
 ## 推 110 / 演练 影响
 
 | 阶段 | MySQL 版本 | gh-ost rebuild 行为 | 验收标准 |
@@ -132,6 +173,8 @@ gh-ost 走 **binlog 异步重写 + cut-over 切表** 架构:
 - **8/25 16:55**: 用户拍板方案 A: 撤回方案 C 改字符集, 改碎片率算法 (commit `14e3007`)
 - **8/25 17:00**: 新算法演练 16/16 PASS (新 FILE_SIZE 算法)
 - **8/25 17:30**: 用户 11 字拍板方案 A 接受 8.0 INSTANT 架构性限制
+- **8/25 17:50**: 用户拍板简化 alter 子句: 3 层防护 → 1 层 `ENGINE=InnoDB`
+- **8/25 18:01**: 134 dev task #103 真演练, 简化版 alter 跑通, 表结构不漂
 - **8/27 21:00**: 推 110 prod (5.7.44), gh-ost rebuild 真 work, DBA 验证 ibd 收缩
 
 ## 教训 (跨项目可复用)

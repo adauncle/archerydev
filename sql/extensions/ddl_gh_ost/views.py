@@ -821,10 +821,12 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
     ## CUSTOM-MODIFIED: v0.4.5-alpha 改 409 拒绝为排队入队 @ 2026-08-06 @ mavis
     ## CUSTOM-MODIFIED: v0.4.5-alpha 修 queue 漏洞加 instance 字段 @ 2026-08-10 @ mavis
     ## CUSTOM-MODIFIED: v0.4.5 拍板改 ENGINE+ROW_FORMAT+CHARSET @ 2026-08-13 @ mavis
-    # 3. 查原表属性, 拼 alter 子句 (8/13 拍板)
-    # 业务: rebuild 任务触发时查 information_schema.tables 拿原表 ENGINE/ROW_FORMAT/CHARSET/COLLATION,
-    #       拼 ENGINE+ROW_FORMAT+CHARSET 形式的 alter (3 层防护确保 5.7/8.0 都触发物理重写,
-    #       字符集不漂, COMMENT 业务描述保留).
+    ## CUSTOM-MODIFIED: v0.4.5 简化到 ENGINE=InnoDB (1 层) @ 2026-08-25 @ mavis
+    # 3. 查原表属性, 拼 alter 子句 (8/25 17:30 简化: 1 层 ENGINE=InnoDB)
+    # 业务: rebuild 任务触发时查 information_schema.tables 拿原表 ENGINE/CHARSET/ROW_FORMAT/COLLATION,
+    #       但 alter 只用 ENGINE=InnoDB (8/25 17:30 简化决定). 5.7 改 ENGINE 改自己走 COPY 触发整表重写,
+    #       8.0 走 INSTANT 跳过 (架构性限制, 接受). rebuilt_charset/row_format/collation 仍然存,
+    #       用来记录"原表属性", 排查用.
     table_info = _fetch_table_info_for_rebuild(instance, db, table)
     rebuild_alter = _build_rebuild_alter_clause(table_info)
 
@@ -842,7 +844,8 @@ def rebuild_start(request: HttpRequest) -> JsonResponse:
         created_by=request.user.username,
         max_load_threads_running=30,
         timeout_seconds=7200,
-        # 8/13 拍板: 5 字段记录"这次 rebuild 改了什么"
+        # 8/13 拍板: 5 字段记录"原表属性" + rebuild 用了什么 alter
+        # 8/25 简化: alter 只用 ENGINE=InnoDB, 但其他 4 字段仍存原表属性
         rebuilt_charset=table_info["charset"],
         rebuilt_row_format=table_info["row_format"],
         rebuilt_collation=table_info["collation"],
@@ -1296,33 +1299,45 @@ def _fetch_table_info_for_rebuild(instance, db_name: str, table_name: str) -> di
 
 
 def _build_rebuild_alter_clause(table_info: dict) -> str:
-    """rebuild 场景的 alter 子句 (8/13 拍板方案, 8/25 16:55 回滚方案 C 改字符集).
+    """rebuild 场景的 alter 子句 (8/25 17:30 简化版, 8/13 拍板 3 层防护 → 1 层).
 
-    设计 (3 层防护, 8/13 拍板, 字符集不漂):
-        ALTER TABLE t
-          ENGINE=InnoDB,                          # 原表就是 InnoDB, no-op (但 5.7 走 COPY 触发)
-          ROW_FORMAT=Dynamic,                     # 原表就是 Dynamic, 5.7 走 COPY 触发整表重写
-          DEFAULT CHARACTER SET=utf8mb4           # 原表就是 utf8mb4, no-op
-          COLLATE=utf8mb4_general_ci;             # 跟原表一致, 0 风险飘字段
+    ## 简化背景 (8/25 17:30 用户拍板)
+    8/13 拍板是 3 层防护 (ENGINE+ROW_FORMAT+CHARSET) 当时以为能让 8.0 触发物理重写.
+    8/25 16:50 调研发现 8.0.22 4 种 alter 全 no-op (8.0 INSTANT 优化):
+      - ENGINE 改自己 → INSTANT 跳过
+      - ROW_FORMAT 改自己 → INPLACE 跳过
+      - CHARSET/COLLATION 改自己 → INPLACE/INSTANT 跳过
+      - OPTIMIZE TABLE 默认 ALGORITHM=DEFAULT (INSTANT no-op)
+    也就是说 8.0.22 加 ROW_FORMAT/CHARSET 也不会真重写, 反而在 5.7 走 COPY 触发整表
+    重写时让 gh-ost alter 子句变复杂, 没价值.
 
-    5.7 vs 8.0 行为 (8/25 16:50 重新验证):
-        - 5.7: ENGINE 改 InnoDB 走 COPY 触发整表重写, DATA_FREE 归零
-        - 8.0.12+: ENGINE 改 InnoDB 改自己走 INSTANT 跳过, 不重写 (8/25 16:50 验)
-        - 8.0.22: CHARSET 改自己 / COLLATION 改自己 走 INPLACE 跳过, 不重写 (8/25 16:50 验)
-        - 8.0.22: 4 子句全 no-op → MySQL 走完全 INSTANT 跳过, gh-ost 看到 success 但不重写
+    ## 简化方案
+    直接 `ALTER TABLE t ENGINE=InnoDB;` (8/25 17:30 用户拍板):
+      - **5.7.44**: 改 ENGINE 改自己走 **COPY 触发整表物理重写**, ibd 真收缩 ✓
+      - **8.0.22**: 改 ENGINE 改自己走 INSTANT 跳过, **不重写** (架构性限制, 接受)
+      - **业务**: 110 prod (5.7) 真 work, DBA 推完后跑 rebuild 看到 ibd 真收缩
 
-    8/25 16:55 撤方案 C 原因: 改字符集 (utf8→utf8mb4) 对 8.0.22 也走 INSTANT 跳过,
-    反而永久改字符集, 得不偿失. 真实修法: 改碎片率算法 (用 INNODB_TABLESPACES.FILE_SIZE),
-    让 DBA 看到真实碎片率, 不被 8.0.22 虚高的 DATA_FREE 字段误导.
+    ## 0 风险点 (5.7 行为)
+    1. ENGINE 改 InnoDB (原表就是 InnoDB, 但 5.7 走 COPY 触发整表重写)
+    2. 不动 ROW_FORMAT (5.7 也会触发 COPY, 但用户拍板不需要)
+    3. 不动 CHARSET/COLLATION (0 风险飘字符集)
+    4. **不动 COMMENT** (业务描述保留, 8/13 决策 1 的核心)
 
-    不动 COMMENT 业务描述 (数据治理关键).
+    ## 9 月 5.7→8.0 升级后
+    8.0.22 + gh-ost rebuild 不能清 ibd 真实碎片 (INSTANT no-op), 需架构性修法:
+      - 方案 a: gh-ost cut-over 强制 ALGORITHM=COPY (改 gh-ost, 跨工具, 需立项)
+      - 方案 b: 不用 gh-ost, 直接 ALTER TABLE ... ENGINE=InnoDB, ALGORITHM=COPY (锁表)
+      - 方案 c: 5.7 继续用, 8.0 走 gh-ost + DBA 手动验证 (现状)
+    不在 8/27 推 110 范围, 9 月升级前再拍.
+
+    ## 关联
+    - 8/13 拍板 3 决策: docs/changelogs/2026-08-13_v0405-rebuilt-fields.md
+    - 8/25 16:55 撤方案 C 改字符集: docs/changelogs/2026-08-25_v0405-fragmentation-algorithm-fix.md
+    - 8/25 17:30 简化到 1 层防护: docs/changelogs/2026-08-25_v0405-rebuild-8p0-instant-caveat.md
+    - 推 110 主手册: docs/runbooks/2026-08-27_push-v030-execution-manual.md §1.4
     """
-    return (
-        f"ENGINE={table_info['engine']}, "
-        f"ROW_FORMAT={table_info['row_format']}, "
-        f"DEFAULT CHARACTER SET={table_info['charset']} "
-        f"COLLATE={table_info['collation']}"
-    )
+    # 8/25 17:30 简化: 只返 ENGINE=InnoDB, 不带 ROW_FORMAT/CHARSET/COLLATION
+    return f"ENGINE={table_info['engine']}"
 
 
 class TableNotExistForRebuildError(Exception):

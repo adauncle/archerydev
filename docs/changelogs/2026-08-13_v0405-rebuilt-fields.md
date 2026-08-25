@@ -158,3 +158,60 @@ WHERE table_schema='archery_dev' AND table_name='accesscard_black_detail';
 
 - **决策 3**: 列表页显示 "ALTER 子句" 列 (DBA 视觉化)
   - 决策人: 阿达叔叔 (2026-08-13 09:54)
+
+## 8/25 17:30 简化 (用户拍板方案 A)
+
+8/13 拍板时以为 3 层防护 (ENGINE+ROW_FORMAT+CHARSET) 能让 8.0 也触发物理重写。
+8/25 16:50 调研发现 8.0.22 4 种 alter 全 no-op (8.0 INSTANT 优化):
+- 8.0.12+ 改 ENGINE 改自己走 INSTANT 跳过
+- 8.0.16+ 改 ROW_FORMAT 改自己走 INPLACE 跳过 (metadata-only)
+- 8.0.22 改 CHARSET/COLLATION 改自己也走 INPLACE/INSTANT 跳过
+- 8.0.22 OPTIMIZE TABLE 默认 ALGORITHM=DEFAULT (INSTANT no-op)
+
+也就是说 8.0.22 加 ROW_FORMAT/CHARSET 也不会真重写,反而在 5.7 走 COPY 触发整表
+重写时让 gh-ost alter 子句变复杂,没价值。
+
+### 8/25 17:30 用户拍板 (11 字回复)
+
+> "碎片回收命令明确下,只需要 alter table xx engine=innodb;"
+
+直接简化到 `ALTER TABLE t ENGINE=InnoDB;`:
+- **5.7.44**: 改 ENGINE 改自己走 **COPY 触发整表物理重写**, ibd 真收缩 ✓
+- **8.0.22**: 改 ENGINE 改自己走 INSTANT 跳过, **不重写** (架构性限制, 接受)
+- **业务**: 110 prod (5.7) 真 work, DBA 推完后跑 rebuild 看到 ibd 真收缩
+- **8/27 推 110 范围**: 推 110 后, 在 110 prod 跑一个真 rebuild 验证
+
+### 8/25 简化影响
+
+1. **`_build_rebuild_alter_clause` 简化**:
+   ```python
+   # 8/13 3 层防护
+   return (
+       f"ENGINE={table_info['engine']}, "
+       f"ROW_FORMAT={table_info['row_format']}, "
+       f"DEFAULT CHARACTER SET={table_info['charset']} "
+       f"COLLATE={table_info['collation']}"
+   )
+   # 8/25 1 层简化
+   return f"ENGINE={table_info['engine']}"
+   ```
+2. **`rebuilt_charset/row_format/collation` 字段保留**: 仍存"原表属性"供排查用
+3. **`rebuilt_alter_full` 字段保留**: 仍存"实际用的 alter" (现在就是 `ENGINE=InnoDB`)
+4. **5 字段 zero risk**: 推 110 migration 不变 (0004 已加 5 字段)
+5. **不影响 ghost 任务**: ghost 任务 rebuilt_* 字段都是 NULL
+
+### 8/25 134 dev 真演练验证
+
+task #103 (accesscard_black_detail):
+- `rebuilt_alter_full = [ENGINE=InnoDB]` ✓
+- `rebuilt_charset = utf8mb4, rebuilt_row_format = Dynamic, rebuilt_collation = utf8mb4_bin`
+- gh-ost log: "Table found. Engine=InnoDB" + "Ghost table altered" + "Done migrating"
+- status: success (18s, 18:01:12 → 18:01:28)
+- 表结构: ENGINE=InnoDB, ROW_FORMAT=Dynamic, TABLE_COLLATION=utf8mb4_bin (跟 rebuild 前一致, 不漂)
+- 8.0.22 ibd 仍 144MB (预期, INSTANT no-op, 8.0 架构限制)
+
+### 关联 changelog
+
+- 8/25 16:55 撤方案 C 改字符集: `docs/changelogs/2026-08-25_v0405-fragmentation-algorithm-fix.md`
+- 8/25 17:30 简化到 1 层防护: `docs/changelogs/2026-08-25_v0405-rebuild-8p0-instant-caveat.md`
+- 推 110 主手册: `docs/runbooks/2026-08-27_push-v030-execution-manual.md` §1.4

@@ -105,38 +105,48 @@ def build_ghost_command(task, instance=None, rebuild_mode: bool = False) -> List
 ## CUSTOM-MODIFIED: v0.4.5-alpha 新增 rebuild 场景空 alter 生成 @ 2026-08-06 @ mavis
 ## CUSTOM-MODIFIED: v0.4.5-alpha 修 134 dev 演练 bug：去掉 ALTER TABLE 前缀 @ 2026-08-10 @ mavis
 ## CUSTOM-MODIFIED: v0.4.5 拍板改 ENGINE+ROW_FORMAT+CHARSET @ 2026-08-13 @ mavis
+## CUSTOM-MODIFIED: v0.4.5 简化到 ENGINE=InnoDB (1 层) @ 2026-08-25 @ mavis
 def _make_rebuild_alter(task) -> str:
-    """rebuild 场景的 alter 子句 (8/13 拍板方案, 替换原 COMMENT 触发).
+    """rebuild 场景的 alter 子句 (8/25 17:30 简化: 1 层 ENGINE=InnoDB).
 
-    ## 8/13 用户拍板背景
-    原方案 `ALTER TABLE t COMMENT 'archery-auto-rebuild-YYYYMMDD'` 会覆盖表 COMMENT
-    业务描述, 数据治理出大问题. 8/13 用户明确指出后, 改用更稳的方案:
+    ## 简化背景 (8/25 17:30 用户拍板)
+    8/13 拍板是 3 层防护 (ENGINE+ROW_FORMAT+CHARSET) 当时以为能让 8.0 触发物理重写.
+    8/25 16:50 调研发现 8.0.22 4 种 alter 全 no-op (8.0 INSTANT 优化):
+      - ENGINE 改自己 → INSTANT 跳过
+      - ROW_FORMAT 改自己 → INPLACE 跳过
+      - CHARSET/COLLATION 改自己 → INPLACE/INSTANT 跳过
+      - OPTIMIZE TABLE 默认 ALGORITHM=DEFAULT (INSTANT no-op)
+    也就是说 8.0.22 加 ROW_FORMAT/CHARSET 也不会真重写, 反而在 5.7 走 COPY 触发整表
+    重写时让 gh-ost alter 子句变复杂, 没价值.
 
-        ALTER TABLE t
-          ENGINE=InnoDB,                          # 原表就是 InnoDB, no-op
-          ROW_FORMAT=Dynamic,                     # 原表就是 Dynamic, 但 5.7/8.0 都触发 rebuild
-          DEFAULT CHARACTER SET=utf8mb4           # 原表就是 utf8mb4, no-op
-          COLLATE=utf8mb4_general_ci;             # 跟原表一致, 0 风险飘字段
+    ## 简化方案
+    直接 `ALTER TABLE t ENGINE=InnoDB;` (8/25 17:30 用户拍板):
+      - **5.7.44**: 改 ENGINE 改自己走 **COPY 触发整表物理重写**, ibd 真收缩 ✓
+      - **8.0.22**: 改 ENGINE 改自己走 INSTANT 跳过, **不重写** (架构性限制, 接受)
+      - **业务**: 110 prod (5.7) 真 work, DBA 推完后跑 rebuild 看到 ibd 真收缩
 
-    ## 5.7/8.0 触发行为差异 (关键踩坑)
-    - MySQL 5.7: ALTER TABLE t ENGINE=InnoDB (原表就是 InnoDB) 强制走 COPY, 整表重写 ✓
-    - MySQL 8.0.12+: 单独 ENGINE 改 InnoDB 走 INSTANT, **跳过重写** (gh-ost 不干活) ✗
-    - 修法: 8.0 看到至少一个子句不是 INSTANT → 走 COPY/INPLACE 触发重写
-      实测 8.0.22 对 ROW_FORMAT 改自己的 COPY 触发 (INSTANT 优化对 ROW_FORMAT 不完整)
-    - 三层防护: ENGINE+ROW_FORMAT+CHARSET, 5.7/8.0 都触发物理重写, 字符集不漂
+    ## 5.7 vs 8.0 触发行为
+    - MySQL 5.7.44: ALTER TABLE t ENGINE=InnoDB (原表就是 InnoDB) 强制走 COPY, 整表重写 ✓
+    - MySQL 8.0.22: 改 ENGINE 改自己走 INSTANT, **跳过重写** (8.0 INSTANT 优化) ✗
+    - 8.0.22 走 INSTANT 跳过是 MySQL 自身优化, gh-ost 控制不了, 不在 v0.4.5 范围
 
     ## gh-ost --alter 参数规则
     gh-ost 期望 ``--alter`` 是**裸子句**, gh-ost 内部拼成
     ``ALTER TABLE <ghost_table> <alter_subclause>``.
     之前踩坑: 传完整 SQL `ALTER TABLE x COMMENT '...'` → gh-ost 拆掉后剩
     `x COMMENT '...'` → 拼到 ghost table → SQL syntax error 1064.
-    修复: 传裸子句, gh-ost 拼成 `ALTER TABLE _x_gho ENGINE=InnoDB, ...` → 正确.
+    修复: 传裸子句, gh-ost 拼成 `ALTER TABLE _x_gho ENGINE=InnoDB` → 正确.
 
     ## 数据来源
     rebuild_start 视图在写 task 之前查 information_schema.tables 拿原表属性,
     填到 task.rebuilt_charset / rebuilt_row_format / rebuilt_collation,
     拼出 rebuilt_alter_full 存到 task. 这里 _make_rebuild_alter 直接读
     task.rebuilt_alter_full, 不再查 schema (避免重复 IO + 保持 alter 决定的一致性).
+
+    ## 关联
+    - 8/13 拍板 3 决策: docs/changelogs/2026-08-13_v0405-rebuilt-fields.md
+    - 8/25 16:55 撤方案 C 改字符集: docs/changelogs/2026-08-25_v0405-fragmentation-algorithm-fix.md
+    - 8/25 17:30 简化到 1 层防护: docs/changelogs/2026-08-25_v0405-rebuild-8p0-instant-caveat.md
     """
     if not getattr(task, "rebuilt_alter_full", ""):
         # fallback: 8/13 之前的旧 task 还没填 rebuilt_alter_full, 用 COMMENT 兜底

@@ -100,11 +100,12 @@ bash /tmp/rollback_110prod_v030_20260827.sh
 | 3 份备份 | `scripts/deploy/pre_push_backup_110prod_20260827.sh` | 110 prod 内部 `bash /tmp/pre_push_backup_110prod_20260827.sh` | 代码 + schema + admin config (8/27 20:50 跑) |
 | 一键回滚 | `scripts/deploy/rollback_110prod_v030_20260827.sh` | 110 prod 内部 `bash /tmp/rollback_110prod_v030_20260827.sh` | 4 步: kill+恢复代码+恢复 schema+拉起老 master+SLA 5 分钟 |
 
-### 1.4 ⚠️ 5.7 vs 8.0 演练差异 + 8.0 INSTANT 架构性限制 (8/25 17:30 拍板方案 A)
+### 1.4 ⚠️ 5.7 vs 8.0 演练差异 + 8.0 INSTANT 架构性限制 (8/25 17:30 拍板方案 A, 8/25 17:50 简化 alter)
 
 > **关键背景** (8/25 16:50 调研): 134 dev (MySQL 8.0.22) 跑 gh-ost rebuild 看到 `status=success` 但 ibd 文件不收缩,
 > 8.0.22 + gh-ost **不能清 ibd 真实碎片**。**不是 bug, 是 MySQL 8.0 INSTANT 优化的架构性限制**。
 > 110 prod (MySQL 5.7.44) gh-ost rebuild **真 work**, 5.7 改 ENGINE 改自己走 COPY 触发整表物理重写。
+> 8/25 17:50 用户拍板: alter 子句简化到 1 层 `ENGINE=InnoDB` (3 层防护是冗余, 8.0.22 4 种 alter 全 no-op)。
 
 #### 1.4.1 现象 (134 dev 实测, 8/25 16:50-17:30)
 
@@ -139,7 +140,44 @@ bash /tmp/rollback_110prod_v030_20260827.sh
    - 方案 c: 5.7 继续用, 8.0 走 gh-ost + DBA 手动验证 (现状)
    - 推 110 后, 跟 DBA 单独约 9 月升级时间表
 
-#### 1.4.3 8.0.22 DATA_FREE 虚高问题 (8/25 16:55 顺手修, 已 commit `14e3007`)
+#### 1.4.3 8/25 17:50 用户拍板简化 alter 子句 (1 层 ENGINE=InnoDB)
+
+> "碎片回收命令明确下,只需要 alter table xx engine=innodb;"
+
+**简化历史**:
+- **8/13 拍板**: 3 层防护 `ENGINE+ROW_FORMAT+CHARSET` (当时以为能让 8.0 触发物理重写)
+- **8/25 16:50 调研**: 8.0.22 4 种 alter 全 no-op, 3 层防护对 8.0 是没用的 metadata change
+- **8/25 17:50 用户拍板**: 简化到 1 层 `ENGINE=InnoDB`
+
+**简化版 alter** (8/25 17:50 后代码):
+```python
+# 8/13 3 层防护
+return (
+    f"ENGINE={table_info['engine']}, "
+    f"ROW_FORMAT={table_info['row_format']}, "
+    f"DEFAULT CHARACTER SET={table_info['charset']} "
+    f"COLLATE={table_info['collation']}"
+)
+# 8/25 1 层简化
+return f"ENGINE={table_info['engine']}"
+```
+
+**5.7 / 8.0 行为**:
+- **5.7.44**: 改 ENGINE 改自己走 **COPY 触发整表物理重写**, ibd 真收缩 ✓
+- **8.0.22**: 改 ENGINE 改自己走 INSTANT 跳过, **不重写** (架构性限制, 接受)
+
+**8/25 18:01 134 dev 真演练验证** (task #103):
+- `rebuilt_alter_full = [ENGINE=InnoDB]` ✓
+- gh-ost log: "Table found. Engine=InnoDB" + "Ghost table altered" + "Done migrating"
+- status: success (18s, 18:01:12 → 18:01:28)
+- 表结构: ENGINE=InnoDB, ROW_FORMAT=Dynamic, TABLE_COLLATION=utf8mb4_bin (不漂)
+- 8.0.22 ibd 仍 144MB (预期, INSTANT no-op)
+
+**字段保留** (rebuilt_charset/row_format/collation/alter_full/at):
+- 仍存"原表属性" + "实际用的 alter" (现在就是 `ENGINE=InnoDB`)
+- 5 字段 zero risk, 推 110 migration 不变
+
+#### 1.4.4 8.0.22 DATA_FREE 虚高问题 (8/25 16:55 顺手修, 已 commit `14e3007`)
 
 | 老算法 (DATA_FREE 虚高) | 新算法 (FILE_SIZE 真实) |
 |------------------------|------------------------|
@@ -151,7 +189,7 @@ bash /tmp/rollback_110prod_v030_20260827.sh
 **修法**: `rebuild_list` 端点 SQL 改 `LEFT JOIN INNODB_TABLESPACES` 拿 `FILE_SIZE`。
 **5.7 / 8.0 都用 FILE_SIZE 算法**, 不依赖 MySQL 版本。
 
-#### 1.4.4 推 110 / 8.0 升级 影响
+#### 1.4.5 推 110 / 8.0 升级 影响
 
 | 阶段 | MySQL 版本 | gh-ost rebuild 行为 | 验收标准 |
 |------|-----------|---------------------|----------|
@@ -159,14 +197,14 @@ bash /tmp/rollback_110prod_v030_20260827.sh
 | 8/26 134 dev 演练 | 134 dev 8.0.22 | **INSTANT no-op**, ibd 不收缩 | task success + log cut-over |
 | 9 月 5.7→8.0 升级 (计划) | 110 prod 8.0.22 | **INSTANT no-op** (待解决) | 待立项, 走 ALGORITHM=COPY |
 
-#### 1.4.5 为什么不动 gh-ost 代码
+#### 1.4.6 为什么不动 gh-ost 代码
 
 - gh-ost 1.1.x 走 **binlog 异步重写 + cut-over 切表**, 不依赖 MySQL 原生 DDL
 - 但 cut-over 阶段会改原表 metadata, 8.0 走 INSTANT 跳过导致 gh-ost 看不到要重写的子句而空转
 - 改 gh-ost 让 cut-over 强制 `ALGORITHM=COPY` 涉及 gh-ost 内部 binlog + 影子表切换逻辑, **跨工具范围**
 - 110 prod 5.7 不受影响, **8/27 推 110 业务可用**
 
-#### 1.4.6 推 110 后 DBA 必看 (110 prod 5.7 真 work 验证)
+#### 1.4.7 推 110 后 DBA 必看 (110 prod 5.7 真 work 验证)
 
 ```bash
 # 推 110 后, 在 110 prod 跑一个真 rebuild (任一碎片表), 验证 ibd 真收缩
@@ -180,8 +218,10 @@ bash /tmp/rollback_110prod_v030_20260827.sh
 
 **关联**:
 - changelog: `docs/changelogs/2026-08-25_v0405-fragmentation-algorithm-fix.md` (FILE_SIZE 算法修法)
-- changelog: `docs/changelogs/2026-08-25_v0405-rebuild-8p0-instant-caveat.md` (8.0 INSTANT 架构性限制 + 方案 A 拍板)
+- changelog: `docs/changelogs/2026-08-25_v0405-rebuild-8p0-instant-caveat.md` (8.0 INSTANT 架构性限制 + 8/25 17:50 简化 alter)
+- changelog: `docs/changelogs/2026-08-13_v0405-rebuilt-fields.md` (3 决策拍板 → 8/25 简化)
 - 演练脚本: `scripts/_archive/_drill_frag_algorithm.py` (新算法 16/16 PASS)
+- 演练脚本: `scripts/_archive/_rebuild_e2e_v3.py` (8/25 18:01 task #103 真演练)
 - 5 步必做: 步骤 9 (features.py patch 5.7) + 步骤 13 (验证 8.0/5.7 兼容性)
 
 ---
