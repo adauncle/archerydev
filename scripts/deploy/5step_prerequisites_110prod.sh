@@ -338,11 +338,14 @@ else
     warn "未识别的 MySQL 版本: ${mysql_version}"
 fi
 
-# === 步骤 10: gh-ost 4 perm 预创建 (8/13 commit 0004 走 migrate, 但推 110 后才跑) ===
+# === 步骤 10: gh-ost 6 perm 预创建 (8/13 commit 0004 4 perm + 8/26 commit 2 perm) ===
 echo ""
-echo "=== 步骤 10: gh-ost 4 perm 预创建 (8/13 5 步必做流程) ==="
-echo "目的: 8/13 commit 0004 创建 4 个 perm: view/upload/change/delete ddlghosttask"
-echo "      推 110 跑 migrate 后, 5 步必做 idempotent 检查这 4 个 perm 存在"
+echo "=== 步骤 10: gh-ost 6 perm 预创建 (8/13 + 8/26 拆 perm 5 步必做流程) ==="
+echo "目的: 8/13 commit 0004 创建 4 个 perm: view/add/change/delete ddlghosttask"
+echo "      8/26 commit 22:16 拆 perm 独立分配, 加 2 个新 perm:"
+echo "        - view_ddlghosttask_rebuild (Can view gh-ost 碎片回收)"
+echo "        - add_ddlghosttask_rebuild (Can add gh-ost 碎片回收)"
+echo "      推 110 跑 migrate 后, 5 步必做 idempotent 检查这 6 个 perm 存在"
 echo "      如果不存在, 手动创建 (DBA 必做)"
 echo ""
 
@@ -352,15 +355,19 @@ from django.contrib.contenttypes.models import ContentType
 from sql.extensions.ddl_gh_ost.models import DdlGhostTask
 ct = ContentType.objects.get_for_model(DdlGhostTask)
 for codename, name in [
+    # 8/13 4 perm (Django 自动 perm, codename 跟 add 一样需要 ContentType 锚定)
     ('view_ddlghosttask', 'Can view ddl ghost task'),
     ('add_ddlghosttask', 'Can add ddl ghost task'),
     ('change_ddlghosttask', 'Can change ddl ghost task'),
     ('delete_ddlghosttask', 'Can delete ddl ghost task'),
+    # 8/26 拆 perm 2 个 (碎片回收独立分配, models.py Meta.permissions 声明)
+    ('view_ddlghosttask_rebuild', 'Can view gh-ost 碎片回收'),
+    ('add_ddlghosttask_rebuild', 'Can add gh-ost 碎片回收'),
 ]:
     p, created = Permission.objects.get_or_create(codename=codename, content_type=ct, defaults={'name': name})
     print(f'  {codename}: {\"已存在\" if not created else \"已创建\"}')
-" 2>&1 | tail -10; then
-    ok "步骤 10 完成 (4 perm 已存在/已创建)"
+" 2>&1 | tail -15; then
+    ok "步骤 10 完成 (6 perm 已存在/已创建)"
 else
     warn "步骤 10 跳过 (migrate 还没跑, 推 110 后再跑)"
 fi

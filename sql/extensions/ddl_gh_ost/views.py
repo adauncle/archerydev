@@ -636,17 +636,17 @@ def rebuild_list(request: HttpRequest) -> JsonResponse:
         500: 连 MySQL 失败（dev 134 instance 历史密文需 .env 兜底）
 
     权限 (8/25 16:09 改 perm 守卫, 跟 rebuild_select_page 一致):
-        需 ``ddl_gh_ost.view_ddlghosttask`` perm, 没 perm 返 403 JSON
+        需 ``ddl_gh_ost.view_ddlghosttask_rebuild`` perm, 没 perm 返 403 JSON
         (不能 raise PermissionDenied, 否则前端 AJAX 拿到整页 HTML 源码, 8/13 教训)
     """
     # 8/25 改 perm 守卫
-    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask"):
+    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask_rebuild"):
         return JsonResponse(
             {
                 "ok": False,
                 "error": (
                     "您没有查看碎片回收表列表的权限, 请联系 DBA 在 admin 后台 "
-                    "/admin/auth/group/ 权限组中分配 'Can view gh-ost 任务'。"
+                    "/admin/auth/group/ 权限组中分配 'Can view gh-ost 碎片回收'。"
                 ),
             },
             status=403,
@@ -906,14 +906,14 @@ def rebuild_progress_page(request: HttpRequest, task_id: int) -> HttpResponse:
     模板路径:``sql/extensions/ddl_gh_ost/templates/ddl_gh_ost/progress_rebuild.html``
 
     权限 (8/25 16:09 改 perm 守卫, 跟 rebuild_select_page 一致):
-        需 ``ddl_gh_ost.view_ddlghosttask`` perm, 没 perm 返 403 HTML 错误页
+        需 ``ddl_gh_ost.view_ddlghosttask_rebuild`` perm, 没 perm 返 403 HTML 错误页
         (跟 admin_list 一致, render 端点用 raise PermissionDenied 即可)
     """
     # 8/25 加 perm 守卫
-    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask"):
+    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask_rebuild"):
         raise PermissionDenied(
             "您没有查看 gh-ost 任务进度的权限, 请联系 DBA 在 admin 后台 "
-            "/admin/auth/group/ 权限组中分配 'Can view gh-ost 任务'。"
+            "/admin/auth/group/ 权限组中分配 'Can view gh-ost 碎片回收'。"
         )
     task = get_object_or_404(DdlGhostTask, pk=task_id, task_type="rebuild")
     return render(request, "ddl_gh_ost/progress_rebuild.html", {
@@ -926,8 +926,8 @@ def rebuild_progress_page(request: HttpRequest, task_id: int) -> HttpResponse:
 def rebuild_status(request: HttpRequest, task_id: int) -> JsonResponse:
     """rebuild 任务进度查询（前端 polling 3s 一次，复用 ghost status 字段）。
 
-    权限 (8/25 16:09 加 perm 守卫, 跟 rebuild_list 一致):
-        需 ``ddl_gh_ost.view_ddlghosttask`` perm, 没 perm 返 403 JSON
+    权限 (8/25 16:09 加 perm 守卫, 8/26 22:16 拆 perm 独立分配):
+        需 ``ddl_gh_ost.view_ddlghosttask_rebuild`` perm, 没 perm 返 403 JSON
         (AJAX polling 端点必须返 JSON, 不能 raise, 8/13 教训)
 
     入参:
@@ -937,13 +937,13 @@ def rebuild_status(request: HttpRequest, task_id: int) -> JsonResponse:
         与 ghost status 端点相同字段（pct / rows / speed / eta / threads_running / message 等）
     """
     # 8/25 加 perm 守卫 (status 是 AJAX polling 端点, 返 JSON 不用 raise)
-    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask"):
+    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask_rebuild"):
         return JsonResponse(
             {
                 "ok": False,
                 "error": (
                     "您没有查看 gh-ost 任务状态的权限, 请联系 DBA 在 admin 后台 "
-                    "/admin/auth/group/ 权限组中分配 'Can view gh-ost 任务'。"
+                    "/admin/auth/group/ 权限组中分配 'Can view gh-ost 碎片回收'。"
                 ),
             },
             status=403,
@@ -1145,14 +1145,14 @@ def rebuild_select_page(request: HttpRequest) -> HttpResponse:
     关联 changelog: docs/changelogs/2026-08-25_v0405-rebuild-perm-guard.md
     """
     # 0. perm 守卫 (跟 admin_list 一致, 可在 admin 后台分配)
-    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask"):
+    if not request.user.has_perm("ddl_gh_ost.view_ddlghosttask_rebuild"):
         logger.warning(
-            "用户 %s 访问 /gh_ost/rebuild/select/ 被拒: 无 view_ddlghosttask 权限",
+            "用户 %s 访问 /gh_ost/rebuild/select/ 被拒: 无 view_ddlghosttask_rebuild 权限",
             request.user.username,
         )
         raise PermissionDenied(
             "您没有访问碎片回收页面的权限, 请联系 DBA 在 admin 后台 "
-            "/admin/auth/group/ 权限组中分配 'Can view gh-ost 任务'。"
+            "/admin/auth/group/ 权限组中分配 'Can view gh-ost 碎片回收'。"
         )
 
     # 1. 拿所有 instance 列表, 按 instance_name 排序

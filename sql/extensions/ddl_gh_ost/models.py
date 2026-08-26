@@ -256,6 +256,17 @@ class DdlGhostTask(models.Model):
                 name="uniq_task_type_workflow",
             ),
         ]
+        ## CUSTOM-MODIFIED: 8/26 碎片回收独立 perm 拆分 @ 2026-08-26 @ mavis
+        ## 业务: gh-ost 任务 (业务 RD 提单) 跟 碎片回收 (DBA 专用) 在业务上完全分离,
+        ##      业务 RD 不应该看到碎片回收页面 (不需要也用不到)
+        ## 8/26 之前: 业务 RD 拿 view_ddlghosttask 后, 父菜单"gh-ost 任务"下 2 个子菜单都显示
+        ## 8/26 修法: 加 2 个新 perm, 业务 RD 拿 view_ddlghosttask 但不拿 view_ddlghosttask_rebuild,
+        ##      只看"任务管理"菜单, 看不到"碎片回收"菜单
+        ## 关联 changelog: docs/changelogs/2026-08-26_gh-ost-rebuild-perm-split.md
+        permissions = (
+            ("view_ddlghosttask_rebuild", "Can view gh-ost 碎片回收"),
+            ("add_ddlghosttask_rebuild", "Can add gh-ost 碎片回收"),
+        )
 
     def __str__(self):
         return f"gh-ost #{self.id} for workflow={self.workflow_id} [{self.status}]"

@@ -133,11 +133,13 @@
                                 </li>
                                 {# CUSTOM-MODIFIED: 碎片回收 选表入口 (v0.4.5 方案 B) @ 2026-08-25 @ mavis #}
                                 {# 8/25 16:09 改 perm 守卫 (跟 task_list 菜单"gh-ost 任务"一致): #}
-                                {# 守卫: superuser 或有 ddl_gh_ost.view_ddlghosttask 权限 #}
+                                {# 8/26 22:16 拆 perm 独立分配: 改用 view_ddlghosttask_rebuild 守卫 #}
+                                {# 守卫: superuser 或有 ddl_gh_ost.view_ddlghosttask_rebuild 权限 #}
                                 {# 关联: docs/changelogs/2026-08-25_v0405-rebuild-perm-guard.md #}
+                                {#       + docs/changelogs/2026-08-26_gh-ost-rebuild-perm-split.md #}
                                 {# 业务: 业务前端 3 步流程, 不进 admin 后台 #}
-                                {# 分配: DBA 在 admin 后台 /admin/auth/group/ 勾选 "Can view gh-ost 任务" #}
-                                {% if user.is_superuser or perms.ddl_gh_ost.view_ddlghosttask %}
+                                {# 分配: DBA 在 admin 后台 /admin/auth/group/ 勾选 "Can view gh-ost 碎片回收" #}
+                                {% if user.is_superuser or perms.ddl_gh_ost.view_ddlghosttask_rebuild %}
                                     <li>
                                         <a href="/gh_ost/rebuild/select/"><i class="fa fa-magic fa-fw"></i> 碎片回收</a>
                                     </li>
