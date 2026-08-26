@@ -15,13 +15,15 @@
 |------|----|----|----------|
 | ~~8/26 周三 9:00-12:00~~ ⚠️ | mavis + DBA | 134 dev 完整演练 — **未跑** (见 §1.5 风险) | ~~见 §2~~
 | 8/26 周三 18:00 | DBA 值守群 | 群发"19:00 开始, 预计 30-40 分钟" | 模板 §6.1 |
+| 8/26 周三 18:30 | **DBA (mavis 远程协助)** | **手动重启 110 prod qcluster** (§1.5 风险 4, 跑了 21 天必重启) | `pkill -f qcluster` + `nohup ... qcluster` (~15s) |
 | 8/26 周三 18:50 | DBA | **3 份备份** (代码 + schema + admin config) | `bash /tmp/pre_push_backup_110prod_20260826.sh` |
 | 8/26 周三 19:00 | DBA | **5 步必做** 13 步 (log/sock/影子表/二进制/features/perm/...) | `bash /tmp/5step_prerequisites_110prod.sh` |
 | 8/26 周三 19:05 | DBA | **推代码** (rsync/scp 新代码到 /dbdata/archery_v114_c9236a0) | `rsync -avz ...` 见 §3.3 |
 | 8/26 周三 19:08 | DBA | **跑 migration** (建 4 个 ext_* 表 + gh-ost 4 perm) | `sudo -u archery venv/bin/python manage.py migrate` |
 | 8/26 周三 19:10 | DBA | **kill master** 102228 + **nohup 拉起新 master** | 见 §3.4 |
 | 8/26 周三 19:15-19:30 | DBA | **5+1 端点验证** (/login/ + /dbaprinciples/ + /admin/ + /gh_ost/admin_list/ + /sqlsubmit/ + /gh_ost/rebuild/select/) | `bash /tmp/verify_5endpoints_110prod.sh` |
-| 8/26 周三 20:30 | DBA | **业务群发** "推 110 完成, 新功能上线" | 模板 §6.2 |
+| 8/26 周三 19:30 | DBA | **业务群发** "推 110 完成, 新功能上线" | 模板 §6.2 |
+| 8/26 周三 19:30-20:00 | DBA | 值守 | 观察业务用户 |
 | 8/26 周三 20:00 | DBA | 值守结束, 交班 | (8/27 09:00 再看) |
 
 **失败判别** (4 选 1 即回滚):
@@ -416,7 +418,7 @@ WHERE t.TABLE_SCHEMA='hly_accesscard' AND t.TABLE_NAME='accesscard_black_detail'
 **关联命令模板** (推 110 后业务群发, 8.0.22 业务库架构性限制已知 + 5.7 元库验证通过后):
 
 ```
-[推 110 完成 @ 20:30 + Archery 5.7 元库 gh-ost 验证 @ 21:00]
+[推 110 完成 @ 19:30 + Archery 5.7 元库 gh-ost 验证 @ 20:00]
 gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 + 碎片回收 上线
 5+1 端点验证 200, 无 5xx
 推完后跑 Archery 5.7 元库 rebuild (workflow_log 真碎片表) 验证:
@@ -715,11 +717,11 @@ ls -ld /var/log/archery/gh_ost/
 # 期望: detail 页审批流 == 提交页审批流 (8/24 修法生效, 不走 ext_approval_flow 旧配)
 ```
 
-### 3.7 阶段 6: 业务群通知 (20:30)
+### 3.7 阶段 6: 业务群通知 (19:30)
 
 **群发业务群** (模板):
 ```
-[推 110 完成 @ 20:30] gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 上线
+[推 110 完成 @ 19:30] gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 上线
 5 端点验证 200, 无 5xx
 DBA 19:00-20:00 值守
 8/27 09:00 再看 1 日观察
@@ -825,11 +827,11 @@ bash /tmp/rollback_110prod_v030_20260826.sh
 如有紧急 DDL 需求, 请 19:00 前提交, 或 19:30 后提
 ```
 
-### 6.2 推 110 完成后通知 (8/26 20:30)
+### 6.2 推 110 完成后通知 (8/26 19:30)
 
 **业务群**:
 ```
-[推 110 完成 @ 20:30] gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 上线
+[推 110 完成 @ 19:30] gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 上线
 5 端点验证 200, 无 5xx
 DBA 19:00-20:00 值守
 8/27 09:00 再看 1 日观察
@@ -979,6 +981,7 @@ curl -sI --max-time 5 http://127.0.0.1:9123/login/
 | 时间 | DBA 动作 | 备注 |
 |------|----------|------|
 | 18:00 | DBA 群发"19:00 开始" | 提前 1 小时预警 |
+| 18:30 | **DBA 手动重启 110 prod qcluster** (§1.5 风险 4) | `pkill -f qcluster` + nohup 拉新 + Q worker 1s 内收任务验证 |
 | 18:45 | DBA 自查 checklist (§8) | 推前 9 项检查 |
 | 18:50 | DBA 跑 3 份备份 | ~10 分钟, 备份日志 /var/log/archery/pre_push_backup_20260826_1850.log |
 | 19:00 | DBA 跑 5 步必做 (13 步) | ~4 分钟, 含 1 次 DBA yes/no (步骤 4 凭据重加密) |
