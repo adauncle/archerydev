@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>字段 diff 检测演示 — DDL 提交前先看清会改什么 | Archery v0.3.0-beta 实战</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f7f5f0;
+  --card: #ffffff;
+  --border: #e9e3d6;
+  --line: #e9e3d6;
+  --line-soft: #f0ebe0;
+  --text: #14171e;
+  --muted: #7c7a72;
+  --secondary: #3a4256;
+  --primary: #2f6f5e;
+  --primary-soft: #e6f0ec;
+  --accent-warn: #c97b3f;
+  --accent-warn-soft: #f6ede3;
+  --accent-danger: #b06367;
+  --accent-danger-soft: #f3e5e6;
+  --accent-info: #3b6b8f;
+  --accent-info-soft: #e6eef5;
+  --code-bg: #2a2a2a;
+  --code-text: #e0e0e0;
+  --success: #2f6f5e;
+  --shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Outfit', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.55;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: "";
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(circle at 8% 5%, rgba(47,111,94,0.05), transparent 35%),
+              radial-gradient(circle at 95% 95%, rgba(201,123,63,0.04), transparent 40%);
+  pointer-events: none;
+  z-index: -1;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+.hero {
+  padding: 80px 0 56px;
+  border-bottom: 1px solid var(--line);
+}
+.hero-tag {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--primary);
+  background: var(--primary-soft);
+  padding: 4px 12px;
+  border-radius: 12px;
+  margin-bottom: 18px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 40px;
+  font-weight: normal;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin-bottom: 18px;
+}
+.hero-sub {
+  font-size: 17px;
+  color: var(--secondary);
+  max-width: 760px;
+  margin-bottom: 28px;
+}
+.hero-meta {
+  display: flex;
+  gap: 24px;
+  font-size: 13px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.hero-meta strong { color: var(--text); font-weight: 600; }
+
+section {
+  padding: 56px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+section:last-of-type { border-bottom: 0; }
+h2 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 28px;
+  font-weight: normal;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+h2 .num {
+  display: inline-flex;
+  width: 36px; height: 36px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 10px;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+}
+h3 {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 32px 0 14px;
+}
+h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+  margin: 22px 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+p {
+  color: var(--secondary);
+  margin-bottom: 12px;
+  font-size: 14.5px;
+}
+ul, ol {
+  padding-left: 22px;
+  margin-bottom: 12px;
+  color: var(--secondary);
+}
+li { margin-bottom: 6px; font-size: 14.5px; }
+strong { color: var(--text); font-weight: 600; }
+code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px 28px;
+  margin: 18px 0;
+  box-shadow: var(--shadow);
+}
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+.card-grid .card { margin: 0; }
+.card h4 { margin-top: 0; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 13.5px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+th, td {
+  text-align: left;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+th {
+  background: #faf7f0;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+tr:last-child td { border-bottom: 0; }
+tr:hover td { background: #fdfbf6; }
+
+pre {
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: 16px 18px;
+  border-radius: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+  overflow-x: auto;
+  margin: 12px 0 18px;
+}
+pre code { background: transparent; color: var(--code-text); padding: 0; }
+.kw { color: #c586c0; }
+.str { color: #ce9178; }
+.com { color: #6a9955; font-style: italic; }
+.fn { color: #dcdcaa; }
+.num { color: #b5cea8; }
+
+.mockup {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0;
+  margin: 18px 0;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.mockup-browser {
+  background: #f0ebe0;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.mockup-browser .dot {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: #d5cfc1;
+}
+.mockup-browser .dot.red { background: #e07a5f; }
+.mockup-browser .dot.yellow { background: #e5c07b; }
+.mockup-browser .dot.green { background: #81b29a; }
+.mockup-browser .url {
+  flex: 1;
+  background: var(--card);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 12px;
+}
+.mockup-body { padding: 0; }
+.mock-nav {
+  background: #1f2937;
+  color: #d1d5db;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.mock-nav .brand {
+  color: #fff;
+  font-weight: 700;
+  margin-right: 24px;
+}
+.mock-nav .nav-item {
+  margin-right: 18px;
+  color: #9ca3af;
+}
+.mock-nav .nav-item.active { color: #fff; }
+.mock-content { padding: 22px 28px; }
+.mock-breadcrumb {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.mock-page-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+.mock-card {
+  background: #fafaf7;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+}
+.mock-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.mock-row:last-child { border-bottom: 0; }
+.mock-label { color: var(--muted); }
+.mock-value { color: var(--text); font-weight: 500; }
+.mock-btn {
+  display: inline-block;
+  padding: 7px 16px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+}
+.mock-btn.warn { background: var(--accent-warn); }
+.mock-btn.danger { background: var(--accent-danger); }
+.mock-btn.outline {
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+.mock-btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.mock-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+.mock-tag.warn { background: var(--accent-warn-soft); color: var(--accent-warn); }
+.mock-tag.danger { background: var(--accent-danger-soft); color: var(--accent-danger); }
+.mock-tag.success { background: var(--primary-soft); color: var(--primary); }
+.mock-tag.info { background: var(--accent-info-soft); color: var(--accent-info); }
+
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 12px 0;
+}
+.diff-table th {
+  background: #faf7f0;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 9px 12px;
+}
+.diff-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+.diff-old {
+  background: var(--accent-danger-soft);
+  text-decoration: line-through;
+  color: var(--accent-danger);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+}
+.diff-new {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.diff-same {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.risk-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+  align-items: center;
+}
+.risk-row:last-child { border-bottom: 0; }
+.risk-icon {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+  color: #fff;
+}
+.risk-icon.high { background: var(--accent-danger); }
+.risk-icon.med { background: var(--accent-warn); }
+.risk-icon.low { background: var(--primary); }
+.risk-icon.info { background: var(--accent-info); }
+.risk-text { flex: 1; }
+.risk-text strong { color: var(--text); }
+.risk-text small { color: var(--muted); display: block; margin-top: 2px; font-size: 11.5px; }
+
+.warn {
+  background: var(--accent-warn-soft);
+  border-left: 3px solid var(--accent-warn);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin: 14px 0;
+  font-size: 13.5px;
+  color: var(--secondary);
+}
+.danger {
+  background: var(--accent-danger-soft);
+  border-left: 3px solid var(--accent-danger);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin: 14px 0;
+  font-size: 13.5px;
+  color: var(--secondary);
+}
+.info {
+  background: var(--accent-info-soft);
+  border-left: 3px solid var(--accent-info);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin: 14px 0;
+  font-size: 13.5px;
+  color: var(--secondary);
+}
+.success {
+  background: var(--primary-soft);
+  border-left: 3px solid var(--primary);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin: 14px 0;
+  font-size: 13.5px;
+  color: var(--secondary);
+}
+
+.side-by-side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin: 18px 0;
+}
+.compare-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: var(--shadow);
+}
+.compare-card.bad { border-left: 3px solid var(--accent-danger); }
+.compare-card.good { border-left: 3px solid var(--primary); }
+.compare-card h4 { margin-top: 0; color: var(--text); }
+.compare-card.bad h4 { color: var(--accent-danger); }
+.compare-card.good h4 { color: var(--primary); }
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+.step {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 20px;
+  position: relative;
+  box-shadow: var(--shadow);
+}
+.step-num {
+  position: absolute;
+  top: -10px;
+  left: 16px;
+  background: var(--primary);
+  color: #fff;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.step h4 { margin: 8px 0 8px; color: var(--text); text-transform: none; font-size: 15px; }
+
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+.metric {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 22px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.metric-num {
+  font-family: 'DM Serif Display', serif;
+  font-size: 36px;
+  color: var(--primary);
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+.metric-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 768px) {
+  .side-by-side { grid-template-columns: 1fr; }
+  h1 { font-size: 30px; }
+  h2 { font-size: 24px; }
+  .hero { padding: 48px 0 32px; }
+  section { padding: 36px 0; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- HERO -->
+<div class="hero">
+  <span class="hero-tag">字段 diff 检测</span>
+  <h1>DDL 提交前<br>先看清会改什么</h1>
+  <p class="hero-sub">
+    Archery v0.3.0-beta 集成 8 维字段 diff 检测 + 11 条风险规则。业务 RD 提交 ALTER TABLE 时,
+    系统自动比对目标表当前结构,逐维度列出"什么会变",高风险时弹窗 DBA 兜底确认。
+  </p>
+  <div class="hero-meta">
+    <span><strong>演练日期</strong> 2026-08-13 / 8/24</span>
+    <span><strong>实战</strong> 134 dev (MySQL 8.0.22)</span>
+    <span><strong>推 110 日期</strong> 2026-08-27</span>
+    <span><strong>设计稿</strong> column-diff-demo.html</span>
+  </div>
+</div>
+
+<!-- 1. 痛点 -->
+<section>
+  <h2><span class="num">1</span> 业务 RD 提交 DDL 的痛点</h2>
+
+  <div class="side-by-side">
+    <div class="compare-card bad">
+      <h4>❌ 痛点 1:DDL 提交后才"惊吓发现"副作用</h4>
+      <p>业务 RD 写 DDL 时,只看自己改的那一列,不知道其他列/索引/默认值会怎样变。</p>
+      <ul>
+        <li><code>VARCHAR(256) → VARCHAR(128)</code>:已有数据被截断,但 RD 不知道</li>
+        <li><code>DEFAULT 'a' → DEFAULT NULL</code>:历史数据 NULL,应用层 NPE</li>
+        <li><code>CHARACTER SET utf8 → utf8mb4</code>:索引长度超 767 byte 限制,索引失效</li>
+        <li><code>DROP COLUMN</code>:应用层还在用这个字段,线上报错</li>
+      </ul>
+    </div>
+    <div class="compare-card bad">
+      <h4>❌ 痛点 2:回滚成本高</h4>
+      <p>DDL 走完了才发现问题,回滚要走完整 DDL reverse 流程。</p>
+      <ul>
+        <li>144MB 大表 DDL:走完 5-10 分钟,reverse 又是 5-10 分钟</li>
+        <li>字段 diff 不知道变了哪些维度,reverse 不一定 100% 还原</li>
+        <li>主从延迟期间 reverse:从库跟主库不一致,业务可能读到旧值</li>
+        <li>应用层已经按新 schema 跑了:回滚 schema 但应用层代码已发布</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="warn">
+    <strong>根因:</strong> 业务 RD 写 DDL 时是"局部视角",只想着"我要加/改什么",但忽略了"会动其他什么"。
+    没有工具在提交前做"全局 diff 提醒",上线后才发现。
+  </div>
+</section>
+
+<!-- 2. 解决方案 -->
+<section>
+  <h2><span class="num">2</span> 解决方案:8 维字段 diff + 11 风险规则</h2>
+
+  <p>Archery 在 SQL 检测结果页 + 工单详情页都集成了字段 diff 端点 <code>/gh_ost/column_diff/</code>:</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <h4>解析 ALTER TABLE</h4>
+      <p>从 SQL 文本里解析目标表名 + 第一条 ALTER,提取 column_definition。</p>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <h4>查 information_schema</h4>
+      <p>连目标 MySQL 查 <code>COLUMNS / STATISTICS / INDEXES</code> 拿原表结构。</p>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <h4>8 维 diff 对比</h4>
+      <p>逐维度对比新旧 schema:类型/长度/字符集/排序规则/默认值/可空性/注释/索引。</p>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <h4>11 风险规则</h4>
+      <p>基于 diff 结果跑 11 条风险检查,分高/中/低 3 档,高风险弹 DBA 兜底。</p>
+    </div>
+  </div>
+
+  <h3>8 维字段 diff 列表</h3>
+
+  <table>
+    <thead>
+      <tr><th>维度</th><th>说明</th><th>示例</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>1. 数据类型</strong></td>
+        <td>从一种类型变到另一种 (隐式转换风险)</td>
+        <td><code>bigint → varchar(32)</code> (类型转换 + 长度变化)</td>
+      </tr>
+      <tr>
+        <td><strong>2. 长度</strong></td>
+        <td>同类型但长度变 (数据截断风险)</td>
+        <td><code>varchar(256) → varchar(128)</code> (已有数据可能截断)</td>
+      </tr>
+      <tr>
+        <td><strong>3. 字符集</strong></td>
+        <td>字段字符集变化 (索引失效 + 隐式转换)</td>
+        <td><code>utf8 → utf8mb4</code> (索引长度翻倍)</td>
+      </tr>
+      <tr>
+        <td><strong>4. 排序规则</strong></td>
+        <td>collation 变化 (查询结果可能不同)</td>
+        <td><code>utf8mb4_general_ci → utf8mb4_bin</code> (大小写敏感)</td>
+      </tr>
+      <tr>
+        <td><strong>5. 可空性</strong></td>
+        <td>NULL / NOT NULL 变化 (应用层需要适配)</td>
+        <td><code>NULL → NOT NULL</code> (历史 NULL 数据会报错)</td>
+      </tr>
+      <tr>
+        <td><strong>6. 默认值</strong></td>
+        <td>DEFAULT 变化 (已有数据保持旧值,新数据走新值)</td>
+        <td><code>DEFAULT 'a' → DEFAULT NULL</code></td>
+      </tr>
+      <tr>
+        <td><strong>7. 注释</strong></td>
+        <td>字段 COMMENT 变化 (业务描述)</td>
+        <td><code>COMMENT '老' → COMMENT '新'</code></td>
+      </tr>
+      <tr>
+        <td><strong>8. 索引关联</strong></td>
+        <td>字段被索引覆盖时的副作用</td>
+        <td>改长度后索引 767 byte 限制触发</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>11 条风险规则</h3>
+
+  <div class="card">
+    <div class="risk-row">
+      <div class="risk-icon high">高</div>
+      <div class="risk-text">
+        <strong>1. 数据截断风险</strong>
+        <small>长度缩小 + 已有数据可能超过新长度 (VARCHAR(256)→VARCHAR(128))</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon high">高</div>
+      <div class="risk-text">
+        <strong>2. 类型转换风险</strong>
+        <small>大数据类型 → 小数据类型 (bigint→int, decimal(10,2)→decimal(5,2))</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon high">高</div>
+      <div class="risk-text">
+        <strong>3. NOT NULL 约束冲突</strong>
+        <small>NULL → NOT NULL 时历史 NULL 数据会导致 ALTER 失败</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon high">高</div>
+      <div class="risk-text">
+        <strong>4. 索引失效</strong>
+        <small>utf8→utf8mb4 字符集变化导致索引长度超 767 byte 限制 (单列最大索引 3072 byte)</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon med">中</div>
+      <div class="risk-text">
+        <strong>5. 默认值变化</strong>
+        <small>新 DDL 的 DEFAULT 跟历史数据不一致,可能业务逻辑 break</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon med">中</div>
+      <div class="risk-text">
+        <strong>6. 排序规则变化</strong>
+        <small>collation 变化导致查询结果顺序变化 (utf8mb4_general_ci → utf8mb4_bin 大小写敏感)</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon med">中</div>
+      <div class="risk-text">
+        <strong>7. 注释业务描述丢失</strong>
+        <small>字段 COMMENT 被覆盖,数据治理文档需要同步更新</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon low">低</div>
+      <div class="risk-text">
+        <strong>8. 字段重命名</strong>
+        <small>CHANGE COLUMN 改字段名,应用层查询可能 404</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon low">低</div>
+      <div class="risk-text">
+        <strong>9. 大表 DDL (无 gh-ost)</strong>
+        <small>表大小 &gt; 16MB 但 DDL 没勾 gh-ost,锁表时间可能 5-10 分钟</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon info">提示</div>
+      <div class="risk-text">
+        <strong>10. 字符集隐式转换</strong>
+        <small>字段没显式字符集 → 走表默认,SHOW 时显式打出(可能让 RD 误以为 diff 变了)</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon info">提示</div>
+      <div class="risk-text">
+        <strong>11. 隐式 DEFAULT 行为</strong>
+        <small>MySQL 8.0.13+ 隐式 DEFAULT (TIMESTAMP/DATETIME 等),DDL 不写 DEFAULT 也会有</small>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. 实操演示 -->
+<section>
+  <h2><span class="num">3</span> 实操演示:业务 RD 一条 DDL 的完整 diff</h2>
+
+  <h3>场景:业务 RD 想把字段从 VARCHAR(256) 缩到 VARCHAR(128)</h3>
+  <p>DDL 内容:</p>
+
+  <pre><code><span class="kw">ALTER</span> <span class="kw">TABLE</span> accesscard_black_detail
+  <span class="kw">MODIFY</span> <span class="kw">COLUMN</span> do_black_reson <span class="kw">VARCHAR</span>(<span class="num">128</span>) <span class="kw">NOT</span> <span class="kw">NULL</span> <span class="kw">DEFAULT</span> <span class="str">'原因待补'</span> <span class="kw">COMMENT</span> <span class="str">'下黑原因'</span>;</code></pre>
+
+  <!-- 步骤 1: 提交 DDL -->
+  <h3>步骤 1:业务 RD 提交 DDL</h3>
+  <p>跟平时一样在 SQL 提交页填 instance + db + SQL,点"保存"。Archery 自动调 <code>goInception</code> 审核通过。</p>
+
+  <!-- 步骤 2: 字段 diff modal -->
+  <h3>步骤 2:字段 diff modal 弹出(8 维对比)</h3>
+  <p>进入工单详情页,点 "字段 diff" 按钮,弹窗展示 8 维对比表:</p>
+
+  <div class="mockup">
+    <div class="mockup-browser">
+      <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+      <span class="url">172.20.2.134:9003/detail/85/ (字段 diff modal)</span>
+    </div>
+    <div class="mockup-body">
+      <div class="mock-nav">
+        <span class="brand">Archery</span>
+        <span class="nav-item">SQL 提交</span>
+        <span class="nav-item">工单查询</span>
+        <span class="nav-item active">工单详情</span>
+        <span class="nav-item">DBA 工具</span>
+      </div>
+      <div class="mock-content">
+        <div class="mock-breadcrumb">SQL 上线 &nbsp; ›&nbsp; 工单详情 &nbsp; ›&nbsp; <strong>test4 字段长度变更</strong></div>
+        <h2 class="mock-page-title">字段 diff 检测 · test4 字段</h2>
+        <p style="color: var(--muted); font-size: 13px; margin-bottom: 18px;">
+          <span class="mock-tag warn">中等风险</span>&nbsp;
+          3 项维度变化 / 11 项风险规则命中 2 项 / 关联 1 个索引
+        </p>
+
+        <table class="diff-table">
+          <thead>
+            <tr>
+              <th style="width: 18%;">维度</th>
+              <th style="width: 38%;">原表 (DDL 前)</th>
+              <th style="width: 38%;">新表 (DDL 后)</th>
+              <th style="width: 6%;">状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>1. 数据类型</strong></td>
+              <td class="diff-same">varchar(255)</td>
+              <td class="diff-same">varchar(128)</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><strong>2. 长度</strong></td>
+              <td class="diff-old">varchar(255)  ← 256 字符上限</td>
+              <td class="diff-new">varchar(128)  ← 128 字符上限</td>
+              <td><span class="mock-tag warn">改</span></td>
+            </tr>
+            <tr>
+              <td><strong>3. 字符集</strong></td>
+              <td class="diff-same">utf8mb4 (从表默认继承)</td>
+              <td class="diff-same">utf8mb4 (从表默认继承)</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><strong>4. 排序规则</strong></td>
+              <td class="diff-same">utf8mb4_bin (从表默认)</td>
+              <td class="diff-same">utf8mb4_bin (从表默认)</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><strong>5. 可空性</strong></td>
+              <td class="diff-same">YES (允许 NULL)</td>
+              <td class="diff-same">NO (NOT NULL)</td>
+              <td><span class="mock-tag warn">改</span></td>
+            </tr>
+            <tr>
+              <td><strong>6. 默认值</strong></td>
+              <td class="diff-same">NULL</td>
+              <td class="diff-new">'原因待补'</td>
+              <td><span class="mock-tag warn">改</span></td>
+            </tr>
+            <tr>
+              <td><strong>7. 注释</strong></td>
+              <td class="diff-same">'下黑原因'</td>
+              <td class="diff-same">'下黑原因'</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><strong>8. 索引关联</strong></td>
+              <td>idx_do_black (单列索引) 长度 = 4+255×4 = 1024 byte ✓</td>
+              <td>idx_do_black (单列索引) 长度 = 4+128×4 = 516 byte ✓</td>
+              <td>—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 步骤 3: 风险规则 -->
+  <h3>步骤 3:11 条风险规则检查结果</h3>
+  <p>系统自动跑 11 条风险规则,基于上面 8 维 diff 结果:</p>
+
+  <div class="card">
+    <div class="risk-row">
+      <div class="risk-icon high">高</div>
+      <div class="risk-text">
+        <strong>1. 数据截断风险</strong>
+        <small>✗ 命中 — VARCHAR(255) → VARCHAR(128), 已有数据 <code>do_black_reson</code> 字段值如果超过 128 字符会被截断<br>
+        <strong>建议:</strong> 先跑 <code>SELECT MAX(LENGTH(do_black_reson)) FROM accesscard_black_detail</code> 看实际最大长度</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon med">中</div>
+      <div class="risk-text">
+        <strong>5. 默认值变化</strong>
+        <small>✗ 命中 — NULL → '原因待补', 已有数据保持 NULL, 新数据走 '原因待补'<br>
+        <strong>影响:</strong> 业务逻辑可能有"do_black_reson IS NULL"判断,现在不一致</small>
+      </div>
+    </div>
+    <div class="risk-row">
+      <div class="risk-icon low">低</div>
+      <div class="risk-text">
+        <strong>9. 大表 DDL (无 gh-ost)</strong>
+        <small>✗ 未命中 — 表大小 144MB 但 DDL 没勾 gh-ost,锁表预计 5-10 分钟<br>
+        <strong>建议:</strong> 勾上 gh-ost,业务 0 中断</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- 步骤 4: DBA 兜底 -->
+  <h3>步骤 4:DBA 兜底弹窗(高风险时)</h3>
+  <p>命中"高风险"时,业务 RD 提交后 DBA 审批前会弹"兜底确认":</p>
+
+  <div class="mockup">
+    <div class="mockup-browser">
+      <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+      <span class="url">172.20.2.134:9003/admin/sql_workflow/85/change/ (DBA 审批页)</span>
+    </div>
+    <div class="mockup-body">
+      <div class="mock-content" style="background: var(--accent-danger-soft);">
+        <h3 style="color: var(--accent-danger); margin-top: 0;">
+          ⚠️ DBA 兜底:字段 diff 高风险提醒
+        </h3>
+        <p style="color: var(--secondary); margin-bottom: 14px;">
+          工单 <code>#85</code> 的 DDL 检测到 <strong>1 项高风险</strong> 字段 diff,需要 DBA 人工确认:
+        </p>
+
+        <div class="card" style="background: var(--card);">
+          <h4 style="margin-top: 0; color: var(--accent-danger);">⚠ 数据截断风险</h4>
+          <p><code>do_black_reson VARCHAR(255) → VARCHAR(128)</code></p>
+          <p style="font-size: 12.5px;">
+            已有 241558 行数据,如果 <code>do_black_reson</code> 字段值超过 128 字符会被截断。<br>
+            <strong>建议操作</strong>: 让业务 RD 先跑 <code>SELECT COUNT(*), MAX(LENGTH(do_black_reson)) FROM accesscard_black_detail</code> 确认无数据风险。
+          </p>
+        </div>
+
+        <div style="margin-top: 18px; display: flex; gap: 10px;">
+          <button class="mock-btn">✓ 我已经确认风险,审批通过</button>
+          <button class="mock-btn warn">↩ 驳回,让 RD 重新评估</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. 实战数据 -->
+<section>
+  <h2><span class="num">4</span> 实战数据(8/13 + 8/24)</h2>
+
+  <h3>核心战绩</h3>
+
+  <div class="metric-strip">
+    <div class="metric">
+      <div class="metric-num">8</div>
+      <div class="metric-label">字段 diff 维度</div>
+    </div>
+    <div class="metric">
+      <div class="metric-num">11</div>
+      <div class="metric-label">风险规则</div>
+    </div>
+    <div class="metric">
+      <div class="metric-num">3</div>
+      <div class="metric-label">风险等级</div>
+    </div>
+    <div class="metric">
+      <div class="metric-num">5+</div>
+      <div class="metric-label">实战演练</div>
+    </div>
+  </div>
+
+  <h3>演练案例(8/13 拍板 + 8/24 修法)</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>案例</th>
+        <th>DDL</th>
+        <th>diff 命中</th>
+        <th>风险</th>
+        <th>处理</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>test4 长度缩</td>
+        <td>MODIFY test4 VARCHAR(128)</td>
+        <td>维度 2 长度缩 256→128</td>
+        <td><span class="mock-tag warn">中</span> 截断风险</td>
+        <td>走 gh-ost 8s 完成 (8/26 实战)</td>
+      </tr>
+      <tr>
+        <td>do_black_reson</td>
+        <td>MODIFY do_black_reson VARCHAR(128) NOT NULL DEFAULT '原因待补'</td>
+        <td>维度 2+5+6 长度缩+NOT NULL+DEFAULT</td>
+        <td><span class="mock-tag danger">高</span> 截断 + 约束冲突</td>
+        <td>DBA 兜底确认后才审批</td>
+      </tr>
+      <tr>
+        <td>字符集 diff (8/26 实测)</td>
+        <td>MODIFY test4 VARCHAR(128) (DDL 不写 CHARSET)</td>
+        <td>无 diff (隐式 utf8mb4_bin)</td>
+        <td><span class="mock-tag info">提示</span> 显式/隐式提示</td>
+        <td>SHOW 输出显式但实际值不变</td>
+      </tr>
+      <tr>
+        <td>字段重命名 (8/13 演练)</td>
+        <td>CHANGE COLUMN old_name new_name</td>
+        <td>维度 8 字段名变</td>
+        <td><span class="mock-tag warn">中</span> 应用层查询可能 404</td>
+        <td>DBA 确认应用层已发布后再批</td>
+      </tr>
+      <tr>
+        <td>大表 MODIFY (8/13 19:08)</td>
+        <td>MODIFY bigint → varchar on 144MB</td>
+        <td>维度 1+2 类型缩 + 长度缩</td>
+        <td><span class="mock-tag danger">高</span> 触发 goInception panic</td>
+        <td>升 goInception 1.x latest</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 5. 集成场景 -->
+<section>
+  <h2><span class="num">5</span> 集成场景(在哪看得到)</h2>
+
+  <h3>2 个入口</h3>
+  <div class="side-by-side">
+    <div class="compare-card good">
+      <h4>入口 1:SQL 检测结果页</h4>
+      <p>业务 RD 提交 SQL 后,审核通过后,在 SQL 检测结果页直接显示 "字段 diff" 链接。</p>
+      <p>点击 → 调 <code>/gh_ost/column_diff/</code> 端点 → 展示 8 维 diff + 11 风险。</p>
+      <p style="font-size: 12.5px; color: var(--muted);">
+        URL: <code>/sqlsubmit/?sql_id=xxx</code> (审核通过后跳转)
+      </p>
+    </div>
+    <div class="compare-card good">
+      <h4>入口 2:工单详情页 modal</h4>
+      <p>DBA 在工单详情页审批时,点 "字段 diff" 按钮弹窗(8/24 修法,modal HTML 元素位置错修了)。</p>
+      <p>主要面向 DBA 兜底,显示 diff + 11 风险 + 高风险弹窗确认。</p>
+      <p style="font-size: 12.5px; color: var(--muted);">
+        URL: <code>/detail/&lt;workflow_id&gt;/</code> (DBA 审批)
+      </p>
+    </div>
+  </div>
+
+  <h3>与 gh-ost 联动(v0.3.0 整合亮点)</h3>
+  <p>字段 diff 检测 + gh-ost 是同一个 <code>sql/extensions/ddl_gh_ost/</code> app 下的功能,可以联动:</p>
+
+  <ul>
+    <li><strong>大表 + 高风险</strong>: 字段 diff 命中"大表 DDL"风险时,自动建议勾 gh-ost</li>
+    <li><strong>DBA 兜底对话</strong>: 高风险时弹"建议用 gh-ost,业务 0 中断"提示</li>
+    <li><strong>审批流联动</strong>: 8/24 修法后,字段 diff modal 跟 gh-ost 进度面板在同一页面可切换</li>
+  </ul>
+</section>
+
+<!-- 6. 架构 -->
+<section>
+  <h2><span class="num">6</span> 架构与代码</h2>
+
+  <h3>端点</h3>
+  <pre><code><span class="com"># /gh_ost/column_diff/ 字段 diff 端点</span>
+<span class="kw">@login_required</span>
+<span class="kw">@require_POST</span>
+<span class="kw">def</span> <span class="fn">column_diff</span>(request):
+    <span class="str">"""字段 diff 端点.</span>
+
+<span class="str">    URL: POST /gh_ost/column_diff/</span>
+<span class="str">    入参 (form data 或 JSON body):</span>
+<span class="str">        - instance_id: int (Instance.id)</span>
+<span class="str">        - db_name: str</span>
+<span class="str">        - sql_content: str (通常是一条 ALTER TABLE)</span>
+<span class="str">        - table_name: str (可选, 不传从 SQL 解析)</span>
+
+<span class="str">    返回: {</span>
+<span class="str">        'diff': [8 维],</span>
+<span class="str">        'risks': [11 条],</span>
+<span class="str">        'risk_level': 'high' / 'med' / 'low',</span>
+<span class="str">        'recommendation': '建议用 gh-ost' / '建议人工确认'</span>
+<span class="str">    }"""</span>
+    <span class="com"># ... (services/column_diff.py 实现 8 维对比 + 11 风险)</span></code></pre>
+
+  <h3>核心模块</h3>
+  <pre><code>sql/extensions/ddl_gh_ost/
+├── services/
+│   └── column_diff.py       <span class="com"># 8 维 diff + 11 风险规则 (核心 200 行)</span>
+├── views.py                  <span class="com"># column_diff 端点 (POST /gh_ost/column_diff/)</span>
+├── templates/
+│   ├── detail_modal.html     <span class="com"># 工单详情页字段 diff modal (8/24 修过位置)</span>
+│   └── sql_result.html       <span class="com"># SQL 检测结果页字段 diff 链接</span>
+└── urls.py                   <span class="com"># /gh_ost/column_diff/ 路由</span></code></pre>
+
+  <h3>8 维对比实现 (services/column_diff.py 简化版)</h3>
+  <pre><code><span class="kw">def</span> <span class="fn">compare_column</span>(old_col: <span class="kw">dict</span>, new_col: <span class="kw">dict</span>) -> <span class="kw">list</span>:
+    <span class="str">"""8 维字段对比, 返回 [{'dim': ..., 'old': ..., 'new': ..., 'changed': bool}, ...]"""</span>
+    diff = []
+    <span class="kw">for</span> dim, (old_val, new_val) <span class="kw">in</span> [
+        (<span class="str">'数据类型'</span>, (old_col[<span class="str">'data_type'</span>], new_col[<span class="str">'data_type'</span>])),
+        (<span class="str">'长度'</span>,    (old_col[<span class="str">'character_maximum_length'</span>], new_col[<span class="str">'character_maximum_length'</span>])),
+        (<span class="str">'字符集'</span>,  (old_col[<span class="str">'character_set_name'</span>], new_col[<span class="str">'character_set_name'</span>])),
+        (<span class="str">'排序规则'</span>, (old_col[<span class="str">'collation_name'</span>], new_col[<span class="str">'collation_name'</span>])),
+        (<span class="str">'可空性'</span>,  (old_col[<span class="str">'is_nullable'</span>], new_col[<span class="str">'is_nullable'</span>])),
+        (<span class="str">'默认值'</span>,  (old_col[<span class="str">'column_default'</span>], new_col[<span class="str">'column_default'</span>])),
+        (<span class="str">'注释'</span>,    (old_col[<span class="str">'column_comment'</span>], new_col[<span class="str">'column_comment'</span>])),
+        (<span class="str">'索引关联'</span>, (old_col[<span class="str">'indexed'</span>], new_col[<span class="str">'indexed'</span>])),
+    ]:
+        diff.append({
+            <span class="str">'dim'</span>: dim,
+            <span class="str">'old'</span>: old_val,
+            <span class="str">'new'</span>: new_val,
+            <span class="str">'changed'</span>: old_val != new_val,
+        })
+    <span class="kw">return</span> diff
+
+<span class="kw">def</span> <span class="fn">check_risks</span>(diff: <span class="kw">list</span>, old_col: <span class="kw">dict</span>, new_col: <span class="kw">dict</span>) -> <span class="kw">list</span>:
+    <span class="str">"""11 条风险规则检查"""</span>
+    risks = []
+    <span class="com"># 1. 数据截断</span>
+    <span class="kw">if</span> is_length_shrink(old_col, new_col):
+        risks.append({<span class="str">'level'</span>: <span class="str">'high'</span>, <span class="str">'rule'</span>: <span class="str">'数据截断风险'</span>, ...})
+    <span class="com"># 2. 类型转换</span>
+    <span class="kw">if</span> is_type_shrink(old_col, new_col):
+        risks.append({<span class="str">'level'</span>: <span class="str">'high'</span>, <span class="str">'rule'</span>: <span class="str">'类型转换风险'</span>, ...})
+    <span class="com"># ... 11 条规则</span>
+    <span class="kw">return</span> risks</code></pre>
+</section>
+
+<!-- 7. 8/24 修法 -->
+<section>
+  <h2><span class="num">7</span> 8/24 修法 + 异常处理</h2>
+
+  <h3>8/24 修过的字段 diff bug</h3>
+  <table>
+    <thead>
+      <tr><th>bug</th><th>症状</th><th>修法</th><th>commit</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>字段 diff modal 不显示</td>
+        <td>点击"字段 diff"链接,modal 不弹 (HTML 元素位置错)</td>
+        <td>前端 modal 元素挪到正确位置</td>
+        <td><code>76d48cc</code></td>
+      </tr>
+      <tr>
+        <td>前端字体太小</td>
+        <td>字段 diff 字号 11px 太小,业务 RD 看不清</td>
+        <td>改 11→13px / 12→14px / 13→15px 三档</td>
+        <td><code>9d66064</code></td>
+      </tr>
+      <tr>
+        <td>审批流 3 级不一致</td>
+        <td>提交页显示 2 级,详情页 modal 弹的字段 diff 显示 3 级</td>
+        <td>ConfigurableAuditor 走 Archery 上游 WorkflowAuditSetting</td>
+        <td><code>eaf9853</code></td>
+      </tr>
+      <tr>
+        <td>字段 diff 联动 gh-ost</td>
+        <td>大表 + 高风险时不会自动建议 gh-ost</td>
+        <td>字段 diff 端点加 risk_level='high' 时返回 'recommendation': '建议用 gh-ost'</td>
+        <td><code>cd683f9</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>异常处理</h3>
+  <table>
+    <thead>
+      <tr><th>异常</th><th>原因</th><th>应对</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>端点返 500</td>
+        <td>information_schema 查询失败 (连不上目标 MySQL)</td>
+        <td>看 gunicorn log + 端点入参 instance_id / db_name 是否正确</td>
+      </tr>
+      <tr>
+        <td>diff 8 维都显示 "?"</td>
+        <td>目标 MySQL 凭据走 .my.cnf 读不到</td>
+        <td>验证 .my.cnf 配置 + MySQL 8.0 vs 5.7 information_schema 字段名差异</td>
+      </tr>
+      <tr>
+        <td>高风险没弹兜底</td>
+        <td>前端 modal 没显示风险等级 tag</td>
+        <td>检查 column_diff 端点返回 risk_level 字段</td>
+      </tr>
+      <tr>
+        <td>字段重命名误报</td>
+        <td>CHANGE COLUMN 解析失败,跟原表对比报"字段丢失"</td>
+        <td>看 services/column_diff.py 解析逻辑,加 CHANGE COLUMN 特殊处理</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 8. 推 110 + 后续 -->
+<section>
+  <h2><span class="num">8</span> 8/27 推 110 + 后续 roadmap</h2>
+
+  <h3>8/27 推 110 范围</h3>
+  <p>字段 diff 检测 包含在 8/27 推 110 物料里:</p>
+  <ul>
+    <li><strong>代码</strong>: <code>sql/extensions/ddl_gh_ost/services/column_diff.py</code> (8 维 + 11 风险)</li>
+    <li><strong>前端</strong>: <code>sql/extensions/ddl_gh_ost/templates/</code> (modal + 链接)</li>
+    <li><strong>8/24 修法</strong>: 4 个 commit (76d48cc / 9d66064 / eaf9853 / cd683f9)</li>
+  </ul>
+
+  <h3>业务群发消息</h3>
+  <pre><code>[推 110 完成 @ 21:30]
+字段 diff 检测上线 (v0.3.0-beta)
+- SQL 检测结果页:审核通过后点"字段 diff"链接查看 8 维对比 + 11 风险
+- 工单详情页:点"字段 diff"按钮弹窗查看 (DBA 审批看)
+- 高风险时弹 DBA 兜底确认,避免上线后才发现
+
+5+1 端点验证 200, 无 5xx
+DBA 21:00-22:00 值守
+8/28 09:00 再看 1 日观察</code></pre>
+
+  <h3>后续 roadmap</h3>
+  <ul>
+    <li><strong>v0.3.1</strong>: 字段 diff 跟 gh-ost 深度联动 (大表+高风险 → 自动建议 gh-ost + 一键启用)</li>
+    <li><strong>v0.3.2</strong>: 字段 diff 增 2 维 (存储引擎 + 字符集校对规则)</li>
+    <li><strong>v0.4.0</strong>: 跨表字段 diff (DDL 涉及多表时,逐表对比)</li>
+    <li><strong>v0.5.0</strong>: 字段 diff 跟回滚方案联动 (高风险时自动生成 reverse SQL)</li>
+  </ul>
+</section>
+
+<!-- 9. 关联资料 -->
+<section>
+  <h2><span class="num">9</span> 关联资料</h2>
+  <ul>
+    <li><strong>设计稿</strong>: <code>docs/designs/2026-08-12_gh-ost-column-diff-mockup.html</code> (32KB 原型)</li>
+    <li><strong>代码</strong>: <code>sql/extensions/ddl_gh_ost/services/column_diff.py</code> (8 维 + 11 风险, 200 行)</li>
+    <li><strong>changelog</strong>:
+      <ul>
+        <li><code>2026-08-12_gh-ost-column-diff.md</code> (字段 diff 初版)</li>
+        <li><code>2026-08-24_column_diff_modal.md</code> (8/24 modal 修法)</li>
+        <li><code>2026-08-24_column_diff_font.md</code> (8/24 字号修法)</li>
+      </ul>
+    </li>
+    <li><strong>推 110 手册</strong>: <code>docs/runbooks/2026-08-27_push-v030-execution-manual.md</code></li>
+    <li><strong>gh-ost 演示</strong>: <code>docs/reports/2026-08-26_gh-ost-demo.html</code> (兄弟文档)</li>
+  </ul>
+</section>
+
+<div style="text-align:center; padding: 40px 0 60px; color: var(--muted); font-size: 13px;">
+  Archery v0.3.0-beta · 字段 diff 检测 · 134 dev 演练 8/13 + 8/24 · 8/27 推 110<br>
+  设计稿由 mavis 制作 · 写于 2026-08-26
+</div>
+
+</div>
+</body>
+</html>

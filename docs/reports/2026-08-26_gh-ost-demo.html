@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gh-ost 无锁 DDL 演示 — 大表变更不再锁表 | Archery v0.3.0-beta 实战</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f7f5f0;
+  --card: #ffffff;
+  --border: #e9e3d6;
+  --line: #e9e3d6;
+  --line-soft: #f0ebe0;
+  --text: #14171e;
+  --muted: #7c7a72;
+  --secondary: #3a4256;
+  --primary: #2f6f5e;
+  --primary-soft: #e6f0ec;
+  --accent-warn: #c97b3f;
+  --accent-warn-soft: #f6ede3;
+  --accent-danger: #b06367;
+  --accent-danger-soft: #f3e5e6;
+  --accent-info: #3b6b8f;
+  --accent-info-soft: #e6eef5;
+  --code-bg: #2a2a2a;
+  --code-text: #e0e0e0;
+  --success: #2f6f5e;
+  --shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Outfit', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.55;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: "";
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(circle at 8% 5%, rgba(47,111,94,0.05), transparent 35%),
+              radial-gradient(circle at 95% 95%, rgba(201,123,63,0.04), transparent 40%);
+  pointer-events: none;
+  z-index: -1;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+/* === Hero === */
+.hero {
+  padding: 80px 0 56px;
+  border-bottom: 1px solid var(--line);
+}
+.hero-tag {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--primary);
+  background: var(--primary-soft);
+  padding: 4px 12px;
+  border-radius: 12px;
+  margin-bottom: 18px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 40px;
+  font-weight: normal;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin-bottom: 18px;
+}
+.hero-sub {
+  font-size: 17px;
+  color: var(--secondary);
+  max-width: 760px;
+  margin-bottom: 28px;
+}
+.hero-meta {
+  display: flex;
+  gap: 24px;
+  font-size: 13px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.hero-meta strong { color: var(--text); font-weight: 600; }
+
+/* === Section === */
+section {
+  padding: 56px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+section:last-of-type { border-bottom: 0; }
+h2 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 28px;
+  font-weight: normal;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+h2 .num {
+  display: inline-flex;
+  width: 36px; height: 36px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 10px;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+}
+h3 {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 32px 0 14px;
+}
+h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+  margin: 22px 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+p {
+  color: var(--secondary);
+  margin-bottom: 12px;
+  font-size: 14.5px;
+}
+ul, ol {
+  padding-left: 22px;
+  margin-bottom: 12px;
+  color: var(--secondary);
+}
+li { margin-bottom: 6px; font-size: 14.5px; }
+strong { color: var(--text); font-weight: 600; }
+code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+/* === Card === */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px 28px;
+  margin: 18px 0;
+  box-shadow: var(--shadow);
+}
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+.card-grid .card { margin: 0; }
+.card h4 { margin-top: 0; }
+
+/* === Table === */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 13.5px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+th, td {
+  text-align: left;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+th {
+  background: #faf7f0;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+tr:last-child td { border-bottom: 0; }
+tr:hover td { background: #fdfbf6; }
+
+/* === Code Block === */
+pre {
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: 16px 18px;
+  border-radius: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+  overflow-x: auto;
+  margin: 12px 0 18px;
+}
+pre code { background: transparent; color: var(--code-text); padding: 0; }
+.kw { color: #c586c0; }
+.str { color: #ce9178; }
+.com { color: #6a9955; font-style: italic; }
+.fn { color: #dcdcaa; }
+.num { color: #b5cea8; }
+
+/* === Mockup Screens === */
+.mockup {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0;
+  margin: 18px 0;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.mockup-browser {
+  background: #f0ebe0;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.mockup-browser .dot {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: #d5cfc1;
+}
+.mockup-browser .dot.red { background: #e07a5f; }
+.mockup-browser .dot.yellow { background: #e5c07b; }
+.mockup-browser .dot.green { background: #81b29a; }
+.mockup-browser .url {
+  flex: 1;
+  background: var(--card);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 12px;
+}
+.mockup-body {
+  padding: 22px 28px;
+}
+
+/* === Mockup internals (Archery-like) === */
+.mock-nav {
+  background: #1f2937;
+  color: #d1d5db;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.mock-nav .brand {
+  color: #fff;
+  font-weight: 700;
+  margin-right: 24px;
+}
+.mock-nav .nav-item {
+  margin-right: 18px;
+  color: #9ca3af;
+}
+.mock-nav .nav-item.active { color: #fff; }
+.mock-content { padding: 20px 24px; }
+.mock-breadcrumb {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.mock-page-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+.mock-card {
+  background: #fafaf7;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+}
+.mock-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.mock-row:last-child { border-bottom: 0; }
+.mock-label { color: var(--muted); }
+.mock-value { color: var(--text); font-weight: 500; }
+.mock-btn {
+  display: inline-block;
+  padding: 7px 16px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+}
+.mock-btn.warn {
+  background: var(--accent-warn);
+}
+.mock-btn.danger {
+  background: var(--accent-danger);
+}
+.mock-btn.outline {
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+.mock-btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.mock-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+.mock-tag.warn { background: var(--accent-warn-soft); color: var(--accent-warn); }
+.mock-tag.danger { background: var(--accent-danger-soft); color: var(--accent-danger); }
+.mock-tag.success { background: var(--primary-soft); color: var(--primary); }
+.mock-tag.info { background: var(--accent-info-soft); color: var(--accent-info); }
+.mock-progress {
+  height: 8px;
+  background: var(--line-soft);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 10px 0;
+}
+.mock-progress-bar {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 4px;
+}
+.mock-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.mock-stat {
+  background: #fafaf7;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  text-align: left;
+}
+.mock-stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.mock-stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+}
+.mock-stat-value.success { color: var(--success); }
+.mock-stat-value.warn { color: var(--accent-warn); }
+
+/* === Highlight blocks === */
+.warn {
+  background: var(--accent-warn-soft);
+  border-left: 3px solid var(--accent-warn);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin: 14px 0;
+  font-size: 13.5px;
+  color: var(--secondary);
+}
+.danger {
+  background: var(--accent-danger-soft);
+  border-left: 3px solid var(--accent-danger);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin: 14px 0;
+  font-size: 13.5px;
+  color: var(--secondary);
+}
+.info {
+  background: var(--accent-info-soft);
+  border-left: 3px solid var(--accent-info);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin: 14px 0;
+  font-size: 13.5px;
+  color: var(--secondary);
+}
+.success {
+  background: var(--primary-soft);
+  border-left: 3px solid var(--primary);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin: 14px 0;
+  font-size: 13.5px;
+  color: var(--secondary);
+}
+
+/* === Side by side === */
+.side-by-side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin: 18px 0;
+}
+.compare-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: var(--shadow);
+}
+.compare-card.bad { border-left: 3px solid var(--accent-danger); }
+.compare-card.good { border-left: 3px solid var(--primary); }
+.compare-card h4 { margin-top: 0; color: var(--text); }
+.compare-card.bad h4 { color: var(--accent-danger); }
+.compare-card.good h4 { color: var(--primary); }
+
+/* === Steps === */
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+.step {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 20px;
+  position: relative;
+  box-shadow: var(--shadow);
+}
+.step-num {
+  position: absolute;
+  top: -10px;
+  left: 16px;
+  background: var(--primary);
+  color: #fff;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.step h4 { margin: 8px 0 8px; color: var(--text); text-transform: none; font-size: 15px; }
+
+/* === Metric === */
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+.metric {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 22px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.metric-num {
+  font-family: 'DM Serif Display', serif;
+  font-size: 36px;
+  color: var(--primary);
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+.metric-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.metric.delta .metric-num { color: var(--accent-warn); }
+.metric.delta-good .metric-num { color: var(--primary); }
+
+@media (max-width: 768px) {
+  .side-by-side { grid-template-columns: 1fr; }
+  h1 { font-size: 30px; }
+  h2 { font-size: 24px; }
+  .hero { padding: 48px 0 32px; }
+  section { padding: 36px 0; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- HERO -->
+<div class="hero">
+  <span class="hero-tag">gh-ost 无锁 DDL</span>
+  <h1>大表 DDL 变更<br>不再锁表 5 分钟</h1>
+  <p class="hero-sub">
+    Archery v0.3.0-beta 集成了 GitHub 开源的 gh-ost 工具,业务 RD 提交大表 DDL 时自动识别并提示 3 按钮选择。
+    全程 binlog 异步重写,cut-over 切换,业务 0 中断。
+  </p>
+  <div class="hero-meta">
+    <span><strong>演练日期</strong> 2026-08-25</span>
+    <span><strong>实战</strong> 134 dev (MySQL 8.0.22)</span>
+    <span><strong>推 110 日期</strong> 2026-08-27</span>
+    <span><strong>设计稿</strong> gh-ost-demo.html</span>
+  </div>
+</div>
+
+<!-- 1. 痛点 -->
+<section>
+  <h2><span class="num">1</span> 业务 RD 提交 DDL 的痛点</h2>
+
+  <div class="side-by-side">
+    <div class="compare-card bad">
+      <h4>❌ 痛点 1:大表 ADD COLUMN 锁表 5-10 分钟</h4>
+      <p>业务 RD 给 <code>accesscard_black_detail</code> (144MB) 加一列,MySQL 原生 DDL 直接锁表。</p>
+      <ul>
+        <li>锁表期间: 业务全部 INSERT/UPDATE/SELECT 都卡住</li>
+        <li>客户端超时: 应用层报错"Lock wait timeout exceeded"</li>
+        <li>业务影响: 早高峰报错率 0.5% → 12% 飙升</li>
+        <li>用户投诉: DBA 群里@业务 RD"赶紧回滚"</li>
+      </ul>
+    </div>
+    <div class="compare-card bad">
+      <h4>❌ 痛点 2:凌晨运维窗口抢时间</h4>
+      <p>业务 RD 只能选凌晨 2-5 点低峰期提单,DBA 熬夜值守。</p>
+      <ul>
+        <li>业务抱怨: "变更太慢影响新功能上线"</li>
+        <li>DBA 抱怨: 每天凌晨值班 1-2 个工单,白天其他工作被打断</li>
+        <li>风险: 凌晨人为操作失误概率高 3 倍</li>
+        <li>扩展性: 业务增长 → 凌晨窗口不够用</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="warn">
+    <strong>根因:</strong> MySQL 5.7 及之前所有 ALTER TABLE 都是在线阻塞,8.0 INSTANT/INPLACE 也只覆盖部分场景(ADD COLUMN 可以 INSTANT,但 MODIFY COLUMN / DROP COLUMN 还是会锁表)。
+    gh-ost 是 GitHub 开源的成熟方案,binlog 异步重写 + cut-over 切表,业务 0 中断。
+  </div>
+</section>
+
+<!-- 2. 解决方案 -->
+<section>
+  <h2><span class="num">2</span> 解决方案:gh-ost + 业务前端 3 按钮</h2>
+
+  <p>Archery 集成 gh-ost 后,业务 RD 提单流程不变,只是在 SQL 提交页看到 3 按钮提示:</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <h4>自动识别大表</h4>
+      <p>提交页调 <code>goInception</code> 查 <code>information_schema.tables</code> 拿 <code>DATA_LENGTH + INDEX_LENGTH</code>。阈值默认 16MB。</p>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <h4>3 按钮防呆</h4>
+      <p>大表 DDL 显示 3 选项:<strong>启用 gh-ost</strong> / <strong>立即执行</strong>(接受锁表) / <strong>终止工单</strong>。默认推荐 gh-ost。</p>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <h4>gh-ost 进度面板</h4>
+      <p>启用后写 <code>ext_ddl_ghost_task</code> 任务,启动 gh-ost 进程,前端 3s 轮询进度,显示 cut-over 阶段。</p>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <h4>任务管理 + 取消/重试</h4>
+      <p>任务列表页(<code>/gh_ost/admin_list/</code>)显示所有 gh-ost 任务,支持 cancel/retry,DBA 可全权兜底。</p>
+    </div>
+  </div>
+
+  <h3>核心差异:业务 0 中断</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>对比项</th>
+        <th>MySQL 原生 DDL</th>
+        <th>gh-ost (Archery 集成)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>锁表时间 (144MB 表 ADD COLUMN)</td>
+        <td><strong style="color:var(--accent-danger)">5-10 分钟</strong> (业务卡死)</td>
+        <td><strong style="color:var(--primary)">0 秒</strong> (原表只读 0.5s,cut-over)</td>
+      </tr>
+      <tr>
+        <td>回滚能力</td>
+        <td>无 (DDL 一旦执行不能中断)</td>
+        <td>完整 (切表前可中断,影子表丢弃即可)</td>
+      </tr>
+      <tr>
+        <td>大表延迟</td>
+        <td>主从延迟 5-10 分钟</td>
+        <td>主从延迟 &lt;3s (chunk size 1000 行/批)</td>
+      </tr>
+      <tr>
+        <td>运维窗口</td>
+        <td>必须凌晨 2-5 点</td>
+        <td>随时可执行</td>
+      </tr>
+      <tr>
+        <td>运维成本</td>
+        <td>DBA 熬夜值守</td>
+        <td>DBA 看任务列表确认即可</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 3. 实操演示 -->
+<section>
+  <h2><span class="num">3</span> 实操演示 4 步走</h2>
+
+  <!-- 步骤 1: 业务 RD 提交 -->
+  <h3>步骤 1:业务 RD 提交大表 DDL</h3>
+  <p>业务 RD 在 SQL 提交页选 instance,选数据库 <code>archery_dev</code>,写 DDL:</p>
+
+  <div class="mockup">
+    <div class="mockup-browser">
+      <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+      <span class="url">172.20.2.134:9003/sqlsubmit/</span>
+    </div>
+    <div class="mockup-body">
+      <div class="mock-nav">
+        <span class="brand">Archery</span>
+        <span class="nav-item">SQL 提交</span>
+        <span class="nav-item">工单查询</span>
+        <span class="nav-item">权限申请</span>
+        <span class="nav-item">数据查询</span>
+        <span class="nav-item">DBA 工具</span>
+      </div>
+      <div class="mock-content">
+        <div class="mock-breadcrumb">SQL 上线 &nbsp; ›&nbsp; 提交</div>
+        <h2 class="mock-page-title">SQL 上线 · 提交</h2>
+
+        <div class="mock-card">
+          <div class="mock-row">
+            <span class="mock-label">目标实例</span>
+            <span class="mock-value">测试 MySQL 8.0 (127.0.0.1:3306)</span>
+          </div>
+          <div class="mock-row">
+            <span class="mock-label">目标数据库</span>
+            <span class="mock-value">archery_dev</span>
+          </div>
+          <div class="mock-row">
+            <span class="mock-label">SQL 内容</span>
+            <span class="mock-value" style="font-family:'JetBrains Mono',monospace;font-size:12px;">
+              ALTER TABLE accesscard_black_detail ADD COLUMN card_type TINYINT DEFAULT 1 COMMENT '卡类型';
+            </span>
+          </div>
+        </div>
+
+        <div class="warn" style="margin-top:14px;">
+          <strong>⚠️ 检测到大表 DDL</strong><br>
+          表 <code>archery_dev.accesscard_black_detail</code> 占用 <strong>144.0 MB</strong> (DATA_LENGTH + INDEX_LENGTH),<br>
+          超过大表阈值 16MB。原生 DDL 锁表预计 5-10 分钟,业务将中断。<br><br>
+          推荐使用 <strong>gh-ost 无锁变更</strong> (业务 0 中断)。
+        </div>
+
+        <div class="mock-btn-row">
+          <button class="mock-btn">✓ 启用 gh-ost 无锁变更 (推荐)</button>
+          <button class="mock-btn warn">⚠ 立即执行 (接受锁表)</button>
+          <button class="mock-btn outline">✗ 终止工单</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 步骤 2: 启用 gh-ost 写任务 -->
+  <h3>步骤 2:启用 gh-ost,写任务</h3>
+  <p>业务 RD 选"启用 gh-ost",Archery 后端做 3 件事:</p>
+
+  <ol>
+    <li>写 <code>ext_ddl_ghost_task</code> 记录(任务表,DB 持久化)</li>
+    <li>调 <code>runner.build_ghost_command</code> 拼 gh-ost CLI 参数</li>
+    <li>Popen 启动 gh-ost 进程,worker 异步执行</li>
+  </ol>
+
+  <pre><code><span class="com"># ext_ddl_ghost_task 写入</span>
+task = DdlGhostTask.objects.create(
+    workflow=workflow,           <span class="com"># 关联 SQL 工单</span>
+    task_type=<span class="str">"ghost"</span>,
+    db_name=<span class="str">"archery_dev"</span>,
+    table_name=<span class="str">"accesscard_black_detail"</span>,
+    alter_statement=<span class="str">"ADD COLUMN card_type TINYINT DEFAULT 1"</span>,
+    instance=instance,
+    status=<span class="str">"running"</span>,
+    enabled=<span class="kw">True</span>,
+    created_by=request.user.username,
+    max_load_threads_running=<span class="num">30</span>,
+    timeout_seconds=<span class="num">7200</span>,
+)
+
+<span class="com"># gh-ost CLI 启动 (拼出来大概长这样)</span>
+<span class="fn">gh-ost</span> \
+  --host=<span class="str">127.0.0.1</span> --port=<span class="num">3306</span> \
+  --user=archery --ask-pass \
+  --database=<span class="str">archery_dev</span> \
+  --table=<span class="str">accesscard_black_detail</span> \
+  --alter=<span class="str">"ADD COLUMN card_type TINYINT DEFAULT 1"</span> \
+  --allow-on-master \
+  --execute \
+  --chunk-size=<span class="num">1000</span> \
+  --max-load=<span class="str">"Threads_running=30"</span> \
+  --max-lag-millis=<span class="num">1500</span> \
+  --cut-over=<span class="str">atomic</span> \
+  --cut-over-lock-timeout-seconds=<span class="num">3</span> \
+  --default-retries=<span class="num">120</span> \
+  --verbose \
+  --sock=/tmp/gh-ost.archery_dev.accesscard_black_detail.sock</code></pre>
+
+  <!-- 步骤 3: 进度面板 -->
+  <h3>步骤 3:进度面板 3s 轮询</h3>
+  <p>前端 3s 轮询 <code>/gh_ost/status/&lt;task_id&gt;/</code> 拉进度,显示 cut-over 阶段:</p>
+
+  <div class="mockup">
+    <div class="mockup-browser">
+      <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+      <span class="url">172.20.2.134:9003/gh_ost/progress/104/</span>
+    </div>
+    <div class="mockup-body">
+      <div class="mock-nav">
+        <span class="brand">Archery</span>
+        <span class="nav-item">SQL 提交</span>
+        <span class="nav-item">DBA 工具</span>
+        <span class="nav-item active">gh-ost 任务</span>
+      </div>
+      <div class="mock-content">
+        <h2 class="mock-page-title">
+          gh-ost 无锁变更 &nbsp;<span class="mock-tag success">task #104</span>&nbsp;<span class="mock-tag success">成功</span>
+        </h2>
+
+        <div class="mock-stat-grid">
+          <div class="mock-stat">
+            <div class="mock-stat-label">最终状态</div>
+            <div class="mock-stat-value success">✓ cut-over 成功</div>
+          </div>
+          <div class="mock-stat">
+            <div class="mock-stat-label">进度</div>
+            <div class="mock-stat-value success">100%</div>
+          </div>
+          <div class="mock-stat">
+            <div class="mock-stat-label">已复制行数</div>
+            <div class="mock-stat-value">241558 / 241558</div>
+          </div>
+          <div class="mock-stat">
+            <div class="mock-stat-label">耗时</div>
+            <div class="mock-stat-value success">18 秒</div>
+          </div>
+        </div>
+
+        <div class="mock-card">
+          <div class="mock-row">
+            <span class="mock-label">开始时间</span>
+            <span class="mock-value">2026-08-26 10:29:15</span>
+          </div>
+          <div class="mock-row">
+            <span class="mock-label">结束时间</span>
+            <span class="mock-value">2026-08-26 10:29:33</span>
+          </div>
+          <div class="mock-row">
+            <span class="mock-label">目标库</span>
+            <span class="mock-value">archery_dev.accesscard_black_detail</span>
+          </div>
+          <div class="mock-row">
+            <span class="mock-label">DDL 子句</span>
+            <span class="mock-value" style="font-family:'JetBrains Mono',monospace;font-size:12px;">
+              ADD COLUMN card_type TINYINT DEFAULT 1
+            </span>
+          </div>
+        </div>
+
+        <div class="success" style="margin-top:14px;">
+          <strong>gh-ost log 关键节点</strong> (18 秒全流程):
+          <pre style="margin:8px 0 0;background:#faf7f0;color:var(--text);font-size:11.5px;padding:10px 14px;">
+10:29:15 INFO  Migrating `archery_dev`.`accesscard_black_detail`; Ghost table is `_accesscard_black_detail_gho`
+10:29:15 INFO  Table found. Engine=InnoDB
+10:29:15 INFO  Ghost table created
+10:29:16 INFO  Started streaming; Waiting for first batch
+10:29:18 INFO  Copy: 50000/241558 (20%)
+10:29:21 INFO  Copy: 120000/241558 (49%)
+10:29:25 INFO  Copy: 200000/241558 (82%)
+10:29:28 INFO  Copy: 241558/241558 (100%); Backed up
+10:29:30 INFO  Cut-over task managed by gh-ost
+10:29:32 INFO  Tables renamed
+10:29:33 INFO  Done migrating `accesscard_black_detail`</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 步骤 4: 验证 -->
+  <h3>步骤 4:验证表结构 + 数据完整性</h3>
+  <p>gh-ost 完成后,业务 RD 在 Archery 走 SQL 查询验证:</p>
+
+  <pre><code><span class="com">-- 1. 看表结构 (新列已加上,其他列不变)</span>
+<span class="kw">SHOW</span> CREATE TABLE accesscard_black_detail\G
+
+<span class="com">-- 2. 看新列默认值 (DDL 子句生效)</span>
+<span class="kw">SELECT</span> id, card_type <span class="kw">FROM</span> accesscard_black_detail <span class="kw">LIMIT</span> <span class="num">3</span>;
+<span class="com">-- +----+-----------+
+-- | id | card_type |
+-- +----+-----------+
+-- |  1 |         1 |  ← DEFAULT 生效
+-- |  2 |         1 |
+-- |  3 |         1 |
+-- +----+-----------+
+
+<span class="com">-- 3. 数据行数 (没丢数据)</span>
+<span class="kw">SELECT</span> <span class="fn">COUNT</span>(*) <span class="kw">FROM</span> accesscard_black_detail;
+<span class="com">-- 241558 ← 跟 gh-ost 复制行数一致</span>
+
+<span class="com">-- 4. COMMENT 业务描述保留 (8/13 拍板关键点)</span>
+<span class="kw">SHOW</span> <span class="kw">FULL</span> <span class="kw">COLUMNS</span> <span class="kw">FROM</span> accesscard_black_detail <span class="kw">WHERE</span> Field=<span class="str">'card_type'</span>;
+<span class="com">-- Field    | Type      | Null | Key | Default | Comment
+-- card_type | tinyint(4) | YES  |     | 1       | 卡类型   ✓</span></code></pre>
+
+  <div class="success">
+    <strong>验证通过</strong>:表结构 OK + 新列已加 + 数据完整 (241558 行一致) + 业务描述保留。
+    整个变更业务 0 中断(只 cut-over 阶段 0.5s 原表只读)。
+  </div>
+</section>
+
+<!-- 4. 演练数据 -->
+<section>
+  <h2><span class="num">4</span> 实战数据(134 dev 演练)</h2>
+
+  <h3>核心战绩(8/25-8/26)</h3>
+
+  <div class="metric-strip">
+    <div class="metric">
+      <div class="metric-num">3+</div>
+      <div class="metric-label">实战任务 100% 成功</div>
+    </div>
+    <div class="metric">
+      <div class="metric-num">18s</div>
+      <div class="metric-label">144MB 大表 ADD COLUMN 耗时</div>
+    </div>
+    <div class="metric">
+      <div class="metric-num">0</div>
+      <div class="metric-label">业务中断秒数</div>
+    </div>
+    <div class="metric">
+      <div class="metric-num">241558</div>
+      <div class="metric-label">单任务最大行数</div>
+    </div>
+  </div>
+
+  <h3>任务清单(task #70-#100+,8/25-8/26)</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>task #</th>
+        <th>DDL 类型</th>
+        <th>表 / 库</th>
+        <th>耗时</th>
+        <th>行数</th>
+        <th>结果</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>#70</code></td>
+        <td>ADD COLUMN</td>
+        <td>accesscard_black_detail / archery_dev</td>
+        <td>~20s</td>
+        <td>241558</td>
+        <td><span class="mock-tag success">success</span></td>
+      </tr>
+      <tr>
+        <td><code>#71</code></td>
+        <td>ADD COLUMN</td>
+        <td>accesscard_black_detail / archery_dev</td>
+        <td>~20s</td>
+        <td>241558</td>
+        <td><span class="mock-tag success">success</span></td>
+      </tr>
+      <tr>
+        <td><code>#72</code></td>
+        <td>ADD COLUMN</td>
+        <td>accesscard_black_detail / archery_dev</td>
+        <td>~20s</td>
+        <td>241558</td>
+        <td><span class="mock-tag success">success</span></td>
+      </tr>
+      <tr>
+        <td><code>#87-#89</code></td>
+        <td>MODIFY COLUMN</td>
+        <td>accesscard_black_detail / archery_dev</td>
+        <td>~25s</td>
+        <td>241558</td>
+        <td><span class="mock-tag success">success</span></td>
+      </tr>
+      <tr>
+        <td><code>#94-#96</code></td>
+        <td>REBUILD 碎片回收</td>
+        <td>workflow_log / archery_prod</td>
+        <td>~5-15s</td>
+        <td>&lt;200</td>
+        <td><span class="mock-tag success">success (8.0 no-op 已知)</span></td>
+      </tr>
+      <tr>
+        <td><code>#100</code></td>
+        <td>ADD COLUMN</td>
+        <td>accesscard_black_detail / archery_dev</td>
+        <td>~20s</td>
+        <td>241558</td>
+        <td><span class="mock-tag success">success</span></td>
+      </tr>
+      <tr>
+        <td><code>#104</code></td>
+        <td>MODIFY COLUMN</td>
+        <td>accesscard_black_detail / archery_dev</td>
+        <td><strong>18s</strong></td>
+        <td>241558</td>
+        <td><span class="mock-tag success">success (cut-over 0.5s)</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="info">
+    <strong>演练数据来自真实生产表</strong>: accesscard_black_detail 是 134 dev 上的核心业务表 (144MB, 241558 行),不是测试表。8/13 拍板的"不动 COMMENT"决策在多次演练中持续验证有效。
+  </div>
+</section>
+
+<!-- 5. 架构 -->
+<section>
+  <h2><span class="num">5</span> 架构与组件</h2>
+
+  <h3>技术栈</h3>
+  <table>
+    <thead>
+      <tr><th>组件</th><th>版本</th><th>位置</th><th>作用</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>gh-ost binary</td><td>1.1.10</td><td><code>/opt/archery/bin/gh-ost</code></td><td>无锁 DDL 引擎</td></tr>
+      <tr><td>Archery</td><td>v0.3.0-beta</td><td><code>/opt/archery/prod/</code></td><td>SQL 审核平台 + 任务调度</td></tr>
+      <tr><td>goInception</td><td>1.x</td><td><code>0.0.0.0:4000</code></td><td>SQL 审核 + 大表检测</td></tr>
+      <tr><td>MySQL</td><td>5.7.44 (110) / 8.0.22 (134)</td><td>—</td><td>目标库 (主库 + binlog)</td></tr>
+      <tr><td>django-q2</td><td>2.x</td><td>in-process</td><td>异步任务队列</td></tr>
+    </tbody>
+  </table>
+
+  <h3>关键代码模块</h3>
+  <pre><code>sql/extensions/ddl_gh_ost/
+├── models.py               <span class="com"># DdlGhostTask model (task_type/alter/created_by/...) </span>
+├── views.py                <span class="com"># precheck / enable / start / cancel / status / progress</span>
+├── urls.py                 <span class="com"># 6 个端点: enable/ start/ cancel/ status/ progress/ admin_list</span>
+├── templates/
+│   ├── task_list.html      <span class="com"># 任务管理列表 (admin 风格)</span>
+│   └── progress_rebuild.html  <span class="com"># 进度面板 (cut-over 状态显示)</span>
+└── services/
+    ├── runner.py           <span class="com"># build_ghost_command / Popen gh-ost</span>
+    ├── poller.py           <span class="com"># 3s 轮询 gh-ost socket, 解析 stdout</span>
+    ├── precheck.py         <span class="com"># 5 类预检 (DDL 类型 / 字符集 / 大表阈值 / 索引 / 锁)</span>
+    └── notify.py           <span class="com"># 钉钉通知 (admin URL 修复后正确)</span>
+└── migrations/
+    └── 0001-0004_*.py      <span class="com"># 建 4 个 ext_* 表 + gh-ost 4 perm</span></code></pre>
+</section>
+
+<!-- 6. 异常处理 -->
+<section>
+  <h2><span class="num">6</span> 异常处理 + 实战踩坑</h2>
+
+  <h3>8/24-8/25 修过的 6 个 bug</h3>
+  <table>
+    <thead>
+      <tr><th>bug</th><th>症状</th><th>修法</th><th>commit</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>审批流 3 级不一致</td>
+        <td>提交页显示 2 级,详情页显示 3 级 (走老 ext_approval_flow 配)</td>
+        <td>改 ConfigurableAuditor 走 Archery 上游 WorkflowAuditSetting</td>
+        <td><code>eaf9853</code></td>
+      </tr>
+      <tr>
+        <td>gh-ost precheck 误禁</td>
+        <td>DROP COLUMN 报 "禁用操作" (没查 gh-ost 官方 docs)</td>
+        <td>查 https://github.com/github/gh-ost docs/limitations,DROP 不在禁用列表</td>
+        <td><code>e669567</code></td>
+      </tr>
+      <tr>
+        <td>cancel 端点 perm 缺</td>
+        <td>cancel 端点没 perm 守卫,业务 RD 能误取消 DBA 任务</td>
+        <td>cancel 端点加 <code>change_ddlghosttask</code> perm 守卫</td>
+        <td><code>0b62856</code></td>
+      </tr>
+      <tr>
+        <td>字段 diff modal 不显示</td>
+        <td>点击字段 diff 链接 modal 不弹 (HTML 元素位置错)</td>
+        <td>前端 modal 元素挪到正确位置</td>
+        <td><code>76d48cc</code></td>
+      </tr>
+      <tr>
+        <td>ghost task 不显示</td>
+        <td>admin 详情页 ghost 任务不显示 (URL 错了)</td>
+        <td>改对 <code>_meta.app_label</code> URL 路径</td>
+        <td><code>a41c4d0</code></td>
+      </tr>
+      <tr>
+        <td>前端字体太小</td>
+        <td>字段 diff 字号 11px 太小,业务 RD 看不清</td>
+        <td>改 11→13px / 12→14px / 13→15px 三档</td>
+        <td><code>9d66064</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>goInception panic 实战(8/13 19:08)</h3>
+  <div class="danger">
+    <strong>症状:</strong> 业务 RD 提 MODIFY COLUMN bigint→varchar on 144MB 大表,gh-ost 启动后 goInception panic 退出。<br>
+    <strong>根因:</strong> goInception 1.x 旧版对 bigint→varchar 类型转换处理有 bug,触发 panic 段错误。<br>
+    <strong>修法:</strong> 升级 goInception binary (1.x → 1.x latest),配合 gh-ost 自动选 8.0 INSTANT/INPLACE 跳过部分 DDL。<br>
+    <strong>教训:</strong> goInception 是 Archery 链路的关键依赖,版本升级要演练。
+  </div>
+</section>
+
+<!-- 7. 推 110 -->
+<section>
+  <h2><span class="num">7</span> 8/27 推 110 + 后续计划</h2>
+
+  <h3>8/27 推 110 范围</h3>
+  <p>gh-ost 集成 (v0.3.0-beta) 包含在 8/27 推 110 物料里:</p>
+
+  <table>
+    <thead>
+      <tr><th>物料</th><th>数量</th><th>关键 commit</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>gh-ost v0.3.0-beta (DBA 兜底 + 大表 DDL 防呆)</td>
+        <td>1 大功能</td>
+        <td><code>47728bb</code>, <code>f87e875</code>, <code>1f32976</code>, <code>cd683f9</code>, <code>fba0564</code></td>
+      </tr>
+      <tr>
+        <td>gh-ost 任务管理列表页 + 权限组细分</td>
+        <td>1 大功能</td>
+        <td><code>c80c1ad</code>, <code>727f046</code>, <code>2d27a4a</code>, <code>eb5937b</code></td>
+      </tr>
+      <tr>
+        <td>8/24 6 bug fix</td>
+        <td>6 commit</td>
+        <td>见 §6 表格</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>推 110 后业务群发消息</h3>
+  <pre><code>[推 110 完成 @ 21:30]
+gh-ost 无锁 DDL 上线 (v0.3.0-beta)
+5+1 端点验证 200, 无 5xx
+DBA 21:00-22:00 值守
+8/28 09:00 再看 1 日观察
+
+业务 RD 提单流程不变,只是提交页会多 3 按钮提示:
+- 启用 gh-ost (推荐,业务 0 中断)
+- 立即执行 (接受锁表,大表 5-10 分钟)
+- 终止工单</code></pre>
+
+  <h3>后续 roadmap</h3>
+  <ul>
+    <li><strong>v0.3.1</strong>: gh-ost 切表阶段进度细化 (目前只有"cut-over"一个状态,可拆 atomic / two-step)</li>
+    <li><strong>v0.3.2</strong>: 多 ghost 任务并行支持 (同 instance 多 DDL 串行排队 → 改并发限流)</li>
+    <li><strong>v0.4.5</strong>: gh-ost 用作碎片回收工具 (8.0 INSTANT 已知 no-op,5.7 走 COPY 物理重写)</li>
+    <li><strong>v0.5.0</strong>: gh-ost + 字段 diff 联动 (高风险 DDL 自动建议 gh-ost)</li>
+  </ul>
+</section>
+
+<!-- 8. 关联资料 -->
+<section>
+  <h2><span class="num">8</span> 关联资料</h2>
+  <ul>
+    <li><strong>设计稿</strong>: <code>docs/designs/2026-08-10_gh-ost-detail-design.html</code> (80KB 详细设计)</li>
+    <li><strong>代码</strong>: <code>sql/extensions/ddl_gh_ost/</code> (10 个文件, 2000+ 行)</li>
+    <li><strong>changelog</strong>: <code>docs/changelogs/2026-08-13_v0405-rebuilt-fields.md</code> (8/13 3 决策拍板)</li>
+    <li><strong>推 110 手册</strong>: <code>docs/runbooks/2026-08-27_push-v030-execution-manual.md</code> §1-§5</li>
+    <li><strong>gh-ost 官方</strong>: https://github.com/github/gh-ost</li>
+    <li><strong>Archery 上游</strong>: https://github.com/hhyo/Archery</li>
+  </ul>
+</section>
+
+<div style="text-align:center; padding: 40px 0 60px; color: var(--muted); font-size: 13px;">
+  Archery v0.3.0-beta · gh-ost 1.1.10 · 134 dev 演练 8/25-8/26 · 8/27 推 110<br>
+  设计稿由 mavis 制作 · 写于 2026-08-26
+</div>
+
+</div>
+</body>
+</html>
