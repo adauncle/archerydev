@@ -1,11 +1,11 @@
 #!/bin/bash
-# rollback_110prod_v030_20260827.sh
+# rollback_110prod_v030_20260826.sh
 # 用途: 推 110 prod 失败时, 一键回滚 (SLA 5 分钟)
 #
-# 配套: pre_push_backup_110prod_20260827.sh
+# 配套: pre_push_backup_110prod_20260826.sh
 #
 # ⚠️  本脚本在 110 prod 内部跑
-# ⚠️  跑法: ssh 登 110 prod → bash /tmp/rollback_110prod_v030_20260827.sh
+# ⚠️  跑法: ssh 登 110 prod → bash /tmp/rollback_110prod_v030_20260826.sh
 #
 # 回滚 4 步:
 #   1. 停 gunicorn (kill master, 老 master 没有 systemd 自动拉, 需手动)
@@ -32,7 +32,7 @@ set -euo pipefail
 DRY_RUN="${DRY_RUN:-0}"
 
 PROD_PATH="/dbdata/archery_v114_c9236a0"
-TS="20260827_2050"
+TS="20260826_1850"
 BACKUP_DIR="/backup"
 LOG_FILE="/var/log/archery/rollback_${TS}.log"
 
@@ -50,10 +50,10 @@ mkdir -p $(dirname ${LOG_FILE})
 exec > >(tee -a ${LOG_FILE}) 2>&1
 
 echo "================================================================"
-echo "rollback_110prod_v030_20260827.sh"
+echo "rollback_110prod_v030_20260826.sh"
 echo "  时间: $(date)"
 echo "  推 110 失败 → 一键回滚 (SLA 5 分钟)"
-echo "  关联: pre_push_backup_110prod_20260827.sh"
+echo "  关联: pre_push_backup_110prod_20260826.sh"
 if [[ "${DRY_RUN}" == "1" ]]; then
     warn "DRY_RUN=1 模式, kill master + nohup 拉起步骤全部 NOOP, 仅演练 1-3 步"
 fi

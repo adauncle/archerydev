@@ -2,9 +2,9 @@
 
 > **撰写日期**: 2026-08-25
 > **撰写人**: mavis
-> **状态**: 8/26 周三 9:00 演练, 8/27 周四 21:00 推 110
+> **状态**: 8/26 周三 9:00 演练, 8/26 周三 19:00 推 110
 > **回滚 SLA**: 5 分钟 (DBA 评估, 4 触发条件)
-> **值守 DBA**: 阿达叔叔 (8/27 21:00-22:00 在场)
+> **值守 DBA**: 阿达叔叔 (8/26 19:00-20:00 在场)
 > **本手册同步给**: DBA 值守群, 备份到 134 dev /opt/archery/prod/docs/runbooks/ + 110 prod /tmp/
 
 ---
@@ -13,16 +13,16 @@
 
 | 时间 | 谁 | 做什么 | 关键命令 |
 |------|----|----|----------|
-| 8/26 周三 9:00-12:00 | mavis + DBA | 134 dev 完整演练 (kill master 真演练) | 见 §2 |
-| 8/27 周四 20:00 | DBA 值守群 | 群发"21:00 开始, 预计 30-40 分钟" | 模板 §6.1 |
-| 8/27 周四 20:50 | DBA | **3 份备份** (代码 + schema + admin config) | `bash /tmp/pre_push_backup_110prod_20260827.sh` |
-| 8/27 周四 21:00 | DBA | **5 步必做** 13 步 (log/sock/影子表/二进制/features/perm/...) | `bash /tmp/5step_prerequisites_110prod.sh` |
-| 8/27 周四 21:05 | DBA | **推代码** (rsync/scp 新代码到 /dbdata/archery_v114_c9236a0) | `rsync -avz ...` 见 §3.3 |
-| 8/27 周四 21:08 | DBA | **跑 migration** (建 4 个 ext_* 表 + gh-ost 4 perm) | `sudo -u archery venv/bin/python manage.py migrate` |
-| 8/27 周四 21:10 | DBA | **kill master** 102228 + **nohup 拉起新 master** | 见 §3.4 |
-| 8/27 周四 21:15-21:30 | DBA | **5+1 端点验证** (/login/ + /dbaprinciples/ + /admin/ + /gh_ost/admin_list/ + /sqlsubmit/ + /gh_ost/rebuild/select/) | `bash /tmp/verify_5endpoints_110prod.sh` |
-| 8/27 周四 21:30 | DBA | **业务群发** "推 110 完成, 新功能上线" | 模板 §6.2 |
-| 8/27 周四 22:00 | DBA | 值守结束, 交班 | (8/28 09:00 再看) |
+| ~~8/26 周三 9:00-12:00~~ ⚠️ | mavis + DBA | 134 dev 完整演练 — **未跑** (见 §1.5 风险) | ~~见 §2~~
+| 8/26 周三 18:00 | DBA 值守群 | 群发"19:00 开始, 预计 30-40 分钟" | 模板 §6.1 |
+| 8/26 周三 18:50 | DBA | **3 份备份** (代码 + schema + admin config) | `bash /tmp/pre_push_backup_110prod_20260826.sh` |
+| 8/26 周三 19:00 | DBA | **5 步必做** 13 步 (log/sock/影子表/二进制/features/perm/...) | `bash /tmp/5step_prerequisites_110prod.sh` |
+| 8/26 周三 19:05 | DBA | **推代码** (rsync/scp 新代码到 /dbdata/archery_v114_c9236a0) | `rsync -avz ...` 见 §3.3 |
+| 8/26 周三 19:08 | DBA | **跑 migration** (建 4 个 ext_* 表 + gh-ost 4 perm) | `sudo -u archery venv/bin/python manage.py migrate` |
+| 8/26 周三 19:10 | DBA | **kill master** 102228 + **nohup 拉起新 master** | 见 §3.4 |
+| 8/26 周三 19:15-19:30 | DBA | **5+1 端点验证** (/login/ + /dbaprinciples/ + /admin/ + /gh_ost/admin_list/ + /sqlsubmit/ + /gh_ost/rebuild/select/) | `bash /tmp/verify_5endpoints_110prod.sh` |
+| 8/26 周三 20:30 | DBA | **业务群发** "推 110 完成, 新功能上线" | 模板 §6.2 |
+| 8/26 周三 20:00 | DBA | 值守结束, 交班 | (8/27 09:00 再看) |
 
 **失败判别** (4 选 1 即回滚):
 - ① migration 报错
@@ -32,7 +32,7 @@
 
 **回滚命令** (5 分钟内):
 ```bash
-bash /tmp/rollback_110prod_v030_20260827.sh
+bash /tmp/rollback_110prod_v030_20260826.sh
 ```
 
 ---
@@ -97,8 +97,8 @@ bash /tmp/rollback_110prod_v030_20260827.sh
 | 脚本 | 路径 | 跑法 | 用途 |
 |------|------|------|------|
 | 5 步必做 | `scripts/deploy/5step_prerequisites_110prod.sh` | 110 prod 内部 `bash /tmp/5step_prerequisites_110prod.sh` | 13 步: log/sock/影子表/凭据(手动)/fix_approval/清空 sqladvisor/清空 soar/二进制/features.py/perm/bug verify/master pid/configurable_auditor |
-| 3 份备份 | `scripts/deploy/pre_push_backup_110prod_20260827.sh` | 110 prod 内部 `bash /tmp/pre_push_backup_110prod_20260827.sh` | 代码 + schema + admin config (8/27 20:50 跑) |
-| 一键回滚 | `scripts/deploy/rollback_110prod_v030_20260827.sh` | 110 prod 内部 `bash /tmp/rollback_110prod_v030_20260827.sh` | 4 步: kill+恢复代码+恢复 schema+拉起老 master+SLA 5 分钟 |
+| 3 份备份 | `scripts/deploy/pre_push_backup_110prod_20260826.sh` | 110 prod 内部 `bash /tmp/pre_push_backup_110prod_20260826.sh` | 代码 + schema + admin config (8/26 18:50 跑) |
+| 一键回滚 | `scripts/deploy/rollback_110prod_v030_20260826.sh` | 110 prod 内部 `bash /tmp/rollback_110prod_v030_20260826.sh` | 4 步: kill+恢复代码+恢复 schema+拉起老 master+SLA 5 分钟 |
 
 ### 1.4 ⚠️ 5.7 vs 8.0 演练差异 + 8.0 INSTANT 架构性限制 (8/25 17:30 拍板方案 A, 8/25 17:50 简化 alter)
 
@@ -134,7 +134,7 @@ bash /tmp/rollback_110prod_v030_20260827.sh
 3. **110 prod 5.7.44 gh-ost rebuild 真 work**:
    - 5.7 改 ENGINE 改自己走 **COPY** 触发整表物理重写
    - 推 110 后, DBA 跑 rebuild 看到 ibd **真收缩** (5.7 行为)
-4. **9 月 5.7→8.0 升级后需要架构性修法** (不在 8/27 推 110 范围):
+4. **9 月 5.7→8.0 升级后需要架构性修法** (不在 8/26 推 110 范围):
    - 方案 a: gh-ost cut-over 强制 `ALGORITHM=COPY` (改 gh-ost, 跨工具, 需立项)
    - 方案 b: 不用 gh-ost, 直接 `ALTER TABLE ... ENGINE=InnoDB, ALGORITHM=COPY` (锁表, 大表不可接受)
    - 方案 c: 5.7 继续用, 8.0 走 gh-ost + DBA 手动验证 (现状)
@@ -193,7 +193,7 @@ return f"ENGINE={table_info['engine']}"
 
 | 阶段 | MySQL 版本 | gh-ost rebuild 行为 | 验收标准 |
 |------|-----------|---------------------|----------|
-| 8/27 推 110 后 | 110 prod 5.7.44 | **真物理重写**, ibd 收缩 | task success + ibd 缩小 |
+| 8/26 推 110 后 | 110 prod 5.7.44 | **真物理重写**, ibd 收缩 | task success + ibd 缩小 |
 | 8/26 134 dev 演练 | 134 dev 8.0.22 | **INSTANT no-op**, ibd 不收缩 | task success + log cut-over |
 | 9 月 5.7→8.0 升级 (计划) | 110 prod 8.0.22 | **INSTANT no-op** (待解决) | 待立项, 走 ALGORITHM=COPY |
 
@@ -202,9 +202,9 @@ return f"ENGINE={table_info['engine']}"
 - gh-ost 1.1.x 走 **binlog 异步重写 + cut-over 切表**, 不依赖 MySQL 原生 DDL
 - 但 cut-over 阶段会改原表 metadata, 8.0 走 INSTANT 跳过导致 gh-ost 看不到要重写的子句而空转
 - 改 gh-ost 让 cut-over 强制 `ALGORITHM=COPY` 涉及 gh-ost 内部 binlog + 影子表切换逻辑, **跨工具范围**
-- 110 prod 5.7 不受影响, **8/27 推 110 业务可用**
+- 110 prod 5.7 不受影响, **8/26 推 110 业务可用**
 
-#### 1.4.7 推 110 后 DBA 必看 (碎片回收功能 in 8.0.22 业务库架构性限制) — 8/27 推完后 DBA 30 分钟内必过目
+#### 1.4.7 推 110 后 DBA 必看 (碎片回收功能 in 8.0.22 业务库架构性限制) — 8/26 推完后 DBA 30 分钟内必过目
 
 > **关键认知 (8/26 09:00 用户拍板)**: 110 prod (5.7.44) 只是 Archery 自己的元数据 DB, **业务库全 8.0.22**。
 > 也就是说 gh-ost rebuild 在业务 RD 实际使用场景(8.0.22 业务库) = **INSTANT no-op = 看不到 ibd 收缩**。
@@ -372,7 +372,7 @@ WHERE t.TABLE_SCHEMA='hly_accesscard' AND t.TABLE_NAME='accesscard_black_detail'
 **关联命令模板** (推 110 后业务群发, 8.0.22 业务库架构性限制已知 + 5.7 元库验证通过后):
 
 ```
-[推 110 完成 @ 21:30 + Archery 5.7 元库 gh-ost 验证 @ 22:00]
+[推 110 完成 @ 20:30 + Archery 5.7 元库 gh-ost 验证 @ 21:00]
 gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 + 碎片回收 上线
 5+1 端点验证 200, 无 5xx
 推完后跑 Archery 5.7 元库 rebuild (workflow_log 真碎片表) 验证:
@@ -380,8 +380,8 @@ gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 + 
   - 表结构 0 漂移 (CHARSET/ROW_FORMAT/COLLATION 都没变) ✓
 ⚠️ 注意: 业务库 (8.0.22) 走 gh-ost rebuild 因 MySQL 8.0 INSTANT 优化是 no-op (ibd 不收缩)
   业务 RD 看到 success 但 ibd 没小是预期内, 真要清碎片联系 DBA 走 OPTIMIZE TABLE ALGORITHM=COPY 锁表兜底
-DBA 21:00-22:00 值守
-8/28 09:00 再看 1 日观察
+DBA 19:00-20:00 值守
+8/27 09:00 再看 1 日观察
 ```
 
 **关联**:
@@ -394,7 +394,51 @@ DBA 21:00-22:00 值守
 
 ---
 
-## 2. T-1 准备 (8/26 周三 9:00-12:00) — 134 dev 完整演练
+## 1.5 ⚠️ 8/26 推 110 风险清单 (用户 16:34 拍板提前)
+
+> **8/26 16:34 用户拍板**: 推 110 时间从 8/27 21:00 提前到 8/26 19:00 (今晚 7 点)。
+> 时间紧, 8/26 原计划 9:00-12:30 完整演练**未跑**,DBA 推 110 时需要警觉以下 4 点:
+
+### 风险 1:134 dev 完整演练未跑(最关键)
+
+- **现状**: 8/26 9:00-12:30 完整演练 (6 drill + 5 步必做 + kill master 真演练) **未跑**
+- **已完成的部分**:
+  - ✅ qcluster hang 修复 (8/26 11:24 杀 7/27 老 qcluster + nohup 拉新 + Q worker 1s 内收任务验证)
+  - ✅ workflow #102 修复 (is_backup=False, status 重置为 workflow_review_pass, 业务 RD 重新点"立即执行"链路通)
+  - ✅ gh-ost task #103/#104 实战 (8/25 演练结果, 已在 master)
+- **未做的部分**:
+  - ❌ drill_admin_list_scope / drill_column_diff / drill_dashboard_graceful_degrade / drill_progress_page_perm / drill_ghost_task_wf_abort_sync / drill_sqlsubmit_big_table (6 drill 全部)
+  - ❌ 5 步必做 13 步 (110 prod 内执行, 演练过 DRY_RUN 模式, 但没在 134 dev 真演练)
+  - ❌ kill master 真演练 (134 dev 演练过, 但 8/26 没演练; 推 110 前无法验证 gunicorn 启停)
+- **应对**: 推 110 阶段 5 (5+1 端点验证) **必跑全**, 任一端点 fail 立即回滚 (SLA 5 分钟)
+
+### 风险 2:5.7 features.py patch 漏了
+
+- **现状**: 8/24 摸底发现 110 prod MySQL 5.7.44 client lib 跟 gh-ost 不兼容, **必须打 features.py patch 第 5、7 行**
+- **应对**: 5 步必做**步骤 9** 跑过 + 看 log, 漏了立刻回滚 (gh-ost 跑起来会触发 5.7 client lib 兼容 bug)
+
+### 风险 3:8.0.22 业务库 gh-ost rebuild no-op
+
+- **现状**: 110 prod 业务库 (hly_accesscard 等) 全是 8.0.22, gh-ost rebuild 在 8.0.22 走 INSTANT 跳过 (4 种 alter 全 no-op)
+- **影响**: 业务 RD 用了 rebuild 看到 success 但 ibd 不收缩
+- **应对**: §1.4.7 已知 + 业务群发消息 disclaimer, DBA 走 OPTIMIZE TABLE ALGORITHM=COPY 锁表兜底
+
+### 风险 4:qcluster 30 天没重启历史
+
+- **现状**: 8/26 11:24 修了 134 dev qcluster hang 问题, 但 110 prod qcluster 也跑了 30+ 天没重启
+- **应对**: 推 110 阶段 1 (3 份备份) 之前, **DBA 手动重启 110 prod qcluster** (跟 134 dev 一样 `pkill + nohup`)
+
+### 8/26 19:00 推 110 决策点
+
+> 如果 8/26 19:00 推之前 DBA 觉得演练不够, 可以选择:
+> - **A. 按计划推 110 (19:00 准时)** — 接受 4 个风险, DBA 推 110 时警觉
+> - **B. 推迟到 8/27 21:00** — 留 26 小时做 134 dev 完整演练 + 8/27 上午 9:00-12:00 kill master 真演练
+> - **C. 8/26 18:00-19:00 紧急演练 1 小时** — 只跑核心 3 个 drill + kill master 真演练 (压缩演练)
+> **用户 16:34 拍板 A, 现在按 A 走, DBA 警觉 + 5+1 端点必跑全**。
+
+---
+
+## 2. T-1 准备 (8/26 演练 status: 部分, 见 §1.5) — 134 dev 完整演练
 
 > **目标**: 验证 8/25 3 份脚本 + 8/24 6 bug fix 都在 134 dev 真实跑通, kill master 真演练 (不是 DRY_RUN)
 
@@ -465,43 +509,43 @@ tail -50 /var/log/archery/gunicorn.err 2>&1 | grep -E ' 5[0-9][0-9] ' | head -5
 ### 2.4 演练后发"演练通过"消息
 
 > 群发 DBA 值守群 + 业务群:
-> "[演练报告] 134 dev 6 drill 全过 + kill master 演练完成 + 5 端点 200 + 无 5xx. 8/27 推 110 准备就绪, 21:00 准时开始."
+> "[演练报告] 134 dev 6 drill 全过 + kill master 演练完成 + 5 端点 200 + 无 5xx. 8/26 推 110 准备就绪, 19:00 准时开始."
 
 ---
 
-## 3. T 推 110 (8/27 周四 21:00-21:30)
+## 3. T 推 110 (8/26 周三 19:00-19:30)
 
-### 3.1 推前 5 分钟 (20:55) — 通知业务群
+### 3.1 推前 5 分钟 (18:55) — 通知业务群
 
 **群发业务群** (模板):
 ```
-[公告] 今晚 21:00-21:30 推 110 prod v0.3.0-beta, 期间会有 1-2 分钟 SQL 提交页不可用
+[公告] 今晚 19:00-19:30 推 110 prod v0.3.0-beta, 期间会有 1-2 分钟 SQL 提交页不可用
 新功能: gh-ost 无锁 DDL / 字段 diff 检测 / DDL 智能回滚 / 大表 DDL 防呆
-回滚 SLA 5 分钟, DBA 21:00-22:00 值守
-如有紧急 DDL 需求, 请 21:00 前提交, 或 21:30 后提
+回滚 SLA 5 分钟, DBA 19:00-20:00 值守
+如有紧急 DDL 需求, 请 19:00 前提交, 或 19:30 后提
 ```
 
-### 3.2 阶段 1: 3 份备份 (20:50-21:00, 10 分钟)
+### 3.2 阶段 1: 3 份备份 (18:50-19:00, 10 分钟)
 
 **跑法** (在 110 prod, root):
 ```bash
 # 1. 脚本先 scp 到 110 prod /tmp/
-scp scripts/deploy/pre_push_backup_110prod_20260827.sh root@172.20.2.110:/tmp/
+scp scripts/deploy/pre_push_backup_110prod_20260826.sh root@172.20.2.110:/tmp/
 
 # 2. ssh 登 110 prod
 ssh root@172.20.2.110
 # (root password 8/24: lAqfb8uEmQYsnGNQwIHtGPwukjCz6J)
 
 # 3. 跑备份
-bash /tmp/pre_push_backup_110prod_20260827.sh 2>&1 | tee /var/log/archery/pre_push_backup_20260827_2050.log
+bash /tmp/pre_push_backup_110prod_20260826.sh 2>&1 | tee /var/log/archery/pre_push_backup_20260826_1850.log
 ```
 
 **期望输出**:
 ```
 [3 份备份完成]
-  1. 代码:    /backup/archery_v030_20260827_2050_code.tar.gz (35M)
-  2. Schema:  /backup/archery_v030_20260827_2050_schema.sql (52K, 1319 行)
-  3. Admin:   /backup/archery_v030_20260827_2050_admin.json (20K, 921 行)
+  1. 代码:    /backup/archery_v030_20260826_1850_code.tar.gz (35M)
+  2. Schema:  /backup/archery_v030_20260826_1850_schema.sql (52K, 1319 行)
+  3. Admin:   /backup/archery_v030_20260826_1850_admin.json (20K, 921 行)
   备份状态: code=OK schema=OK admin=OK
 ```
 
@@ -509,13 +553,13 @@ bash /tmp/pre_push_backup_110prod_20260827.sh 2>&1 | tee /var/log/archery/pre_pu
 - code FAIL → 必看 log, **阻塞推 110** (没代码备份没法回滚)
 - schema / admin FAIL → 提示 DBA 评估, DBA 评估可继续推
 
-### 3.3 阶段 2: 推代码 (21:05-21:08, 3 分钟)
+### 3.3 阶段 2: 推代码 (19:05-19:08, 3 分钟)
 
 **跑法** (在 110 prod, root):
 ```bash
 # 1. 备份当前 (跟 8/17 摸底 runbook 一致, 在 /dbdata/ 留一份)
 cd /dbdata
-cp -a archery_v114_c9236a0 archery_v114_pre_gh_ost_20260827.bak
+cp -a archery_v114_c9236a0 archery_v114_pre_gh_ost_20260826.bak
 # 留作保险, 推失败时回滚用
 
 # 2. rsync 新代码 (从 134 dev 拉, 或 git tarball)
@@ -526,9 +570,9 @@ rsync -avz --delete \
   root@172.20.2.134:/opt/archery/prod/ /dbdata/archery_v114_c9236a0/
 
 # 方案 B: git tarball (134 dev 端打包 + 110 prod 端解压)
-# 134 dev: cd /opt/archery/prod && tar -czf /tmp/archery_v030_20260827.tar.gz --exclude='venv' --exclude='__pycache__' .
-# 110 prod: rsync -avz root@172.20.2.134:/tmp/archery_v030_20260827.tar.gz /tmp/
-# 110 prod: cd /dbdata/archery_v114_c9236a0 && tar -xzf /tmp/archery_v030_20260827.tar.gz
+# 134 dev: cd /opt/archery/prod && tar -czf /tmp/archery_v030_20260826.tar.gz --exclude='venv' --exclude='__pycache__' .
+# 110 prod: rsync -avz root@172.20.2.134:/tmp/archery_v030_20260826.tar.gz /tmp/
+# 110 prod: cd /dbdata/archery_v114_c9236a0 && tar -xzf /tmp/archery_v030_20260826.tar.gz
 
 # 3. chown 恢复 (rsync/tar 解压后可能 root 拥有)
 chown -R archery:archery /dbdata/archery_v114_c9236a0
@@ -538,12 +582,12 @@ stat -c '%y %n' /dbdata/archery_v114_c9236a0/sql/extensions/audit_drivers/config
 # 期望: 2026-08-24 (8/24 修法版)
 ```
 
-### 3.4 阶段 3: 跑 5 步必做 (21:08-21:12, 4 分钟)
+### 3.4 阶段 3: 跑 5 步必做 (19:08-19:12, 4 分钟)
 
 **跑法** (在 110 prod, root):
 ```bash
 scp scripts/deploy/5step_prerequisites_110prod.sh root@172.20.2.110:/tmp/
-bash /tmp/5step_prerequisites_110prod.sh 2>&1 | tee /var/log/archery/5step_20260827_2100.log
+bash /tmp/5step_prerequisites_110prod.sh 2>&1 | tee /var/log/archery/5step_20260826_1900.log
 ```
 
 **期望输出** (13 步全 OK):
@@ -563,12 +607,12 @@ bash /tmp/5step_prerequisites_110prod.sh 2>&1 | tee /var/log/archery/5step_20260
 - 必须 `kill <master_pid>` + 手动 `nohup sudo -u archery venv/bin/gunicorn ...` 拉起
 - 新 master pid 会变 (8/24 教训: 134 dev master 13665 → 13199, 7s 内)
 
-### 3.5 阶段 4: 跑 migration (21:12-21:14, 2 分钟)
+### 3.5 阶段 4: 跑 migration (19:12-19:14, 2 分钟)
 
 **跑法** (在 110 prod, archery user):
 ```bash
 cd /dbdata/archery_v114_c9236a0
-sudo -u archery venv/bin/python manage.py migrate 2>&1 | tee /var/log/archery/migrate_20260827.log
+sudo -u archery venv/bin/python manage.py migrate 2>&1 | tee /var/log/archery/migrate_20260826.log
 ```
 
 **期望输出**:
@@ -582,7 +626,7 @@ Running migrations:
 
 **失败处理**: 任意 migration 失败 → 立刻回滚 (见 §5)
 
-### 3.6 阶段 5: 5 端点验证 (21:15-21:30, 15 分钟)
+### 3.6 阶段 5: 5 端点验证 (19:15-19:30, 15 分钟)
 
 **跑法** (在 110 prod, root, 或 134 dev 端 curl 110 prod):
 ```bash
@@ -614,38 +658,38 @@ ls -ld /var/log/archery/gh_ost/
 # 期望: detail 页审批流 == 提交页审批流 (8/24 修法生效, 不走 ext_approval_flow 旧配)
 ```
 
-### 3.7 阶段 6: 业务群通知 (21:30)
+### 3.7 阶段 6: 业务群通知 (20:30)
 
 **群发业务群** (模板):
 ```
-[推 110 完成 @ 21:30] gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 上线
+[推 110 完成 @ 20:30] gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 上线
 5 端点验证 200, 无 5xx
-DBA 21:00-22:00 值守
-8/28 09:00 再看 1 日观察
+DBA 19:00-20:00 值守
+8/27 09:00 再看 1 日观察
 ```
 
 ---
 
-## 4. T+1 观察 (8/28 周五 9:00) — 1 日观察清单
+## 4. T+1 观察 (8/27 周四 9:00) — 1 日观察清单
 
 ### 4.1 关键指标
 
 | 指标 | 期望 | 排查 |
 |------|------|------|
-| gunicorn master pid | 跟 21:10 拉起的 pid 一致 | 不一致 = 中途 crash 过, 看 log |
+| gunicorn master pid | 跟 19:10 拉起的 pid 一致 | 不一致 = 中途 crash 过, 看 log |
 | gunicorn log 5xx 数 | 0 (推 110 后 12 小时) | 有 5xx = 业务受影响, 排查 |
-| gh-ost 任务数 | 跟 8/27 21:00 后提交数一致 | 缺失 = 推 110 过程中有人提单失败 |
-| admin 后台 login 数 | 跟 8/27 21:00 后登录数一致 | 缺失 = 推 110 影响登录 |
+| gh-ost 任务数 | 跟 8/26 19:00 后提交数一致 | 缺失 = 推 110 过程中有人提单失败 |
+| admin 后台 login 数 | 跟 8/26 19:00 后登录数一致 | 缺失 = 推 110 影响登录 |
 | 业务 RD 工单状态 | 全部正常流转 | 有卡住 = 审批流 3 级有问题 |
 
 ### 4.2 日志检查命令
 
 ```bash
-# 8/27 21:00 后的所有 gunicorn log
+# 8/26 19:00 后的所有 gunicorn log
 tail -1000 /tmp/gunicorn.log | grep -E ' 5[0-9][0-9] ' | head -20
 tail -1000 /tmp/gunicorn.log | grep -E 'gh-ost|column_diff|approval' | head -20
 
-# 推 110 后 1 日 (8/28 09:00 看) 业务用户登录
+# 推 110 后 1 日 (8/27 09:00 看) 业务用户登录
 grep 'login\|POST /login' /var/log/archery/access.log 2>&1 | tail -30
 
 # gh-ost 任务 (DBA 运维入口)
@@ -654,7 +698,7 @@ grep 'login\|POST /login' /var/log/archery/access.log 2>&1 | tail -30
 
 ### 4.3 1 日观察报告
 
-DBA 8/28 09:00 写 1 日观察报告到 `docs/changelogs/2026-08-28_push-v030-day1-observation.md`:
+DBA 8/27 09:00 写 1 日观察报告到 `docs/changelogs/2026-08-27_push-v030-day1-observation.md`:
 - gunicorn log 5xx 数
 - 业务 RD 提单数 (推 110 前后对比)
 - gh-ost 任务数
@@ -675,12 +719,12 @@ DBA 8/28 09:00 写 1 日观察报告到 `docs/changelogs/2026-08-28_push-v030-da
 
 **跑法** (在 110 prod, root):
 ```bash
-bash /tmp/rollback_110prod_v030_20260827.sh 2>&1 | tee /var/log/archery/rollback_20260827.log
+bash /tmp/rollback_110prod_v030_20260826.sh 2>&1 | tee /var/log/archery/rollback_20260826.log
 ```
 
 **回滚 4 步** (脚本自动):
 1. 停 gunicorn (kill master 102228, 5s)
-2. 恢复代码 (rsync 从 /backup/archery_v030_20260827_2050_code.tar.gz, 30s)
+2. 恢复代码 (rsync 从 /backup/archery_v030_20260826_1850_code.tar.gz, 30s)
 3. 恢复 schema (DBA yes/no 二次确认, 10s)
 4. 拉起老 gunicorn (nohup, 5s)
 5. 验证 HTTP 200 (10s)
@@ -693,7 +737,7 @@ bash /tmp/rollback_110prod_v030_20260827.sh 2>&1 | tee /var/log/archery/rollback
 [110 prod 回滚完成 @ <新 master pid>]
 /login/=200, /dbaprinciples/=302
 回滚原因: <填, 例: 关键端点 500 / migration 失败>
-业务影响: 8/27 21:00 后新功能不可用, 基础功能正常
+业务影响: 8/26 19:00 后新功能不可用, 基础功能正常
 推 110 重试时间: <待定, 修复问题后>
 ```
 
@@ -704,34 +748,34 @@ bash /tmp/rollback_110prod_v030_20260827.sh 2>&1 | tee /var/log/archery/rollback
 
 ```bash
 # 错误示范 (8/26 演练用)
-DRY_RUN=1 bash /tmp/rollback_110prod_v030_20260827.sh
+DRY_RUN=1 bash /tmp/rollback_110prod_v030_20260826.sh
 
-# 正确示范 (8/27 推 110 用, 推 110 失败时)
-bash /tmp/rollback_110prod_v030_20260827.sh
+# 正确示范 (8/26 推 110 用, 推 110 失败时)
+bash /tmp/rollback_110prod_v030_20260826.sh
 ```
 
 ---
 
 ## 6. 消息模板 (群发用)
 
-### 6.1 推 110 前 5 分钟通知 (8/27 20:55)
+### 6.1 推 110 前 5 分钟通知 (8/26 18:55)
 
 **业务群 + DBA 群**:
 ```
-[公告] 今晚 21:00-21:30 推 110 prod v0.3.0-beta, 期间会有 1-2 分钟 SQL 提交页不可用
+[公告] 今晚 19:00-19:30 推 110 prod v0.3.0-beta, 期间会有 1-2 分钟 SQL 提交页不可用
 新功能: gh-ost 无锁 DDL / 字段 diff 检测 / DDL 智能回滚 / 大表 DDL 防呆
-回滚 SLA 5 分钟, DBA 21:00-22:00 值守
-如有紧急 DDL 需求, 请 21:00 前提交, 或 21:30 后提
+回滚 SLA 5 分钟, DBA 19:00-20:00 值守
+如有紧急 DDL 需求, 请 19:00 前提交, 或 19:30 后提
 ```
 
-### 6.2 推 110 完成后通知 (8/27 21:30)
+### 6.2 推 110 完成后通知 (8/26 20:30)
 
 **业务群**:
 ```
-[推 110 完成 @ 21:30] gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 上线
+[推 110 完成 @ 20:30] gh-ost 无锁 DDL + 字段 diff 检测 + DDL 智能回滚 + 大表 DDL 防呆 上线
 5 端点验证 200, 无 5xx
-DBA 21:00-22:00 值守
-8/28 09:00 再看 1 日观察
+DBA 19:00-20:00 值守
+8/27 09:00 再看 1 日观察
 ```
 
 ### 6.3 回滚通知 (回滚完成后 30 秒内)
@@ -741,7 +785,7 @@ DBA 21:00-22:00 值守
 [110 prod 回滚完成 @ <新 master pid>]
 /login/=200, /dbaprinciples/=302
 回滚原因: <填>
-业务影响: 8/27 21:00 后新功能不可用, 基础功能正常
+业务影响: 8/26 19:00 后新功能不可用, 基础功能正常
 推 110 重试时间: <待定>
 ```
 
@@ -780,7 +824,7 @@ done
 
 ```bash
 # 1. 3 份备份
-bash /tmp/pre_push_backup_110prod_20260827.sh
+bash /tmp/pre_push_backup_110prod_20260826.sh
 
 # 2. 推代码 (rsync)
 rsync -avz --delete \
@@ -811,7 +855,7 @@ bash /tmp/verify_5endpoints_110prod.sh
 
 ```bash
 # 1. 一键回滚
-bash /tmp/rollback_110prod_v030_20260827.sh
+bash /tmp/rollback_110prod_v030_20260826.sh
 
 # 2. 手动回滚 (如果脚本有问题)
 # 2.1 停 gunicorn
@@ -819,12 +863,12 @@ kill <master_pid>
 sleep 5
 # 2.2 恢复代码
 cd /dbdata
-cp -a archery_v114_pre_gh_ost_20260827.bak/* archery_v114_c9236a0/ 2>&1 | tail -3
-# (或 tar -xzf /backup/archery_v030_20260827_2050_code.tar.gz)
+cp -a archery_v114_pre_gh_ost_20260826.bak/* archery_v114_c9236a0/ 2>&1 | tail -3
+# (或 tar -xzf /backup/archery_v030_20260826_1850_code.tar.gz)
 # 2.3 恢复 schema (DBA yes/no 二次确认)
 mysql --defaults-file=/root/.my.cnf -e "DROP DATABASE IF EXISTS archery;"
 mysql --defaults-file=/root/.my.cnf -e "CREATE DATABASE archery DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_general_ci;"
-mysql --defaults-file=/root/.my.cnf archery < /backup/archery_v030_20260827_2050_schema.sql
+mysql --defaults-file=/root/.my.cnf archery < /backup/archery_v030_20260826_1850_schema.sql
 # 2.4 拉起老 gunicorn
 cd /dbdata/archery_v114_c9236a0
 nohup sudo -u archery venv/bin/gunicorn archery.wsgi:application \
@@ -839,16 +883,16 @@ curl -sI --max-time 5 http://127.0.0.1:9123/login/
 
 | 角色 | 联系 | 何时联系 |
 |------|------|----------|
-| DBA 值守 (阿达叔叔) | (现场) | 推 110 21:00-22:00 |
+| DBA 值守 (阿达叔叔) | (现场) | 推 110 19:00-20:00 |
 | mavis | (远程) | 推 110 期间 任何代码 / 脚本问题 |
 | 业务 RD 群 | (群) | 推 110 期间 业务 RD 报功能不可用 |
 
 ---
 
-## 8. 推 110 推前 checklist (DBA 8/27 20:45 自查)
+## 8. 推 110 推前 checklist (DBA 8/26 18:45 自查)
 
 - [ ] 134 dev 演练报告 (8/26 演练) 已写到 docs/changelogs/, 6 drill 全过
-- [ ] 业务群 / DBA 群已发推 110 通知 (8/27 20:55)
+- [ ] 业务群 / DBA 群已发推 110 通知 (8/26 18:55)
 - [ ] 3 份备份脚本已 scp 到 110 prod /tmp/
 - [ ] 5 步必做脚本已 scp 到 110 prod /tmp/
 - [ ] 回滚脚本已 scp 到 110 prod /tmp/
@@ -864,8 +908,8 @@ curl -sI --max-time 5 http://127.0.0.1:9123/login/
 ## 9. 关联文档
 
 - **5 步必做脚本**: `scripts/deploy/5step_prerequisites_110prod.sh` (1-13 步)
-- **3 份备份脚本**: `scripts/deploy/pre_push_backup_110prod_20260827.sh`
-- **一键回滚脚本**: `scripts/deploy/rollback_110prod_v030_20260827.sh`
+- **3 份备份脚本**: `scripts/deploy/pre_push_backup_110prod_20260826.sh`
+- **一键回滚脚本**: `scripts/deploy/rollback_110prod_v030_20260826.sh`
 - **8/17 推 110 摸底 runbook**: `docs/runbooks/2026-08-17_push-v030b-to-110prod.md`
 - **8/24 reload gunicorn SOP runbook**: `docs/runbooks/2026-08-24_gunicorn-reload-after-code-change.md`
 - **8/25 演练报告**: `docs/changelogs/2026-08-25_110prod-pre-push-drill.md` + `2026-08-25_rollback-drill-and-incident.md`
@@ -873,23 +917,23 @@ curl -sI --max-time 5 http://127.0.0.1:9123/login/
 
 ---
 
-## 10. 8/27 推 110 关键时间点 (DBA 值守时间线)
+## 10. 8/26 推 110 关键时间点 (DBA 值守时间线)
 
 | 时间 | DBA 动作 | 备注 |
 |------|----------|------|
-| 20:00 | DBA 群发"21:00 开始" | 提前 1 小时预警 |
-| 20:45 | DBA 自查 checklist (§8) | 推前 9 项检查 |
-| 20:50 | DBA 跑 3 份备份 | ~10 分钟, 备份日志 /var/log/archery/pre_push_backup_20260827_2050.log |
-| 21:00 | DBA 跑 5 步必做 (13 步) | ~4 分钟, 含 1 次 DBA yes/no (步骤 4 凭据重加密) |
-| 21:05 | DBA 推代码 (rsync) | ~3 分钟, chown 恢复 |
-| 21:08 | DBA 跑 migration | ~2 分钟, 4 个 ddl_gh_ost migration |
-| 21:10 | DBA kill master 102228 + nohup 拉起 | ~10 秒, 步骤 13 包含 |
-| 21:15 | DBA 跑 5 端点验证 | ~5 分钟, 业务群发通知 |
-| 21:20 | DBA 提一条新工单, 验证 detail 页审批流 | 8/24 修法生效, ~3 分钟 |
-| 21:25 | DBA 看 gunicorn log 5xx + gh-ost 任务列表 | ~3 分钟, 业务群发"推 110 完成" |
-| 21:30 | DBA 群发业务群 | 推 110 完成通知 |
-| 21:30-22:00 | DBA 值守 | 观察业务用户 |
-| 22:00 | DBA 交班 | 8/28 09:00 再看 1 日观察 |
+| 18:00 | DBA 群发"19:00 开始" | 提前 1 小时预警 |
+| 18:45 | DBA 自查 checklist (§8) | 推前 9 项检查 |
+| 18:50 | DBA 跑 3 份备份 | ~10 分钟, 备份日志 /var/log/archery/pre_push_backup_20260826_1850.log |
+| 19:00 | DBA 跑 5 步必做 (13 步) | ~4 分钟, 含 1 次 DBA yes/no (步骤 4 凭据重加密) |
+| 19:05 | DBA 推代码 (rsync) | ~3 分钟, chown 恢复 |
+| 19:08 | DBA 跑 migration | ~2 分钟, 4 个 ddl_gh_ost migration |
+| 19:10 | DBA kill master 102228 + nohup 拉起 | ~10 秒, 步骤 13 包含 |
+| 19:15 | DBA 跑 5 端点验证 | ~5 分钟, 业务群发通知 |
+| 19:20 | DBA 提一条新工单, 验证 detail 页审批流 | 8/24 修法生效, ~3 分钟 |
+| 19:25 | DBA 看 gunicorn log 5xx + gh-ost 任务列表 | ~3 分钟, 业务群发"推 110 完成" |
+| 19:30 | DBA 群发业务群 | 推 110 完成通知 |
+| 19:30-20:00 | DBA 值守 | 观察业务用户 |
+| 20:00 | DBA 交班 | 8/27 09:00 再看 1 日观察 |
 
 ---
 

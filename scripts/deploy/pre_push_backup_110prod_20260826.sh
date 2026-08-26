@@ -1,28 +1,28 @@
 #!/bin/bash
-# pre_push_backup_110prod_20260827.sh
-# 用途: 推 110 prod 之前, 3 份完整备份 (8/27 20:50 跑, 推 110 必走)
+# pre_push_backup_110prod_20260826.sh
+# 用途: 推 110 prod 之前, 3 份完整备份 (8/26 18:50 跑, 推 110 必走)
 #
 # 备份内容:
-#   1. 代码目录 (整个 prod 目录)  → /backup/archery_v030_20260827_2050_code.tar.gz
-#   2. MySQL schema (无数据)       → /backup/archery_v030_20260827_2050_schema.sql
-#   3. admin config (Perm + SysConfig + workflow_audit_setting) → /backup/archery_v030_20260827_2050_admin.json
+#   1. 代码目录 (整个 prod 目录)  → /backup/archery_v030_20260826_1850_code.tar.gz
+#   2. MySQL schema (无数据)       → /backup/archery_v030_20260826_1850_schema.sql
+#   3. admin config (Perm + SysConfig + workflow_audit_setting) → /backup/archery_v030_20260826_1850_admin.json
 #
 # ⚠️  本脚本在 110 prod 内部跑, 不通过 sshpass 远程调用
-# ⚠️  跑法: ssh 登 110 prod → bash /tmp/pre_push_backup_110prod_20260827.sh
+# ⚠️  跑法: ssh 登 110 prod → bash /tmp/pre_push_backup_110prod_20260826.sh
 #
 # 推 110 必做 (跟 5 步必做 + 推代码 + 备份 配套):
 #   - 备份目录: /backup/ (110 prod 已存在, 8/05 升级用过)
 #   - 备份大小预估: code ~50MB, schema ~10MB, admin ~5MB
 #   - 备份后必须 sha256sum 记录, 防止备份文件被破坏
-#   - 回滚时: rollback_110prod_v030_20260827.sh 配套使用
+#   - 回滚时: rollback_110prod_v030_20260826.sh 配套使用
 #
 # 作者: mavis @ 2026-08-24
-# 关联设计: docs/designs/2026-08-27_push-v030-rollback-plan.md (8/25 写)
+# 关联设计: docs/designs/2026-08-26_push-v030-rollback-plan.md (8/25 写)
 
 set -u  # 不用 -e, 备份脚本要"完成全部 3 份", 不能一个失败就全丢
 
 PROD_PATH="/dbdata/archery_v114_c9236a0"
-TS="20260827_2050"
+TS="20260826_1850"
 BACKUP_DIR="/backup"
 LOG_FILE="/var/log/archery/pre_push_backup_${TS}.log"
 
@@ -50,9 +50,9 @@ mkdir -p $(dirname ${LOG_FILE})
 exec > >(tee -a ${LOG_FILE}) 2>&1
 
 echo "================================================================"
-echo "pre_push_backup_110prod_20260827.sh"
+echo "pre_push_backup_110prod_20260826.sh"
 echo "  时间: $(date)"
-echo "  110 prod 推 110 前 3 份备份 (跟 rollback_110prod_v030_20260827.sh 配套)"
+echo "  110 prod 推 110 前 3 份备份 (跟 rollback_110prod_v030_20260826.sh 配套)"
 echo "================================================================"
 
 # === 前置检查 ===
@@ -240,5 +240,5 @@ echo "  3. 重启 gunicorn (kill master + nohup 拉起)"
 echo "  4. 验证 5 个端点 200"
 echo ""
 echo "如果任何步骤失败, 跑回滚脚本:"
-echo "  bash /tmp/rollback_110prod_v030_20260827.sh"
+echo "  bash /tmp/rollback_110prod_v030_20260826.sh"
 echo "================================================================"
