@@ -1,23 +1,54 @@
 #!/bin/bash
-# verify_5endpoints_110prod.sh — 推 110 prod 后 5+1 端点验证 (8/27 推 110 阶段 5 必跑)
+# verify_5endpoints_110prod.sh → verify_11plus1_endpoints_110prod.sh
+# 推 110 prod 后 11+1 端点验证 (8/26 实战 6 个踩坑升级版)
 #
-# 5 端点 (原计划):
+# 11 端点 (8/26 实战踩坑升级, 11+1 验证 8/26 4 P0 + 1 新功能 + 1 fix 全覆盖):
 #   1. /login/                           期望 200  (gunicorn alive + Django 启动 OK)
 #   2. /dbaprinciples/                    期望 302  (跳登录, 8/24 修法生效, 不再 500)
 #   3. /admin/                           期望 302  (跳登录, Django admin 后台 OK)
 #   4. /gh_ost/admin_list/                期望 200  (DBA 浏览器手动验证, 见手册 §3.6)
 #   5. /sqlsubmit/                       期望 200  (DBA 浏览器手动验证, 见手册 §3.6)
-#
-# + 1 加测端点 (8/25 14:00 拍板加的 v0.4.5 选表页面):
 #   6. /gh_ost/rebuild/select/            期望 200  (DBA 浏览器手动验证, 8/25 新功能必须测)
 #
-# 跑法 (DBA 8/27 推 110 当天):
+#   8/26 实战 6 踩坑新增 5 端点 (DBA 必跑, 不漏一次 P0):
+#   7. ORM EncryptedCharField 解密深度验证 (K1 SECRET_KEY 修复 8/26 20:22 教训)
+#      Django ORM 走 Config.objects.filter(item='lock_cnt_threshold').first().value
+#      期望: 返明文 (e.g. '5'), 不是密文 (e.g. 'WP_F3gNc35I4z3axJ61OLA==')
+#      8/26 教训: K1 SECRET_KEY 不匹配时, mirage.Crypto.decrypt 静默返密文, int(密文) 500
+#   8. /api/v1/sqlquery/instances/ + /api/v1/sqlquery/resources/  (K2 CACHE_URL 修复 8/26 20:43 教训)
+#      REST API 走 DRF Throttling 走 cache, cache 走 django-redis 走 CACHE_URL
+#      8/26 教训: 端点 1-6 都是渲染型, 5+1 端点验证漏 REST API 路径
+#   9. gh-ost precheck 走 instance 路径  (K3 CUSTOM_GH_OST_PRECHECK_* 修复 8/26 20:55 教训)
+#      业务 RD 浏览器触发 gh-ost precheck 走 instance.user='archery' 直连 172.20.2.9:6446
+#      8/26 教训: 端点 1-8 不触发 precheck 路径, 漏 dbops fallback 凭据
+#  10. detail 页字段 diff inline 区域  (8/26 21:34 字段 diff 新功能)
+#      业务 RD 浏览器 detail/<id>/ 看字段 diff inline 区域 (8 维 + 11 风险点 + 修复建议)
+#      8/26 21:11 业务 RD 反馈 detail 页审核/执行无字段 diff 区域, 8/26 21:34 加 inline 区域
+#  11. 业务 RD 真工单 (含 use hly_xxx;\n 多行 SQL 头)  (8/26 21:51 JS ReferenceError 修复教训)
+#      业务 RD 浏览器 detail/<id>/ 含 use hly_xxx;\nALTER TABLE 的真工单, JS 不报 ReferenceError
+#      8/26 21:51 教训: 演练用 archery/wf 103 (accesscard_black_detail) 没踩 hly_xxx 库名
+#      5+1 端点验证必用业务 RD 真工单, 不用 DBA 演练脚本
+#
+# + 1 备用 (留给 9 月 5.7→8.0 升级或新功能验证)
+#
+# 跑法 (DBA 推 110 prod 当天):
 #   ssh root@172.20.2.110
 #   bash /tmp/verify_5endpoints_110prod.sh
 #
 # 设计思路:
-#   - 端点 1-3 不需要登录, 走 curl 验证 (SKIP_AUTH=1 模式)
-#   - 端点 4-5 需要登录, 走浏览器手动验证 (脚本输出提示)
+#   - 端点 1-3 + 7-9 不需要登录, 走 curl/ssh Django ORM 验证 (SKIP_AUTH=1 模式)
+#   - 端点 4-6 + 10-11 需要登录, 走浏览器手动验证 (脚本输出提示)
+#   - 8/24 教训: curl 模拟 Django 登录的 CSRF (cookie + form + Referer + Origin) 容易踩坑,
+#     浏览器手动验证最稳
+#   - 8/26 教训: ORM 走 SQL 走 cache 走 precheck 路径要走实际场景, 演练脚本踩不到
+#
+# 期望输出:
+#   [SUMMARY] 11+1 endpoints: 11 OK / 0 FAIL
+#   + DBA 浏览器手动验证 端点 4 + 5 + 6 + 10 + 11
+#   全部 OK → 推 110 阶段 5 通过, 可以群发业务群"推 110 完成"
+#
+# 作者: mavis @ 2026-08-25 (8/26 21:57 实战踩坑升级到 11+1)
+# 关联: docs/runbooks/2026-08-27_push-v030-execution-manual.md §3.6 阶段 5
 #   - 8/24 教训: curl 模拟 Django 登录的 CSRF (cookie + form + Referer + Origin) 容易踩坑,
 #     浏览器手动验证最稳
 #
