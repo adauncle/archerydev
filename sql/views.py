@@ -1,5 +1,6 @@
 # -*- coding: UTF-8 -*-
 import os
+import json
 import traceback
 
 from django.contrib.auth.decorators import permission_required
@@ -505,6 +506,15 @@ def detail(request, workflow_id):
         "enable_gh_ost_marked": bool(getattr(workflow_detail, "enable_gh_ost", False)),
         # CUSTOM: 大表 DDL 防呆 (None = 不触发, dict = 触发红色 alert)
         "big_table_alert": big_table_alert,
+        ## CUSTOM-MODIFIED: 8/26 detail 页字段 diff inline 区域 (业务 RD 审核/执行阶段) @ 2026-08-26 @ mavis
+        ## 业务: alter 变更不管表大小都属高风险, 提交/审核/执行三阶段都要字段 diff
+        ## 8/12 v0.3.x 设计只覆盖 sqlsubmit.html 提单时弹 modal, detail 页审核/执行无字段 diff 区域
+        ## 8/26 实战: mkq 业务工单 4746 反馈 detail 页没字段 diff, 8/26 21:11 用户拍板加 inline 区域
+        ## 用 json.dumps 包装, 避免 Django template 渲染 SQL 字符串时把换行 / 特殊字符暴露成 JS 标识符
+        ## 关联 changelog: docs/changelogs/2026-08-26_detail-page-column-diff.md
+        "sql_content_for_diff": json.dumps(_workflow_sql_text(workflow_detail)),
+        "instance_id_for_diff": workflow_detail.instance_id or 0,
+        "db_name_for_diff": json.dumps(workflow_detail.db_name or ""),
     }
     return render(request, "detail.html", context)
 

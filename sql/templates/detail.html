@@ -1675,11 +1675,12 @@
         }
 
         // 8/26 detail 页自动触发 (sqlsubmit.html 是在 SQL 检测成功后触发, detail 页是页面加载就触发)
+        // 8/26 fix: 不依赖 Django template escapejs filter (deprecated), 用 view 端 json.dumps 包装
+        // 8/26 fix: 8/26 21:51 业务 RD 报 hly_accesscard is not defined, 因为 SQL 内容 use hly_accesscard 被当 JS 标识符
         $(document).ready(function() {
-            // 从 inline JS 变量拿 workflow_detail (Django template 渲染)
-            var sqlContent = {{ workflow_detail.sql_workflow_content|default:""|escapejs|default:"''" }};
-            var instanceId = {{ workflow_detail.instance_id|default:0 }};
-            var dbName = {{ workflow_detail.db_name|default:""|escapejs|default:"''" }};
+            var sqlContent = {{ sql_content_for_diff|safe }};
+            var instanceId = {{ instance_id_for_diff|default:0 }};
+            var dbName = {{ db_name_for_diff|safe }};
             fetchColumnDiff(sqlContent, instanceId, dbName);
         });
     </script>
