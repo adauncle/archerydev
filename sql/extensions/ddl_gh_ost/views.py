@@ -431,10 +431,27 @@ def retry(request: HttpRequest, workflow_id: int) -> JsonResponse:
 @login_required
 @require_POST
 def rollback(request: HttpRequest, workflow_id: int) -> JsonResponse:
-    """DBA 手动回滚：drop 影子表 + 标 rolled_back。
+    """DBA 手动回滚：drop 残留表 + 标 rolled_back。
 
     ## CUSTOM-MODIFIED: 端点加 perm 守卫 (change_ddlghosttask) @ 2026-08-13 @ mavis
     ## 关联: docs/changelogs/2026-08-13_gh-ost-action-endpoint-perm.md
+
+    ## CUSTOM-MODIFIED: 文档警告 — 此端点**不是**撤销 DDL @ 2026-08-27 @ mavis
+    ## 关联: docs/changelogs/2026-08-27_rollback-semantic-clarification.md
+    ## 业务 (重要 — DBA 上手前必读):
+    ##   **此回滚端点不能撤销已经发生的 ALTER。** gh-ost cut-over 是原子的
+    ##   (--cut-over=atomic), 表结构变更 + 数据迁移在 cut-over 那一刻已经完成,
+    ##   新表已经 rename 上去替旧表. 这个端点严格说不是"回滚 DDL", 只是:
+    ##     1. DROP 残留的 _<table>_gho 影子表 (gh-ost 自己 cut-over 后没清掉)
+    ##     2. DROP 残留的 _<table>_del 旧表 (gh-ost rename 后没清掉)
+    ##     3. task.status 切到 'rolled_back' (标记 DBA 主动放弃这次 DDL)
+    ##     4. workflow 联动切到 workflow_exception (跟 failed 一样语义)
+    ##   **不能做的事**:
+    ##     - 撤销 ALTER 把表结构改回原状 (做不到, cut-over 已生效)
+    ##     - 恢复原数据 (做不到, 数据已迁移)
+    ##   真要"撤销 DDL"必须靠**前置备份** (走 mysqldump 或者 110 prod 的
+    ##   backup 机制), 不是靠这个端点. 此端点适用场景: 清理残留 / 标"作废",
+    ##   下次 DDL 走新的 gh-ost 工单.
 
     注意：cut-over 成功（status=success）后影子表是 _<table>_gho，
     实际表已经 rename 过了，回滚意味着 drop 影子表 + 改 status=rolled_back。
