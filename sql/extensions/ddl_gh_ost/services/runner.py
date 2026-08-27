@@ -58,10 +58,25 @@ def build_ghost_command(task, instance=None, rebuild_mode: bool = False) -> List
         inst = instance or (task.workflow.instance if task.workflow_id else None)
         if inst is None:
             raise ValueError("no instance available for gh-ost")
-        # 提取 ALTER（去掉 "ALTER TABLE x " 前缀，gh-ost 接收 SQL 片段）
+        # 提取 ALTER（去掉 "ALTER TABLE x " 前缀，gh-ost 接收裸子句）。
+        ## 业务: gh-ost --alter 期望 **裸子句** (MODIFY / ADD / DROP ...),
+        ##      gh-ost 内部拼成 `ALTER TABLE <ghost_table> <alter_subclause>`.
+        ## 之前 8/24 fix 写的逻辑 "alter.strip().upper().startswith('ALTER')" 反了:
+        ##   - 用户原始 SQL ("alter table\n  test\nmodify\n  ...") 大小写混合+多行+反引号
+        ##   - 业务库 8.0.22 Archery 解析保留原始格式, task.alter_statement 存的是原始 SQL
+        ##   - 反逻辑保留原值, gh-ost 1.1.10 报 SQL syntax error 1064 near 'table
+        ## 134 dev 8/24 演练 16/16 PASS 是 instance 5 (业务库 5.7) Archery 5.7 解析标准化
+        ##   存到 task.alter_statement 已经是裸子句, 8/24 反逻辑凑巧 PASS.
+        ## 实际用法 (8/27 14:11 task #4 instance 27 历史库 8.0.22): 第一次用就暴露 bug.
+        ## 修法 (8/27 14:18): 正则提取子句, 兼容三种格式.
+        import re
         alter = task.alter_statement or ""
-        # gh-ost --alter 接受完整 SQL 或裸子句；我们传完整 SQL 让它自己解析
-        alter_arg = alter if alter.strip().upper().startswith("ALTER") else f"ALTER TABLE {alter}"
+        m = re.match(
+            r"^\s*alter\s+table\s+`?\S+`?\s*(.*)$",
+            alter.strip(),
+            re.IGNORECASE | re.DOTALL,
+        )
+        alter_arg = m.group(1) if m else alter.strip()
 
     user, password, (host, port) = _get_creds(inst)
     bin_path = getattr(settings, "CUSTOM_GH_OST_BIN", "/usr/local/bin/gh-ost")
