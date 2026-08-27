@@ -194,7 +194,9 @@ class DdlGhostTaskAdmin(admin.ModelAdmin):
 
     @admin.action(description="回滚选中的 gh-ost 任务（drop 影子表）")
     def admin_rollback(self, request, queryset):
-        from .db import _get_creds
+        # CUSTOM-MODIFIED: import 路径修 services.db @ 2026-08-27 @ mavis
+        # 关联: docs/changelogs/2026-08-27_rollback-import-path-fix.md
+        from .services.db import _get_creds
         import pymysql
         n = 0
         skipped = 0

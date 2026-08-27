@@ -458,7 +458,11 @@ def rollback(request: HttpRequest, workflow_id: int) -> JsonResponse:
     errors = []
     if instance:
         try:
-            from .db import _get_creds
+            # CUSTOM-MODIFIED: import 路径修 services.db @ 2026-08-27 @ mavis
+            # 关联: docs/changelogs/2026-08-27_rollback-import-path-fix.md
+            # 业务: views.py 在 ddl_gh_ost/ 目录, "from .db" 指 ddl_gh_ost/db.py 不存在,
+            #       实际 db.py 在 services/ 子目录, 旧代码 rollback 端点报 "No module named 'sql.extensions.ddl_gh_ost.db'"
+            from .services.db import _get_creds
             import pymysql
             user, password, (host, port) = _get_creds(instance)
             conn = pymysql.connect(
