@@ -109,11 +109,19 @@
       <div class="card">
         <div class="progress-head">
           <div>
-            <div class="progress-pct" id="pct">{{ task.progress_pct|default:0 }}%</div>
+            <div class="progress-pct" id="pct">
+              {% if task.is_terminal %}{{ task.progress_pct|default:0 }}{% if task.status == "success" %}{% else %}{% endif %}{% else %}{{ task.progress_pct|default:0 }}{% endif %}%
+            </div>
+            {# CUSTOM-MODIFIED: 终态显示具体状态, 不显示"轮询中" @ 2026-08-27 @ mavis #}
+            {# 关联: docs/changelogs/2026-08-27_poller-zombie-detection.md §B #}
+            {# 业务: 8/27 15:15 task #4 实战发现 — task.status 卡 running 显示"执行中 0% 重试中" #}
+            {#       实际 task 终态 (failed/rolled_back) 时, 进度面板不应再显示"轮询中 3s 刷新" #}
+            {#       也不再继续 polling (跟 task.is_terminal property 联动) #}
             <div class="meta" id="eta">
               {% if task.status == "success" %}迁移完成 · 耗时 {{ task.duration_seconds }}s
-              {% elif task.status == "failed" %}迁移失败
+              {% elif task.status == "failed" %}迁移失败 — 请查看下方错误信息
               {% elif task.status == "cancelled" %}已取消
+              {% elif task.status == "rolled_back" %}已回滚
               {% else %}轮询中 · 3s 刷新{% endif %}
             </div>
           </div>
@@ -122,7 +130,8 @@
         </div>
         <div class="progress-bar">
           <div class="progress-bar-fill {{ task.status }}"
-               id="bar" style="width: {{ task.progress_pct|default:0 }}%;"></div>
+               id="bar" style="width:
+                 {% if task.status == "success" %}100{% elif task.is_terminal %}100{% else %}{{ task.progress_pct|default:0 }}{% endif %}%;"></div>
         </div>
 
         <div class="row">
@@ -236,17 +245,15 @@
           const d = await r.json();
           if (!d.ok) return;
           render(d);
-          if (["running", "cut_over", "queued"].includes(d.status)) {
-            setTimeout(poll, 3000);
-          } else {
-            {# CUSTOM-MODIFIED: 终态自动 reload 整个页面 @ 2026-08-25 @ mavis #}
-            {# 关联: docs/changelogs/2026-08-25_progress-page-auto-reload.md #}
-            {# 业务: 8/13 拍板进度面板 polling 3s, 终态停 poll (status 不会变) #}
-            {#       但页面 template 渲染根据 task.status 决定 (排队中 / 执行中 / 成功), #}
-            {#       8/25 实战发现: poller 切 status 失败时 (比如 progress 100% 但 status 仍 queued), #}
-            {#       页面停留在旧 template 渲染 (排队中 + 100% 矛盾) #}
-            {#       终态时调 location.reload() 重新从 server 拉最新 task.status, 重新渲染 template #}
+          // CUSTOM-MODIFIED: 终态判断用 is_terminal 全集 (success/failed/cancelled/rolled_back) @ 2026-08-27 @ mavis
+          // 关联: docs/changelogs/2026-08-27_poller-zombie-detection.md §B
+          // 业务: 8/27 15:15 task #4 实战, 终态后还 polling 是浪费 + 制造"执行中 0%"误显示
+          const TERMINAL_STATUSES = ["success", "failed", "cancelled", "rolled_back"];
+          if (TERMINAL_STATUSES.includes(d.status)) {
+            // 终态自动 reload (拿最新 template 渲染)
             setTimeout(() => location.reload(), 1000);
+          } else {
+            setTimeout(poll, 3000);
           }
         } catch (e) {
           console.error('poll failed', e);
@@ -255,14 +262,21 @@
       }
 
       function render(d) {
-        const pct = (d.progress && d.progress.pct) || 0;
+        // CUSTOM-MODIFIED: 终态时 pct 强制 100% (避免 0% + 状态矛盾显示) @ 2026-08-27 @ mavis
+        // 关联: docs/changelogs/2026-08-27_poller-zombie-detection.md §B
+        const TERMINAL_STATUSES = ["success", "failed", "cancelled", "rolled_back"];
+        const isTerminal = TERMINAL_STATUSES.includes(d.status);
+        const rawPct = (d.progress && d.progress.pct) || 0;
+        // 终态时强制 100% (跟 status 视觉对齐)
+        const pct = isTerminal ? 100 : rawPct;
         document.getElementById('pct').textContent = pct + '%';
         document.getElementById('bar').style.width = pct + '%';
         const stage = document.getElementById('stage');
+        // CUSTOM-MODIFIED: status 映射加 rolled_back @ 2026-08-27 @ mavis
         stage.textContent = ({
           pending: '待预检', precheck_failed: '预检未通过', queued: '排队中',
           running: '执行中', cut_over: '切表阶段', success: '成功',
-          failed: '失败', cancelled: '已取消',
+          failed: '失败', cancelled: '已取消', rolled_back: '已回滚',
         })[d.status] || d.status;
         stage.className = 'progress-stage ' + d.status;
         const bar = document.getElementById('bar');
@@ -283,7 +297,7 @@
         // 终态时禁用按钮
         const startBtn = document.getElementById('startBtn');
         const cancelBtn = document.getElementById('cancelBtn');
-        if (["success", "failed", "cancelled"].includes(d.status)) {
+        if (isTerminal) {
           if (startBtn) startBtn.disabled = true;
           if (cancelBtn) cancelBtn.disabled = true;
         }

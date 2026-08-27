@@ -325,14 +325,38 @@ def stop_ghost_process(pid: int, timeout: int = 10) -> bool:
 
 
 def is_alive(pid: int) -> bool:
-    """进程是否还活着。"""
+    """进程是否还活着 (区分 zombie)。
+
+    ## CUSTOM-MODIFIED: 区分 zombie @ 2026-08-27 @ mavis
+    ## 关联: docs/changelogs/2026-08-27_poller-zombie-detection.md
+    ## 业务: 8/27 15:15 task #4 实战发现 — gh-ost 子进程报 1064 死太快成 zombie,
+    ##       ``os.kill(pid, 0)`` 对 zombie 返 0 (PID 存在), 旧版 is_alive 永远 True,
+    ##       poller 死循环 sleep 3s 30 分钟. 修法: ``os.kill(pid, 0)`` 之外加 /proc/<pid>/status
+    ##       State 字段检查, Z (zombie) 视为已死.
+    """
     if not pid:
         return False
+    # 1. PID 是否存在
     try:
         os.kill(pid, 0)
-        return True
     except (ProcessLookupError, PermissionError):
         return False
+    # 2. 是否 zombie (Z 状态 — 进程已死但父进程未 wait)
+    try:
+        with open(f"/proc/{pid}/status", "r") as f:
+            for line in f:
+                if line.startswith("State:"):
+                    # State:	Z (zombie) / R (running) / S (sleeping) / D (disk sleep) / T (stopped) / I (idle)
+                    if "Z" in line.split()[1]:
+                        return False
+                    return True
+    except (FileNotFoundError, ProcessLookupError):
+        # /proc/<pid> 没了 — 视为死了
+        return False
+    except (PermissionError, OSError):
+        # 别的 OS 错 — 保守起见返 True 让 poller 继续
+        return True
+    return True
 
 
 def read_log_tail(log_path: str, max_bytes: int = 65536) -> str:

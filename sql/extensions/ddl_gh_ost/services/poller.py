@@ -239,6 +239,14 @@ def poll_loop(task_id: int):
     except Exception:  # noqa: BLE001
         instance = None
     last_threads_check = 0
+    # CUSTOM-MODIFIED: staleness 检测 (gh-ost 进程活着但卡死) @ 2026-08-27 @ mavis
+    # 关联: docs/changelogs/2026-08-27_poller-zombie-detection.md
+    # 业务: 8/27 15:15 task #4 实战发现, gh-ost 报 1064 死太快 zombie 修了, 但还有
+    #       "gh-ost 进程活着但 log 30s+ 没更新" 这种卡死场景 (比如 MySQL conn 卡死,
+    #       gh-ost 不报错也不动). staleness 检测: 进程 alive + log mtime > 60s 没更新 → 视为 failed.
+    # 阈值 60s 比 3s poll 周期宽, 避免误杀 transient 阶段 (启动/连接).
+    STALENESS_THRESHOLD = 60  # 秒
+    last_log_mtime = 0.0  # 0 = 还没看过
 
     # 标记 running
     if task.status == "queued":
@@ -284,6 +292,39 @@ def poll_loop(task_id: int):
 
             if not tail:
                 # log 还是空（启动早期）
+                # CUSTOM: staleness 检测 — log 空 + 进程 alive + mtime 太久没动 → 视为卡死
+                if task.ghost_pid and is_alive(task.ghost_pid):
+                    try:
+                        mtime = os.path.getmtime(log_path) if os.path.exists(log_path) else 0
+                    except OSError:
+                        mtime = 0
+                    if mtime > 0 and last_log_mtime == 0:
+                        last_log_mtime = mtime
+                    # 如果 log 文件存在但 mtime 超过阈值秒没变
+                    if mtime > 0 and (time.time() - mtime) > STALENESS_THRESHOLD:
+                        logger.warning(
+                            "poller staleness: task=%s pid=%s log mtime=%s ago (threshold=%ss)",
+                            task_id, task.ghost_pid,
+                            int(time.time() - mtime), STALENESS_THRESHOLD,
+                        )
+                        _finalize_task(
+                            task, "failed",
+                            f"gh-ost 进程无响应 (log {int(time.time() - mtime)}s 没更新, 进程 alive)",
+                        )
+                        break
+                    # log 文件压根没生成 (gh-ost 启动失败没写 log), 阈值也判
+                    if mtime == 0 and task.started_at and \
+                            (timezone.now() - task.started_at).total_seconds() > STALENESS_THRESHOLD:
+                        logger.warning(
+                            "poller staleness (no log file): task=%s pid=%s started_at=%s ago",
+                            task_id, task.ghost_pid,
+                            int((timezone.now() - task.started_at).total_seconds()),
+                        )
+                        _finalize_task(
+                            task, "failed",
+                            f"gh-ost 进程未生成 log (启动后 {(timezone.now() - task.started_at).total_seconds():.0f}s 仍无 log)",
+                        )
+                        break
                 time.sleep(POLL_INTERVAL)
                 continue
 
