@@ -442,16 +442,22 @@ def rollback(request: HttpRequest, workflow_id: int) -> JsonResponse:
     ##   **此回滚端点不能撤销已经发生的 ALTER。** gh-ost cut-over 是原子的
     ##   (--cut-over=atomic), 表结构变更 + 数据迁移在 cut-over 那一刻已经完成,
     ##   新表已经 rename 上去替旧表. 这个端点严格说不是"回滚 DDL", 只是:
-    ##     1. DROP 残留的 _<table>_gho 影子表 (gh-ost 自己 cut-over 后没清掉)
-    ##     2. DROP 残留的 _<table>_del 旧表 (gh-ost rename 后没清掉)
-    ##     3. task.status 切到 'rolled_back' (标记 DBA 主动放弃这次 DDL)
-    ##     4. workflow 联动切到 workflow_exception (跟 failed 一样语义)
+    ##     1. DROP 残留表 (IF EXISTS 兜底):
+    ##        - 正常 cut-over 成功场景: gh-ost 1.1.10 跑完会自动 drop _gho/_del/_ghc/_ghk 4 张表
+    ##          (8/27 17:23 查 110 prod hly_doc_model 库确认 _test_gho/_test_del/_test_ghc/_test_ghk
+    ##           全不存在, ghost-6.log 14:50:19 也记录 gh-ost drop 它们的过程).
+    ##          此端点 IF EXISTS 走 no-op, 不报错. **正常跑成功的 task 点 rollback, DROP 是空操作.**
+    ##        - 异常残留场景: gh-ost 异常退出 / 手动 cancel / 跑一半失败, 可能残留 _gho / _del.
+    ##          此端点 IF EXISTS drop 真起作用清理.
+    ##     2. task.status 切到 'rolled_back' (标记 DBA 主动放弃这次 DDL)
+    ##     3. workflow 联动切到 workflow_exception (跟 failed 一样语义)
+    ##     4. task.finished_at 写当前时间, error_message 拼 dropped=... errors=...
+    ##   **端点的核心作用其实是"标作废"** (DBA 主动放弃这次 DDL), DROP TABLE 是兜底.
     ##   **不能做的事**:
     ##     - 撤销 ALTER 把表结构改回原状 (做不到, cut-over 已生效)
     ##     - 恢复原数据 (做不到, 数据已迁移)
     ##   真要"撤销 DDL"必须靠**前置备份** (走 mysqldump 或者 110 prod 的
-    ##   backup 机制), 不是靠这个端点. 此端点适用场景: 清理残留 / 标"作废",
-    ##   下次 DDL 走新的 gh-ost 工单.
+    ##   backup 机制), 不是靠这个端点.
 
     注意：cut-over 成功（status=success）后影子表是 _<table>_gho，
     实际表已经 rename 过了，回滚意味着 drop 影子表 + 改 status=rolled_back。
