@@ -500,9 +500,129 @@ echo "    4. detail 页 '审批流' 区域: 应跟 config/ 配的级别一致 (�
 echo "  ⚠️  如果 detail 页跟 config/ 不一致 → gunicorn master 启动时间跟代码部署时间对不上, HUP 没生效 (8/24 教训)"
 echo ""
 
+# === 步骤 14: 推 110 收尾 — qcluster restart + systemd disable (8/27 09:18 + 09:38 教训) ===
+echo "=== 步骤 14: 推 110 收尾 — qcluster restart + systemd disable ==="
+echo "目的: 8/27 09:18 教训 — 推 110 完成后必 disable systemd 双 unit"
+echo "      8/27 09:38 教训 — 推 110 改 .env (K2 修 CACHE_URL) 后, 老 qcluster 内存里"
+echo "               redis connection 仍指 172.19.0.4, 导致 execute_sql 任务全卡死"
+echo "               业务 RD mkq 工单 #4743 19 分钟不执行就是这个根因"
+echo "      推 110 必走 — 重启 qcluster + disable systemd, idempotent, 0 业务风险"
+echo ""
+echo "  ⚠️  这步在步骤 13 跑完 + HTTP 验证 200/302 后才能跑"
+echo "  ⚠️  跑完后 gunicorn master pid 不变 (nohup 拉的), qcluster 进程全换新"
+echo ""
+
+# 1. 备份老 qcluster log (跟 8/27 09:18 systemd disable 教训一致)
+if [[ -f /var/log/archery/qcluster.log ]]; then
+    bak_name="/var/log/archery/qcluster.log.bak_$(date +%Y%m%d_%H%M)"
+    cp /var/log/archery/qcluster.log "${bak_name}" 2>&1
+    ok "qcluster log 备份到 ${bak_name}"
+else
+    warn "qcluster.log 不存在, 跳过备份"
+fi
+
+# 2. 拿老 qcluster 进程 (用于 verify 真死了)
+old_qcluster=$(pgrep -f "manage.py qcluster" | wc -l)
+echo "  老 qcluster 进程数: ${old_qcluster}"
+
+# 3. pkill -9 老 qcluster
+pkill -9 -f "manage.py qcluster" 2>&1
+sleep 2
+new_qcluster=$(pgrep -f "manage.py qcluster" | wc -l)
+echo "  pkill 后剩: ${new_qcluster} (期望 0)"
+if [[ "${new_qcluster}" -gt 0 ]]; then
+    err "pkill 失败, 还有 ${new_qcluster} 个 qcluster 进程, 排查后重跑"
+    exit 1
+fi
+ok "pkill 老 qcluster 完成"
+
+# 4. nohup 拉新 (走 c9236a0 新 .env REDIS_HOST=127.0.0.1)
+cd ${PROD_PATH}
+setsid nohup sudo -u archery venv/bin/python manage.py qcluster </dev/null >/var/log/archery/qcluster.log 2>&1 &
+sleep 3
+ok "新 qcluster 拉起"
+
+# 5. 验证: 8 进程稳定
+verify_qcluster=$(pgrep -f "manage.py qcluster" | wc -l)
+echo "  新 qcluster 进程数: ${verify_qcluster} (期望 8: 1 sudo + 1 master + 1 worker + 5 sub-workers)"
+if [[ "${verify_qcluster}" -ge 8 ]]; then
+    ok "新 qcluster 8+ 进程稳定"
+else
+    err "新 qcluster 进程数不对 (${verify_qcluster}), 排查"
+    exit 1
+fi
+
+# 6. 验证: redis connection 走 127.0.0.1:6379 (不是 172.19.0.4)
+if ss -tnp 2>/dev/null | grep "172.19.0.4" | grep -q qcluster; then
+    err "qcluster 还在连 172.19.0.4 (容器 redis 已死), .env 没生效"
+    exit 1
+fi
+if ss -tnp 2>/dev/null | grep "127.0.0.1:6379" | grep -q qcluster; then
+    ok "qcluster 走 127.0.0.1:6379 (新 .env 生效)"
+else
+    warn "qcluster 还没建立 redis connection, 等几秒再 verify"
+    sleep 3
+    ss -tnp 2>/dev/null | grep "127.0.0.1:6379" | grep -q qcluster && ok "qcluster 走 127.0.0.1:6379" || err "qcluster 没连 redis, 排查"
+fi
+
+# 7. 验证: qcluster.log 无 172.19.0.4 错
+err_count=$(grep -c "172.19.0.4" /var/log/archery/qcluster.log 2>/dev/null || echo 0)
+if [[ "${err_count}" -gt 0 ]]; then
+    err "qcluster.log 还有 ${err_count} 个 172.19.0.4 错"
+    exit 1
+fi
+ok "qcluster.log 0 个 172.19.0.4 错"
+
+# 8. 验证: gunicorn 没被误杀 (跟 8/26 教训一致, 避免 pkill 误杀 gunicorn)
+gin_count=$(pgrep -f "gunicorn.*archery" | wc -l)
+if [[ "${gin_count}" -ge 5 ]]; then
+    ok "gunicorn 还在跑 (${gin_count} 进程)"
+else
+    err "gunicorn 被误杀 (剩 ${gin_count} 进程)"
+    exit 1
+fi
+
+# 9. 验证: 5 端点
+echo ""
+echo "  5 端点 verify:"
+for url in /login/ /dbaprinciples/ /admin/ /api/v1/sqlquery/resources/ /gh_ost/admin_list/; do
+    code=$(curl -sI -o /dev/null -w "%{http_code}" --max-time 5 "http://127.0.0.1:9123${url}" 2>/dev/null)
+    case "${code}" in
+        200|302|401) ok "  ${url} = ${code}" ;;
+        *) err "  ${url} = ${code}, 排查" ;;
+    esac
+done
+
+# 10. systemd 双 unit disable (8/27 09:18 教训, idempotent)
+echo ""
+echo "  systemd 双 unit disable (避免 ghost restart 风暴):"
+for svc in archery-v114-gunicorn.service archery-v114-qcluster.service; do
+    if systemctl is-enabled "${svc}" 2>/dev/null | grep -q "enabled"; then
+        systemctl disable --now "${svc}" 2>&1
+        ok "  ${svc} disabled"
+    else
+        ok "  ${svc} already disabled (idempotent)"
+    fi
+done
+
+# 11. 收尾提示
+echo ""
+echo "  步骤 14 完成. 推 110 收尾 checklist:"
+echo "    [1] 6 端点全过 ✓"
+echo "    [2] qcluster 8 进程稳定 ✓"
+echo "    [3] redis connection 走 127.0.0.1:6379 ✓"
+echo "    [4] qcluster.log 无 172.19.0.4 错 ✓"
+echo "    [5] gunicorn 没被误杀 ✓"
+echo "    [6] systemd 双 unit disabled ✓"
+echo ""
+echo "  ⚠️  8/27 09:18 教训: 业务走 nohup 独家 (36746 gunicorn + qcluster 8 进程)"
+echo "               systemd disable 是 idempotent, 推 110 之前是 disabled 也无影响"
+echo "  ⚠️  8/27 09:38 教训: K1/K2/K3 .env 改完后必跑这步, 不跑会导致 execute_sql 任务全卡死"
+echo ""
+
 echo "================================================================"
-echo "[5 步必做脚本完整版: 步骤 1-13 全跑]"
-echo "  推 110 必跑: 步骤 1-13 全过"
+echo "[5 步必做脚本完整版: 步骤 1-14 全跑]"
+echo "  推 110 必跑: 步骤 1-14 全过"
 echo "  推 110 失败回滚: 跑 rollback_110prod_v030_20260827.sh"
 echo "================================================================"
 
