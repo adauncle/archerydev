@@ -377,12 +377,12 @@
     <div class="hero-tag-row">
       <span class="hero-tag">ARCHERY v0.5.0-r1</span>
       <span class="hero-tag new">8/28 修订版</span>
-      <span class="hero-tag warn">解决"大表配 500 次"问题</span>
+      <span class="hero-tag warn">解决"大表配 1589 次"问题</span>
     <span class="hero-tag new">8/28 14:00 r2 一键配</span>
     </div>
     <h1>DDL 跨库同步<br><em>业务库 ↔ 历史库</em> · v0.5.0-r2</h1>
     <p class="hero-sub">
-      v0.5.0 初版是"DBA 手动一张张点配置同步表" — 历史库 500 张表 = DBA 点 500 次，<b>不现实</b>。<br>
+      v0.5.0 初版是"DBA 手动一张张点配置同步表" — 业务库 1589 张 = DBA 点 1589 次，<b>不现实</b>。<br>
       8/28 14:00 业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 实战数据，<b>r1 批量导入 5-10 min 仍嫌慢</b>。<br>
       8/28 14:00 v0.5.0-r2 一键配：<b>"历史库有多少张表就拿多少张"</b> — 白名单 = 历史库 1289 张, 黑名单 = 业务库独有 300 张, 1-click 配完 <b>6 min</b>。
     </p>
@@ -416,7 +416,7 @@
       <span class="section-num">01</span>
       <h2 class="section-title">3 个核心改动</h2>
     </div>
-    <div class="section-sub">从"DBA 手动 500 次点" 降到"1 次批量 + 50 个排除规则"。</div>
+    <div class="section-sub">从"DBA 手动 1589 次点" 降到"1 次批量 + 50 个排除规则"。</div>
 
     <table class="compare-table">
       <thead>
@@ -472,7 +472,7 @@
       <span class="section-num">02</span>
       <h2 class="section-title">真实场景工作量对比</h2>
     </div>
-    <div class="section-sub">业务库 <b>500 张表</b>，其中 ~80% 要同步到历史库。看看 4 个核心操作的工作量。</div>
+    <div class="section-sub">业务库 <b>1589 张表</b>，其中 ~80% 要同步到历史库。看看 4 个核心操作的工作量。</div>
 
     <div class="work-compare">
       <div class="work-card bad">
@@ -483,7 +483,7 @@
         </div>
         <div class="work-row">
           <span class="label">配同步表</span>
-          <span class="val bad"><span class="big">2-3 小时</span>（500 次点）</span>
+          <span class="val bad"><span class="big">2-3 小时</span>（1589 次点）</span>
         </div>
         <div class="work-row">
           <span class="label">业务库加新表</span>
@@ -557,7 +557,7 @@
         <text x="330" y="155" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">  TABLE_ROWS</text>
         <text x="330" y="170" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">FROM INFORMATION_SCHEMA</text>
         <text x="330" y="185" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">.TABLES</text>
-        <text x="330" y="205" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">→ 487 张表</text>
+        <text x="330" y="205" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">→ 1289 张表</text>
 
         <line x1="440" y1="150" x2="480" y2="150" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
 
@@ -565,7 +565,7 @@
         <rect x="480" y="50" width="240" height="60" rx="8" fill="rgba(245, 158, 11, 0.06)" stroke="#f59e0b" stroke-width="1.5"/>
         <text x="600" y="68" text-anchor="middle" font-size="11.5" font-weight="600" fill="#f59e0b">过滤规则 (客户端生效)</text>
         <text x="600" y="84" text-anchor="middle" font-size="10" fill="#3a4256">排除前缀/后缀/ENGINE/空表</text>
-        <text x="600" y="98" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">→ 剩余 198 张</text>
+        <text x="600" y="98" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">→ 剩余 1100 张</text>
 
         <line x1="600" y1="110" x2="600" y2="150" stroke="#2f6f5e" stroke-width="1.5"/>
 
@@ -575,7 +575,7 @@
         <text x="600" y="190" text-anchor="middle" font-size="10.5" fill="#3a4256">[全选] [反选] [搜索] 列表</text>
         <text x="600" y="205" text-anchor="middle" font-size="10.5" fill="#3a4256">DBA 勾选 / 反选 / 搜索表名</text>
         <text x="600" y="220" text-anchor="middle" font-size="10.5" fill="#3a4256">+ 大小 / 列数 / 排除状态</text>
-        <text x="600" y="235" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">已选 198 / 198</text>
+        <text x="600" y="235" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">已选 1100 / 1100</text>
 
         <line x1="720" y1="200" x2="760" y2="200" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
 
@@ -585,8 +585,8 @@
         <text x="870" y="178" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">DdlSyncTable</text>
         <text x="870" y="193" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">.objects</text>
         <text x="870" y="208" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">.bulk_create(</text>
-        <text x="870" y="223" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">  [198 obj])</text>
-        <text x="870" y="240" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">→ 198 张入库</text>
+        <text x="870" y="223" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">  [1100 obj])</text>
+        <text x="870" y="240" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">→ 1100 张入库</text>
         <text x="870" y="257" text-anchor="middle" font-size="10" fill="#7c7a72">（单 SQL, 性能高 100 倍）</text>
       </svg>
     </div>
@@ -607,7 +607,7 @@
       </div>
       <div class="modal-body">
         <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--ink-mid); margin-bottom: 14px;">
-          从历史库 <code style="background: rgba(59,130,246,0.15); padding: 1px 5px; border-radius: 3px;">hly_history</code> 自动扫描, 找到 <b>487</b> 张表 (跟业务库差 13 张)
+          从历史库 <code style="background: rgba(59,130,246,0.15); padding: 1px 5px; border-radius: 3px;">hly_activity</code> 自动扫描, 找到 <b>1289</b> 张表 (跟业务库差 300 张)
         </div>
 
         <div style="font-size: 11.5px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">⚙ 过滤规则 (可叠加)</div>
@@ -630,7 +630,7 @@
           </div>
         </div>
         <div style="background: var(--primary-soft); border: 1px solid rgba(47, 111, 94, 0.2); border-radius: 6px; padding: 6px 10px; font-size: 12px; color: var(--primary); margin-bottom: 14px;">
-          ─ 过滤后剩余 <b>198 张表</b>, 待选 ─
+          ─ 过滤后剩余 <b>1100 张表</b>, 待选 ─
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
@@ -640,7 +640,7 @@
             <span style="background: #fafaf7; border: 1px solid var(--line-soft); border-radius: 6px; padding: 5px 10px; font-size: 11.5px; color: var(--ink-soft);">🔍 搜索表名</span>
           </div>
           <div style="font-size: 12px; color: var(--ink-soft);">
-            已选 <b style="color: var(--primary);">198</b> / 198
+            已选 <b style="color: var(--primary);">1100</b> / 1100
           </div>
         </div>
 
@@ -700,7 +700,7 @@
       </div>
       <div class="modal-footer">
         <span class="mock-btn outline" style="cursor: pointer;">取消</span>
-        <span class="mock-btn primary" style="cursor: pointer;">✓ 确认导入 (198 张)</span>
+        <span class="mock-btn primary" style="cursor: pointer;">✓ 确认导入 (1100 张)</span>
       </div>
     </div>
   </section>
@@ -864,12 +864,12 @@
           </div>
           <div class="mock-block">
             <div class="label">历史库</div>
-            hly_history (172.20.2.X:3306)
+            hly_activity (172.20.2.108:6446)
           </div>
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin: 14px 0 8px; flex-wrap: wrap; gap: 8px;">
-          <div style="font-size: 13px; font-weight: 600;">同步表清单 · 198 / 487</div>
+          <div style="font-size: 13px; font-weight: 600;">同步表清单 · 1100 / 1289</div>
           <div style="display: flex; gap: 6px; flex-wrap: wrap;">
             <span class="mock-btn primary" style="cursor: pointer;">📥 批量导入</span>
             <span class="mock-btn outline" style="cursor: pointer;">+ 添加同步表</span>
@@ -929,7 +929,7 @@
 
         <div style="margin-top: 14px; font-size: 13px; font-weight: 600;">黑名单表 (默认不同步) · 0 个</div>
         <div style="background: #fafaf7; border: 1px solid var(--line-soft); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: var(--ink-soft); margin-top: 4px;">
-          空。业务库 198 张表都同步到历史库, 其他 289 张不在白名单 → 默认不同步 (blacklist 模式)
+          空。业务库 1289 张表都同步到历史库, 其他 300 张不在白名单 → 默认不同步 (blacklist 模式)
         </div>
 
         <div class="mock-tip" style="margin-top: 14px;">
@@ -1014,7 +1014,7 @@
         <h4 class="phase-h">Phase 1 · 短期 C <span class="tag new">推荐先做 · 2-3 天</span></h4>
         <p class="phase-p"><b>核心: 库对管理 + 批量导入 + 模态框</b></p>
         <p class="phase-p">· 3 张表 migration (sync_mode 默认 blacklist) · 库对管理列表 + 库对详情 · <b>批量导入机制 (从历史库扫表 + 模态框 + 过滤规则 + 批量入库)</b></p>
-        <p class="phase-p">· 业务库 DDL 工单详情"本表已配置同步" 提示 · 134 dev 演练: accesscard 库对 + 批量导入 50 张表 + 1 条真实 DDL 联动</p>
+        <p class="phase-p">· 业务库 DDL 工单详情"本表已配置同步" 提示 · 134 dev 演练: accesscard 库对 + 批量导入 1100 张表 + 1 条真实 DDL 联动</p>
       </li>
       <li class="phase-item">
         <h4 class="phase-h">Phase 2 · 中期 B <span class="tag">1-2 周</span></h4>
