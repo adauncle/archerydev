@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DDL 跨库同步 v0.5.0-r1 · 业务库 ↔ 历史库 · 功能图说</title>
+<title>DDL 跨库同步 v0.5.0-r3 · 业务库 ↔ 历史库 · 功能图说 (8/28 16:30 修订)</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -375,16 +375,18 @@
   <!-- ===== Hero ===== -->
   <header class="hero">
     <div class="hero-tag-row">
-      <span class="hero-tag">ARCHERY v0.5.0-r1</span>
-      <span class="hero-tag new">8/28 修订版</span>
+      <span class="hero-tag">ARCHERY v0.5.0-r3</span>
+      <span class="hero-tag new">8/28 16:30 修订</span>
       <span class="hero-tag warn">解决"大表配 1589 次"问题</span>
-    <span class="hero-tag new">8/28 14:00 r2 一键配</span>
+      <span class="hero-tag new">r2 一键配 6 min</span>
+      <span class="hero-tag new">r3 走当前配置流程</span>
     </div>
-    <h1>DDL 跨库同步<br><em>业务库 ↔ 历史库</em> · v0.5.0-r2</h1>
+    <h1>DDL 跨库同步<br><em>业务库 ↔ 历史库</em> · v0.5.0-r3</h1>
     <p class="hero-sub">
       v0.5.0 初版是"DBA 手动一张张点配置同步表" — 业务库 1589 张 = DBA 点 1589 次，<b>不现实</b>。<br>
-      8/28 14:00 业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 实战数据，<b>r1 批量导入 5-10 min 仍嫌慢</b>。<br>
-      8/28 14:00 v0.5.0-r2 一键配：<b>"历史库有多少张表就拿多少张"</b> — 白名单 = 历史库 1289 张, 黑名单 = 业务库独有 300 张, 1-click 配完 <b>6 min</b>。
+      8/28 14:00 业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 实战数据 (DBA 查 <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code>)，<b>r1 批量导入 5-10 min 仍嫌慢</b>。<br>
+      <b>r2 一键配</b>：<b>"历史库有多少张表就拿多少张"</b> — 白名单 = 历史库 1289 张, 黑名单 = 业务库独有 300 张, 1-click 配完 <b>6 min</b>。<br>
+      <b>r3 走当前配置流程</b>：自动生成的历史库镜像工单, 按当前 Archery 配置走, 跟正常历史库工单一样 — <b>0 额外代码, DBA 改配置就生效</b>。
     </p>
     <div class="hero-meta">
       <span>
@@ -821,7 +823,8 @@
         </div>
 
         <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: var(--ink-mid); margin-bottom: 14px;">
-          ℹ️ 业务库加新表时, Archery 自动检测 + "待确认" 流程让 DBA 1-click 决定 (Phase 2)
+          ℹ️ 业务库加新表时, Archery 自动检测 + "待确认" 流程让 DBA 1-click 决定 (Phase 2)<br>
+          <b style="color: var(--primary);">🔗 联动</b>：库对配完后, 业务库 DDL 提交时 Archery 自动建历史库镜像工单, <b>走当前 Archery 配置的流程</b> (r3 决策, 跟正常历史库工单一样) — 见 §10
         </div>
       </div>
       <div class="modal-footer">
@@ -841,7 +844,7 @@
       <span class="section-num">06</span>
       <h2 class="section-title">库对详情页 · 双按钮布局</h2>
     </div>
-    <div class="section-sub">库对详情加 <b>3 个核心按钮</b>: 🎯 一键配 (r2 核心) / 📥 批量导入 (r1 fallback) / + 添加同步表。sync_mode 默认 blacklist。</div>
+    <div class="section-sub">库对详情加 <b>5 个按钮 (3 核心 + 2 辅助)</b>: 🎯 一键配 (r2 核心) / 📥 批量导入 (r1 fallback) / + 添加同步表 + 🔍 schema 差集 / ⚙ 过滤规则。sync_mode 默认 blacklist。</div>
 
     <div class="mock-ui">
       <div class="mock-titlebar">
@@ -871,6 +874,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin: 14px 0 8px; flex-wrap: wrap; gap: 8px;">
           <div style="font-size: 13px; font-weight: 600;">同步表清单 · 1100 / 1289</div>
           <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <span class="mock-btn primary" style="cursor: pointer; background: linear-gradient(135deg, #2f6f5e, #1e5848); color: white;">🎯 一键配 (按历史库)</span>
             <span class="mock-btn primary" style="cursor: pointer;">📥 批量导入</span>
             <span class="mock-btn outline" style="cursor: pointer;">+ 添加同步表</span>
             <span class="mock-btn outline" style="cursor: pointer;">🔍 schema 差集</span>
@@ -1065,13 +1069,95 @@
     </table>
   </section>
 
-  <!-- ===== 09 当前状态 ===== -->
+  <!-- ===== 10 v0.5.0-r3 重大决策变更 ===== -->
   <section>
     <div class="section-head">
       <span class="section-num">10</span>
+      <h2 class="section-title">🔄 v0.5.0-r3 重大决策变更 — 走当前配置的流程 (8/28 16:15)</h2>
+    </div>
+    <div class="section-sub">
+      <b>8/28 16:15 DBA 阿达叔叔拍板</b>：<b>"生成历史库工单, 按照当前配置的流程走就行, 我调整成什么流程, 就怎么走. 和正常工单一样."</b>
+      <br>这是个<b>优雅的设计原则</b> — 镜像工单跟正常历史库工单走一样的审计流, DBA 改 Archery 配置就生效, <b>0 额外代码</b>。
+    </div>
+
+    <div class="card" style="background: rgba(47, 111, 94, 0.04); border-left: 3px solid var(--primary); margin-bottom: 18px;">
+      <h3>🎯 决策核心</h3>
+      <p>自动生成的历史库镜像工单走当前 Archery 配置的流程 (<code>workflow_audit_setting.audit_auth_groups</code>):</p>
+      <ul>
+        <li><b>0 额外代码</b>, 0 重复配置, 复用现有 <code>SqlWorkflow</code> + <code>audit_setting</code> 机制</li>
+        <li>DBA 改 "prod core for 历史库" 组的流程 (单级 / 双级 / 加 leader), 镜像工单自动跟进</li>
+        <li>v0.5.0 代码<b>不写</b>"由谁审" / "走几级", 完全用 Archery 现成配置</li>
+      </ul>
+    </div>
+
+    <h3 style="font-size: 16px; font-weight: 600; margin: 20px 0 10px;">📊 8/21 vs 8/28 拍板对比</h3>
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th style="width: 30%;">维度</th>
+          <th style="width: 35%;">8/21 拍板 (作废)</th>
+          <th>8/28 拍板 (采用)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>审批人</b></td>
+          <td>同业务库 DDL 审批人 (3 级)</td>
+          <td class="col-new"><b>按当前 Archery 配置 (DBA 配的) 走</b></td>
+        </tr>
+        <tr>
+          <td><b>业务库 DDL 没审过怎么办</b></td>
+          <td>没明确</td>
+          <td class="col-new">不联动 (业务库 DDL 必审过)</td>
+        </tr>
+        <tr>
+          <td><b>业务 RD 收到通知</b></td>
+          <td>RD + leader 都收 (重复)</td>
+          <td class="col-new">只通知 RD (不重复打扰 leader)</td>
+        </tr>
+        <tr>
+          <td><b>实施复杂度</b></td>
+          <td>需单独为"自动生成" 写代码</td>
+          <td class="col-new"><b>0 额外代码</b>, 复用现有 <code>audit_setting</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="grid-2" style="margin-top: 20px;">
+      <div class="card" style="border-left: 3px solid var(--success);">
+        <h3>✅ 3 实施原则</h3>
+        <p><b>1. 镜像工单跟正常工单一样</b> — v0.5.0 代码不写"由谁审" / "走几级"</p>
+        <p><b>2. 业务库 DDL 必审过</b> (<code>current_status=1 PASSED</code>) 才触发镜像工单 — trigger 加 <code>if source_workflow.current_status != 1: return None</code></p>
+        <p><b>3. 业务 RD 实时通知</b> (钉钉 OA) — 业务库 DDL 触发镜像工单时, 钉钉通知业务 RD: "你的 DDL <code>#12345</code> 触发了历史库工单 <code>#12346</code>"</p>
+      </div>
+      <div class="card" style="border-left: 3px solid var(--warn);">
+        <h3>🛡️ 3 安全护栏</h3>
+        <p><b>1. 业务库 DDL 必审过 trigger</b> — 跟实施原则 2 一致 (底线)</p>
+        <p><b>2. 历史库执行前预演 + 异常 rollback</b> — 跟 v0.4.5 智能回滚 联动 (8/13 拍板, 已落地)</p>
+        <p><b>3. 异常通知 DBA + 业务 RD</b> — 跟 v0.2.0 钉钉 OA 联动, 异常立刻钉钉通知</p>
+      </div>
+    </div>
+
+    <div class="card" style="background: rgba(59, 130, 246, 0.04); border-left: 3px solid var(--info); margin-top: 18px;">
+      <h3>⚙️ Archery 配置 (DBA 后台自己配, v0.5.0 不动)</h3>
+      <pre style="background: #fafaf7; padding: 10px 14px; border-radius: 6px; font-size: 12.5px; line-height: 1.6; font-family: 'JetBrains Mono', monospace; overflow-x: auto;">
+工单类型: SQL 上线申请
+组: prod core for 历史库       ← 跟现在一致
+变更审批流程: DBA              ← DBA 自己在 Archery 后台配, 想改就改
+      </pre>
+      <p style="font-size: 12.5px; color: var(--ink-soft); margin-top: 10px;">
+        110 prod 实际 <code>workflow_audit_setting.audit_setting_id=3</code> (group_id=5, audit_auth_groups='6,4,3,15,16') — 2024-01-16 创建, 细分为 'DBA审批' (id=3) / 'DBA执行' (id=16) / 'DBA组长' (id=14) / '副总' (id=15). 镜像工单自动走这个配置, DBA 改配置后镜像工单自动跟进。
+      </p>
+    </div>
+  </section>
+
+  <!-- ===== 11 当前状态 ===== -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">11</span>
       <h2 class="section-title">当前状态 & 下一步</h2>
     </div>
-    <div class="section-sub">v0.5.0-r2 修订设计完成 (含一键配机制 + 实战数据 1589/1289), <b>未开工</b>。等用户拍板 Phase 1 启动。</div>
+    <div class="section-sub">v0.5.0-r3 决策落地 (r1 库对配 + r2 一键配 + r3 走当前配置流程), 实战数据 1589/1289/300/1100 已对齐, <b>未开工</b>。等用户拍板 Phase 1 启动。</div>
 
     <div class="grid-2">
       <div class="card" style="border-left: 3px solid var(--success);">
@@ -1091,9 +1177,9 @@
 
   <!-- ===== Footer ===== -->
   <footer class="footer">
-    Archery v0.5.0-r2 · DDL 跨库同步功能图说（8/28 14:00 修订） · 设计人 mavis<br>
-    实战数据：业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 (DBA 8/28 14:00 110 prod 查询)<br>
-    配套：<a style="color: var(--primary);" href="2026-08-28_ddl-sync-pair-design-v050-r1.md">MD r1+r2 详设 (§12 一键配)</a> · <a style="color: var(--ink-soft);" href="2026-08-21_ddl-sync-pair-design.md">v0.5.0 原版 (对照)</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md">r2 changelog</a>
+    Archery v0.5.0-r3 · DDL 跨库同步功能图说（8/28 16:30 修订） · 设计人 mavis<br>
+    实战数据：业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 (DBA 8/28 14:00 110 prod 查询, <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code>)<br>
+    配套：<a style="color: var(--primary);" href="2026-08-28_ddl-sync-pair-design-v050-r1.md">MD r1+r2+r3 详设 (§12 一键配 + §13 走当前配置流程)</a> · <a style="color: var(--ink-soft);" href="2026-08-21_ddl-sync-pair-design.md">v0.5.0 原版 (对照)</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md">r2 changelog</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r3-approval-flow.md">r3 changelog</a>
   </footer>
 
 </div>
