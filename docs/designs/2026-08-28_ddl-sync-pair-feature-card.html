@@ -382,7 +382,7 @@
     </div>
     <h1>DDL 跨库同步<br><em>业务库 ↔ 历史库</em> · v0.5.0-r2</h1>
     <p class="hero-sub">
-      8/21 v0.5.0 初版是"DBA 手动一张张点配置同步表" — 历史库 500 张表 = DBA 点 500 次，<b>不现实</b>。<br>
+      v0.5.0 初版是"DBA 手动一张张点配置同步表" — 历史库 500 张表 = DBA 点 500 次，<b>不现实</b>。<br>
       8/28 14:00 业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 实战数据，<b>r1 批量导入 5-10 min 仍嫌慢</b>。<br>
       8/28 14:00 v0.5.0-r2 一键配：<b>"历史库有多少张表就拿多少张"</b> — 白名单 = 历史库 1289 张, 黑名单 = 业务库独有 300 张, 1-click 配完 <b>6 min</b>。
     </p>
@@ -401,7 +401,7 @@
       </span>
       <span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        8/21 v0.5.0 原版 → 8/28 v0.5.0-r1 修订
+        v0.5.0 原版 → 8/28 v0.5.0-r2 修订
       </span>
       <span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -422,7 +422,7 @@
       <thead>
         <tr>
           <th>维度</th>
-          <th>8/21 v0.5.0 原版</th>
+          <th>v0.5.0 原版</th>
           <th>8/28 v0.5.0-r1 修订</th>
         </tr>
       </thead>
@@ -476,7 +476,7 @@
 
     <div class="work-compare">
       <div class="work-card bad">
-        <h3>8/21 原版 · DBA 工作量</h3>
+        <h3>v0.5.0 原版 · DBA 工作量</h3>
         <div class="work-row">
           <span class="label">配库对</span>
           <span class="val">5 min</span>
@@ -933,7 +933,7 @@
         </div>
 
         <div class="mock-tip" style="margin-top: 14px;">
-          <b>最近 5 次同步历史</b> · #12345 业务库工单 8/21 19:30 [已完成] 历史库 #12346 执行成功<br>
+          <b>最近 5 次同步历史</b> · #12345 业务库工单 8/26 19:30 [已完成] 历史库 #12346 执行成功<br>
           <div style="display: flex; gap: 8px; margin-top: 8px;">
             <span class="mock-btn primary" style="cursor: pointer;">🔍 立即跑巡检</span>
             <span class="mock-btn outline" style="cursor: pointer;">📊 schema 差集报告</span>
@@ -1093,7 +1093,7 @@
   <footer class="footer">
     Archery v0.5.0-r2 · DDL 跨库同步功能图说（8/28 14:00 修订） · 设计人 mavis<br>
     实战数据：业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 (DBA 8/28 14:00 110 prod 查询)<br>
-    配套：<a style="color: var(--primary);" href="2026-08-28_ddl-sync-pair-design-v050-r1.md">MD r1+r2 详设 (§12 一键配)</a> · <a style="color: var(--ink-soft);" href="2026-08-21_ddl-sync-pair-design.md">8/21 v0.5.0 原版 (对照)</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md">r2 changelog</a>
+    配套：<a style="color: var(--primary);" href="2026-08-28_ddl-sync-pair-design-v050-r1.md">MD r1+r2 详设 (§12 一键配)</a> · <a style="color: var(--ink-soft);" href="2026-08-21_ddl-sync-pair-design.md">v0.5.0 原版 (对照)</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md">r2 changelog</a>
   </footer>
 
 </div>
