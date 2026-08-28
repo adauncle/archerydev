@@ -607,7 +607,7 @@
       </div>
       <div class="modal-body">
         <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--ink-mid); margin-bottom: 14px;">
-          从历史库 <code style="background: rgba(59,130,246,0.15); padding: 1px 5px; border-radius: 3px;">hly_activity</code> 自动扫描, 找到 <b>1289</b> 张表 (跟业务库差 300 张)
+          从历史库 <code style="background: rgba(59,130,246,0.15); padding: 1px 5px; border-radius: 3px;">hly_* 跨多库</code> 自动扫描, 找到 <b>1289</b> 张表 (跟业务库差 300 张, DBA 实战查 <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code>)
         </div>
 
         <div style="font-size: 11.5px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">⚙ 过滤规则 (可叠加)</div>
@@ -725,12 +725,12 @@
         <table class="mock-table" style="margin-bottom: 14px;">
           <tbody>
             <tr>
-              <td style="font-weight: 600; color: var(--ink);">业务库 (hly_accesscard)</td>
+              <td style="font-weight: 600; color: var(--ink);">业务库 (hly_* 跨多库)</td>
               <td><b>1589</b> 张表</td>
               <td>source_instance</td>
             </tr>
             <tr>
-              <td style="font-weight: 600; color: var(--ink);">历史库 (hly_activity)</td>
+              <td style="font-weight: 600; color: var(--ink);">历史库 (hly_* 跨多库)</td>
               <td><b>1289</b> 张表</td>
               <td>target_instance</td>
             </tr>
@@ -753,7 +753,7 @@
         </table>
 
         <div class="mock-tip" style="margin-bottom: 14px;">
-          提示: <b>白名单 1289 张</b> (从历史库扫, 全选) · <b>黑名单 300 张</b> (业务库独有, 通常字典/配置/日志, 全选) · DBA 可逐张调整, <b>1-click 接受</b> 即可
+          提示: <b>白名单 1289 张</b> (从历史库 <code>LIKE 'hly%'</code> 跨多库扫, 全选) · <b>黑名单 300 张</b> (业务库独有, 通常字典/配置/日志, 全选) · DBA 可逐张调整, <b>1-click 接受</b> 即可
         </div>
 
         <div style="font-size: 11.5px; font-weight: 600; color: var(--success); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">✓ 白名单 (1289 张, 全选)</div>
