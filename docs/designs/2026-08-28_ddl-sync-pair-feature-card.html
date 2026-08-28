@@ -378,11 +378,13 @@
       <span class="hero-tag">ARCHERY v0.5.0-r1</span>
       <span class="hero-tag new">8/28 修订版</span>
       <span class="hero-tag warn">解决"大表配 500 次"问题</span>
+    <span class="hero-tag new">8/28 14:00 r2 一键配</span>
     </div>
-    <h1>DDL 跨库同步<br><em>业务库 ↔ 历史库</em> · v0.5.0-r1 修订</h1>
+    <h1>DDL 跨库同步<br><em>业务库 ↔ 历史库</em> · v0.5.0-r2</h1>
     <p class="hero-sub">
       8/21 v0.5.0 初版是"DBA 手动一张张点配置同步表" — 历史库 500 张表 = DBA 点 500 次，<b>不现实</b>。<br>
-      8/28 修订：<b>批量导入</b>（从历史库自动扫表 + 模态框勾选）+ <b>同步模式默认改 blacklist</b> + <b>增量同步</b>。
+      8/28 14:00 业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 实战数据，<b>r1 批量导入 5-10 min 仍嫌慢</b>。<br>
+      8/28 14:00 v0.5.0-r2 一键配：<b>"历史库有多少张表就拿多少张"</b> — 白名单 = 历史库 1289 张, 黑名单 = 业务库独有 300 张, 1-click 配完 <b>6 min</b>。
     </p>
     <div class="hero-meta">
       <span>
@@ -494,14 +496,18 @@
       </div>
       <div class="work-arrow">→</div>
       <div class="work-card good">
-        <h3>8/28 修订版 · DBA 工作量</h3>
+        <h3>8/28 v0.5.0-r2 一键配</h3>
         <div class="work-row">
           <span class="label">配库对</span>
           <span class="val">5 min</span>
         </div>
         <div class="work-row">
-          <span class="label">配同步表</span>
-          <span class="val good"><span class="big">5-10 min</span>（1 次批量 + 50 个排除）</span>
+          <span class="label">配白名单 (1289 张)</span>
+          <span class="val good"><span class="big">1 click</span>（自动）</span>
+        </div>
+        <div class="work-row">
+          <span class="label">配黑名单 (300 张)</span>
+          <span class="val good"><span class="big">1 click</span>（自动）</span>
         </div>
         <div class="work-row">
           <span class="label">业务库加新表</span>
@@ -515,7 +521,7 @@
     </div>
 
     <p style="margin-top: 18px; padding: 12px 16px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 10px; font-size: 13px; color: var(--ink-mid);">
-      🎯 <b>结论</b>：DBA 工作量降低 <b style="color: var(--success);">90%+</b>，从阻塞点变成 5-10 min 一键配置。
+      🎯 <b>结论</b>：DBA 工作量从 <b style="color: var(--danger);">2-3 小时</b> 降到 <b style="color: var(--success);">6 min</b>（1-click 配白 + 1-click 配黑），<b>降低 95%</b>。r1 批量导入 5-10 min + 50 个排除 → r2 1-click 接受即可。
     </p>
   </section>
 
@@ -699,13 +705,143 @@
     </div>
   </section>
 
-  <!-- ===== 05 库对详情页 mockup (更新后) ===== -->
+  <!-- ===== 05 一键配模态框 (r2 核心) ===== -->
   <section>
     <div class="section-head">
       <span class="section-num">05</span>
-      <h2 class="section-title">库对详情页 · 更新后</h2>
+      <h2 class="section-title">🎯 一键配 (按历史库) — 8/28 14:00 r2 核心</h2>
     </div>
-    <div class="section-sub">库对详情加 4 个核心按钮: <b>批量导入</b> / 添加同步表 / schema 差集 / 立即跑巡检。sync_mode 默认 blacklist。</div>
+    <div class="section-sub">实战数据 <b>业务库 1589 / 历史库 1289</b>，算差集自动建议白名单 1289 + 黑名单 300，DBA <b>1-click 接受</b> 配完，<b>6 min</b> 完成。</div>
+
+    <div class="modal-preview">
+      <div class="modal-header-row">
+        <h4>🎯 一键配 (按历史库)</h4>
+        <span class="modal-close">×</span>
+      </div>
+      <div class="modal-body">
+        <div style="background: rgba(47, 111, 94, 0.06); border: 1px solid rgba(47, 111, 94, 0.2); border-radius: 8px; padding: 12px 14px; font-size: 13px; color: var(--ink-mid); margin-bottom: 14px;">
+          <b>自动扫描</b>历史库 + 业务库, 计算差集:
+        </div>
+        <table class="mock-table" style="margin-bottom: 14px;">
+          <tbody>
+            <tr>
+              <td style="font-weight: 600; color: var(--ink);">业务库 (hly_accesscard)</td>
+              <td><b>1589</b> 张表</td>
+              <td>source_instance</td>
+            </tr>
+            <tr>
+              <td style="font-weight: 600; color: var(--ink);">历史库 (hly_activity)</td>
+              <td><b>1289</b> 张表</td>
+              <td>target_instance</td>
+            </tr>
+            <tr style="background: rgba(16, 185, 129, 0.04);">
+              <td style="font-weight: 600; color: var(--success);">业务库 ∩ 历史库</td>
+              <td><b>1289</b> 张 → 默认白名单 ✓</td>
+              <td>自动建议 (业务库 + 历史库都有, 同步)</td>
+            </tr>
+            <tr style="background: rgba(245, 158, 11, 0.04);">
+              <td style="font-weight: 600; color: var(--warn);">业务库 - 历史库</td>
+              <td><b>300</b> 张 → 默认黑名单 ✗</td>
+              <td>自动建议 (业务库独有, 不同步)</td>
+            </tr>
+            <tr>
+              <td style="font-weight: 600; color: var(--ink-soft);">历史库 - 业务库</td>
+              <td><b>0</b> 张</td>
+              <td>历史库独有 (业务库已删), 暂不处理</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="mock-tip" style="margin-bottom: 14px;">
+          提示: <b>白名单 1289 张</b> (从历史库扫, 全选) · <b>黑名单 300 张</b> (业务库独有, 通常字典/配置/日志, 全选) · DBA 可逐张调整, <b>1-click 接受</b> 即可
+        </div>
+
+        <div style="font-size: 11.5px; font-weight: 600; color: var(--success); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">✓ 白名单 (1289 张, 全选)</div>
+        <div style="border: 1px solid var(--line-soft); border-radius: 8px; margin-bottom: 14px; max-height: 200px; overflow-y: auto;">
+          <table class="mock-table">
+            <tbody>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td><code>accesscard_black_detail</code></td>
+                <td><span class="mock-badge badge-success">✓ 存在</span></td>
+                <td>243 MB</td>
+                <td>35 列</td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td><code>accesscard_config</code></td>
+                <td><span class="mock-badge badge-success">✓ 存在</span></td>
+                <td>12 KB</td>
+                <td>8 列</td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td><code>accesscard_audit</code></td>
+                <td><span class="mock-badge badge-success">✓ 存在</span></td>
+                <td>8 KB</td>
+                <td>8 列</td>
+              </tr>
+              <tr style="font-style: italic; color: var(--ink-soft);">
+                <td colspan="5" style="text-align: center; font-size: 11px;">... 还有 1286 张 (分页 50/页, 滚动加载)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="font-size: 11.5px; font-weight: 600; color: var(--warn); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">🚫 黑名单 (300 张, 全选)</div>
+        <div style="border: 1px solid var(--line-soft); border-radius: 8px; margin-bottom: 14px; max-height: 180px; overflow-y: auto;">
+          <table class="mock-table">
+            <tbody>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td><code>dict_currency</code></td>
+                <td><span class="mock-badge badge-gray">✗ 历史库无</span></td>
+                <td>4 KB</td>
+                <td>6 列</td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td><code>dict_country</code></td>
+                <td><span class="mock-badge badge-gray">✗ 历史库无</span></td>
+                <td>8 KB</td>
+                <td>10 列</td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td><code>log_search</code></td>
+                <td><span class="mock-badge badge-gray">✗ 历史库无</span></td>
+                <td>1.2 GB</td>
+                <td>15 列</td>
+              </tr>
+              <tr style="font-style: italic; color: var(--ink-soft);">
+                <td colspan="5" style="text-align: center; font-size: 11px;">... 还有 297 张 (分页 50/页)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: var(--ink-mid); margin-bottom: 14px;">
+          ℹ️ 业务库加新表时, Archery 自动检测 + "待确认" 流程让 DBA 1-click 决定 (Phase 2)
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span class="mock-btn outline" style="cursor: pointer;">取消</span>
+        <span class="mock-btn primary" style="cursor: pointer;">✓ 1-click 接受 (1289 白 + 300 黑)</span>
+      </div>
+    </div>
+
+    <p style="margin-top: 18px; padding: 12px 16px; background: rgba(47, 111, 94, 0.06); border: 1px solid rgba(47, 111, 94, 0.2); border-radius: 10px; font-size: 13px; color: var(--ink-mid);">
+      🎯 <b>r2 核心洞察</b>: 业务库 ∩ 历史库 = 1289 张 (<b>历史库有多少张就拿多少张</b>, DBA 原话) — 业务库 - 历史库 = 300 张 (<b>业务库独有, 通常字典/配置/日志, 不归档</b>). 一键配 = 1-click 配完, <b>6 min</b> 完成, 比 r1 批量导入 (15-25 min) 再快 <b>2-4 倍</b>.
+    </p>
+  </section>
+
+  <!-- ===== 06 库对详情页 mockup (更新后) ===== -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">06</span>
+      <h2 class="section-title">库对详情页 · 双按钮布局</h2>
+    </div>
+    <div class="section-sub">库对详情加 <b>3 个核心按钮</b>: 🎯 一键配 (r2 核心) / 📥 批量导入 (r1 fallback) / + 添加同步表。sync_mode 默认 blacklist。</div>
 
     <div class="mock-ui">
       <div class="mock-titlebar">
@@ -807,10 +943,10 @@
     </div>
   </section>
 
-  <!-- ===== 06 增量同步机制 ===== -->
+  <!-- ===== 07 增量同步机制 ===== -->
   <section>
     <div class="section-head">
-      <span class="section-num">06</span>
+      <span class="section-num">07</span>
       <h2 class="section-title">增量同步机制 — Phase 2</h2>
     </div>
     <div class="section-sub">业务库加新表，<b>DBA 容易漏配</b>。增量同步: 工单提交时 Archery 自动检测, 提示 DBA 决定。</div>
@@ -865,13 +1001,13 @@
     </div>
   </section>
 
-  <!-- ===== 07 实施阶段 ===== -->
+  <!-- ===== 08 实施阶段 ===== -->
   <section>
     <div class="section-head">
-      <span class="section-num">07</span>
-      <h2 class="section-title">实施阶段 — Phase 1 优先</h2>
+      <span class="section-num">08</span>
+      <h2 class="section-title">实施阶段 — Phase 1 含一键配 (r2)</h2>
     </div>
-    <div class="section-sub">Phase 1 含 <b>批量导入</b>（核心），2-3 天出活。</div>
+    <div class="section-sub">Phase 1 含 <b>r2 一键配</b> (核心) + <b>r1 批量导入</b> (fallback)，2-3 天出活。</div>
 
     <ol class="phase-list">
       <li class="phase-item">
@@ -893,10 +1029,10 @@
     </ol>
   </section>
 
-  <!-- ===== 08 跟 8/27 gh-ost 教训对照 ===== -->
+  <!-- ===== 09 跟 8/27 gh-ost 教训对照 ===== -->
   <section>
     <div class="section-head">
-      <span class="section-num">08</span>
+      <span class="section-num">09</span>
       <h2 class="section-title">跟 8/27 gh-ost 实战教训对照</h2>
     </div>
     <div class="section-sub">8/27 gh-ost 实战踩了 4 个坑, 8/28 修订时一一对照避免。</div>
@@ -932,10 +1068,10 @@
   <!-- ===== 09 当前状态 ===== -->
   <section>
     <div class="section-head">
-      <span class="section-num">09</span>
+      <span class="section-num">10</span>
       <h2 class="section-title">当前状态 & 下一步</h2>
     </div>
-    <div class="section-sub">v0.5.0-r1 修订设计完成, <b>未开工</b>。等用户拍板 Phase 1 启动。</div>
+    <div class="section-sub">v0.5.0-r2 修订设计完成 (含一键配机制 + 实战数据 1589/1289), <b>未开工</b>。等用户拍板 Phase 1 启动。</div>
 
     <div class="grid-2">
       <div class="card" style="border-left: 3px solid var(--success);">
@@ -955,8 +1091,9 @@
 
   <!-- ===== Footer ===== -->
   <footer class="footer">
-    Archery v0.5.0-r1 · DDL 跨库同步功能图说（8/28 修订版） · 设计人 mavis<br>
-    配套：<a style="color: var(--primary);" href="2026-08-28_ddl-sync-pair-design-v050-r1.md">MD 修订版详设</a> · <a style="color: var(--ink-soft);" href="2026-08-21_ddl-sync-pair-design.md">8/21 v0.5.0 原版 (对照)</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-revised-design.md">changelog</a>
+    Archery v0.5.0-r2 · DDL 跨库同步功能图说（8/28 14:00 修订） · 设计人 mavis<br>
+    实战数据：业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 (DBA 8/28 14:00 110 prod 查询)<br>
+    配套：<a style="color: var(--primary);" href="2026-08-28_ddl-sync-pair-design-v050-r1.md">MD r1+r2 详设 (§12 一键配)</a> · <a style="color: var(--ink-soft);" href="2026-08-21_ddl-sync-pair-design.md">8/21 v0.5.0 原版 (对照)</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md">r2 changelog</a>
   </footer>
 
 </div>

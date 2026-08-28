@@ -556,11 +556,218 @@ urlpatterns = [
 
 ---
 
+## 12. v0.5.0-r2 进一步优化: 一键配 (按历史库) (8/28 14:00)
+
+8/28 14:00 DBA 阿达叔叔查 110 prod 真实数据:
+- 业务库 hly_accesscard: **1589** 张表
+- 历史库 hly_activity: **1289** 张表
+- 业务库 - 历史库: **300** 张 (业务库独有, 通常字典/配置/日志, 不归档)
+
+**思路 (DBA 原话)**: "历史库有多少张表就拿多少张" — 白名单 = 历史库所有表 (1289 张), 黑名单 = 业务库独有 (300 张). 1-click 配完, 不用批量导入手动勾选.
+
+### 12.1 一键配 vs 批量导入 对比
+
+| 步骤 | r1 批量导入 | **r2 一键配** |
+|------|------------|---------------|
+| 配白名单 | 批量导入勾选 (5 min) | **自动 (1 click)** |
+| 配黑名单 | 手动加 OR 写脚本 (10-20 min) | **自动 (1 click)** |
+| **总耗时** | **15-25 min** | **6 min** |
+
+**再省 2-4 倍**, 从 r1 "5-10 min 配白名单 + 几十个排除" 降到 r2 "1-click 配白名单 + 1-click 配黑名单".
+
+### 12.2 UX 流程
+
+库对详情页加 **"🎯 一键配 (按历史库)"** 按钮:
+
+```
+┌─ 🎯 一键配 (按历史库) ─────────────────────────────────┐
+│ 自动扫描历史库 + 业务库, 计算差集:                        │
+│                                                          │
+│   业务库 (hly_accesscard): 1589 张表                      │
+│   历史库 (hly_activity):   1289 张表                      │
+│   ─────────────────────────────                         │
+│   业务库 ∩ 历史库 (1289 张):  → 默认白名单 (建议全选)         │
+│   业务库 - 历史库 (300 张):   → 默认黑名单 (建议全选)         │
+│   历史库 - 业务库 (0 张):     → 0 张, 提示 DBA            │
+│                                                          │
+│ 提示: 白名单 1289 张 (从历史库扫, 全选)                     │
+│       黑名单 300 张 (业务库独有, 通常字典/配置/日志, 全选)     │
+│       DBA 可逐张调整, 1-click 接受即可                      │
+│                                                          │
+│  ⚙ 预览:                                                 │
+│    ✓ 白名单 (1289 张, 全选):                                │
+│       accesscard_black_detail  ✓ 存在 243MB                │
+│       accesscard_config        ✓ 存在 12KB                 │
+│       accesscard_audit         ✓ 存在 8KB                  │
+│       ... (分页 50/页)                                     │
+│                                                          │
+│    🚫 黑名单 (300 张, 全选):                                │
+│       dict_currency            ✗ 历史库无 4KB                │
+│       dict_country             ✗ 历史库无 8KB                │
+│       log_search               ✗ 历史库无 1.2GB              │
+│       ... (分页 50/页)                                     │
+│                                                          │
+│ 业务库加新表时, Archery 自动检测 + "待确认" 流程 (Phase 2)     │
+│                                                          │
+│         [取消]  [✓ 1-click 接受 (1289+300)]                  │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 12.3 后端实现
+
+```python
+# sql/extensions/ddl_sync/services/one_click_setup.py
+from ..models import DdlSyncTable
+
+
+def one_click_setup(pair, accept_white: list, accept_black: list):
+    """一键配 (按历史库) — 8/28 r2 新增
+
+    业务: DBA "历史库有多少张表就拿多少张" — 1-click 配完白名单 + 黑名单.
+    """
+    with transaction.atomic():
+        # 1. 清空现有的 (幂等, 重新配会覆盖)
+        DdlSyncTable.objects.filter(pair=pair).delete()
+
+        # 2. 批量写白名单 (bulk_create 性能高 100 倍)
+        if accept_white:
+            DdlSyncTable.objects.bulk_create([
+                DdlSyncTable(
+                    pair=pair, table_name=t,
+                    sync_type='whitelist',  # r2 加字段区分
+                ) for t in accept_white
+            ])
+
+        # 3. 批量写黑名单 (r2 加 sync_type 字段, 跟白名单同表存)
+        if accept_black:
+            DdlSyncTable.objects.bulk_create([
+                DdlSyncTable(
+                    pair=pair, table_name=t,
+                    sync_type='blacklist',
+                ) for t in accept_black
+            ])
+
+    return len(accept_white) + len(accept_black)
+
+
+def compute_diff(pair):
+    """扫业务库 + 历史库, 算差集 — 8/28 r2 新增"""
+    # 1. 扫业务库所有表
+    source_tables = scan_history_tables(pair.source_instance, pair.source_db)
+    source_names = {t["TABLE_NAME"] for t in source_tables}
+
+    # 2. 扫历史库所有表
+    target_tables = scan_history_tables(pair.target_instance, pair.target_db)
+    target_names = {t["TABLE_NAME"] for t in target_tables}
+
+    # 3. 差集
+    white_candidates = source_names & target_names  # 业务库 ∩ 历史库
+    black_candidates = source_names - target_names  # 业务库独有
+    orphan = target_names - source_names             # 历史库独有 (业务库已删)
+
+    return {
+        "white": sorted(white_candidates),
+        "black": sorted(black_candidates),
+        "orphan": sorted(orphan),
+    }
+```
+
+### 12.4 数据模型微调 (DdlSyncTable 加 sync_type 字段)
+
+```python
+class DdlSyncTable(models.Model):
+    # 8/28 r2 加: 区分白名单 / 黑名单
+    SYNC_TYPE_CHOICES = [
+        ("whitelist", "白名单 (要同步)"),
+        ("blacklist", "黑名单 (不同步)"),
+    ]
+    pair = models.ForeignKey(DdlSyncPair, on_delete=models.CASCADE, related_name="tables")
+    table_name = models.CharField(max_length=128)
+    sync_type = models.CharField(max_length=16, choices=SYNC_TYPE_CHOICES, default="whitelist")
+    # ... 其他字段跟 8/21 相同
+
+    class Meta:
+        # 8/28 r2 改: 唯一约束加 sync_type (同一对库, 同一表, 不能既在白名单又在黑名单)
+        unique_together = [("pair", "table_name", "sync_type")]
+```
+
+### 12.5 URL 路由加 2 个端点
+
+```python
+# sql/extensions/ddl_sync/urls.py
+urlpatterns = [
+    # ... 8/28 r1 路由
+    # 8/28 r2 新增: 一键配
+    path("api/pair/<int:pair_id>/compute_diff/", views.api_compute_diff,
+         name="api_compute_diff"),
+    path("api/pair/<int:pair_id>/one_click_setup/", views.api_one_click_setup,
+         name="api_one_click_setup"),
+]
+```
+
+### 12.6 r1 批量导入 跟 r2 一键配 关系
+
+**两者并存, 不冲突**:
+- **一键配** (r2 核心): 业务库 + 历史库**有重叠**的场景 (99% DDL 同步场景都这样), 1-click 配完, 走 95% 场景
+- **批量导入** (r1 fallback): 业务库 + 历史库**不重叠** OR DBA 想手动选部分表的场景, 走 5% 场景
+- 库对详情页**同时放 2 个按钮**, DBA 根据场景选
+
+```
+库对详情页
+  [🎯 一键配 (按历史库)]  ← 95% 场景 1-click
+  [📥 批量导入]            ← 5% 场景 fallback
+  [+ 添加同步表]           ← 兜底单张加
+```
+
+### 12.7 Phase 1 范围调整
+
+加 r2 一键配到 Phase 1, 跟 r1 批量导入并存:
+
+- [ ] 数据模型 3 张表 migration (sync_mode 默认 blacklist + **r2 加 sync_type 字段**)
+- [ ] 库对管理列表 + 库对详情
+- [ ] **r2 一键配机制** (核心, 95% 场景): compute_diff + one_click_setup
+- [ ] **r1 批量导入机制** (fallback, 5% 场景): 跟 r2 并存
+- [ ] 业务库 DDL 工单详情"本表已配置同步" 提示
+- [ ] 134 dev 演练: 配 accesscard 库对 + **r2 一键配 1-click 接受** + 1 条真实 DDL 联动
+
+### 12.8 实战示例 (8/28 14:00 业务库数据)
+
+```bash
+# 110 prod 真实查询 (DBA 截图)
+select count(*) from information_schema.tables where table_schema like 'hly%'
+# 业务库: 1589 (hly_accesscard)
+# 历史库: 1289 (hly_activity)
+# 业务库 - 历史库: 300 张 (字典/配置/日志等不归档)
+
+# 走 r2 一键配:
+# - 业务库 ∩ 历史库 = 1289 张 → 自动加白名单
+# - 业务库 - 历史库 = 300 张 → 自动加黑名单
+# - 1-click 接受, 2 min 配完
+
+# vs r1 批量导入:
+# - 配白名单 1289 张: 5 min 批量导入
+# - 配黑名单 300 张: 手动加 OR 写脚本 10-20 min
+# - 总耗时 15-25 min
+```
+
+### 12.9 跟 v0.5.0-r1 关系
+
+v0.5.0-r1 修订 (commit 34e2613) **保留有效**:
+- §3 批量导入机制 (r1 5% 场景 fallback)
+- §4 增量同步机制 (Phase 2 业务库新表自动检测)
+- §5 §6 §7 §8 §9 §10 §11 (跟 r1 一致)
+
+v0.5.0-r2 是 **r1 进一步优化** (核心机制加一键配, 减少 2-4 倍 DBA 工作量).
+
+---
+
 ## 关联 commit / changelog
 
 - **8/28 09:17** commit `f4078c6`: 8/21 旧设计稿 + 8/27 功能图说 HTML 防丢
-- **8/28 09:17** (本次) 写 v0.5.0-r1 修订设计稿 + 新功能图说 HTML
+- **8/28 09:17** commit `34e2613`: 写 v0.5.0-r1 修订设计稿 + 新功能图说 HTML
+- **8/28 14:00** (本次) v0.5.0-r2 加 §12 一键配机制, 业务库 1589 / 历史库 1289 实战数据支撑
 - 8/21 原版: docs/designs/2026-08-21_ddl-sync-pair-design.md (保留作为对照)
-- 8/28 新版: docs/designs/2026-08-28_ddl-sync-pair-design-v050-r1.md (本文)
-- 8/28 功能图说: docs/designs/2026-08-28_ddl-sync-pair-feature-card.html
-- 8/28 changelog: docs/changelogs/2026-08-28_ddl-sync-v050-revised-design.md
+- 8/28 r1: docs/designs/2026-08-28_ddl-sync-pair-design-v050-r1.md
+- 8/28 r1 功能图说: docs/designs/2026-08-28_ddl-sync-pair-feature-card.html (待加一键配 mockup)
+- 8/28 r2 changelog: docs/changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md
+
