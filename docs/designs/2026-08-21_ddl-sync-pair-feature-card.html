@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DDL 跨库同步 · 业务库 ↔ 历史库 · 功能图说</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --border: #e9e3d6;
+    --line-soft: #efe9dc;
+    --ink: #14171e;
+    --ink-mid: #3a4256;
+    --ink-soft: #7c7a72;
+    --primary: #2f6f5e;
+    --primary-soft: rgba(47, 111, 94, 0.08);
+    --accent-warm: #c97b3f;
+    --success: #10b981;
+    --warn: #f59e0b;
+    --danger: #f43f5e;
+    --info: #3b82f6;
+    --neutral: #6366f1;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    font-size: 14.5px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    top: -20%;
+    right: -10%;
+    width: 60%;
+    height: 60%;
+    background: radial-gradient(circle, rgba(47, 111, 94, 0.04), transparent 60%);
+    z-index: -1;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    bottom: -20%;
+    left: -10%;
+    width: 50%;
+    height: 50%;
+    background: radial-gradient(circle, rgba(201, 123, 63, 0.04), transparent 60%);
+    z-index: -1;
+  }
+
+  .container { max-width: 1080px; margin: 0 auto; padding: 56px 28px 80px; }
+
+  /* ===== Hero ===== */
+  .hero { margin-bottom: 64px; }
+  .hero-tag {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border-radius: 20px;
+    margin-bottom: 18px;
+  }
+  .hero h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 42px;
+    font-weight: 400;
+    line-height: 1.15;
+    margin: 0 0 14px;
+    letter-spacing: -0.01em;
+  }
+  .hero h1 em {
+    font-style: normal;
+    color: var(--primary);
+  }
+  .hero-sub {
+    font-size: 16px;
+    color: var(--ink-mid);
+    max-width: 720px;
+    margin: 0 0 20px;
+  }
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 24px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    border-top: 1px dashed var(--border);
+    padding-top: 18px;
+    margin-top: 24px;
+  }
+  .hero-meta span { display: inline-flex; align-items: center; gap: 6px; }
+  .hero-meta svg { width: 14px; height: 14px; }
+
+  /* ===== Section ===== */
+  section { margin-bottom: 64px; }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .section-num {
+    font-family: 'DM Serif Display', serif;
+    font-size: 22px;
+    color: var(--primary);
+    line-height: 1;
+  }
+  .section-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 26px;
+    font-weight: 400;
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+  .section-sub {
+    color: var(--ink-soft);
+    font-size: 13px;
+    margin: 4px 0 0 36px;
+  }
+  .section-sub b { color: var(--primary); }
+
+  /* ===== Cards ===== */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.025);
+  }
+  .card + .card { margin-top: 14px; }
+  .card h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    color: var(--ink);
+  }
+  .card p { margin: 0 0 8px; color: var(--ink-mid); }
+  .card p:last-child { margin-bottom: 0; }
+
+  /* ===== Grid ===== */
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 720px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ===== Pain scenario (Before/After) ===== */
+  .pain-grid {
+    display: grid;
+    grid-template-columns: 1fr 60px 1fr;
+    gap: 20px;
+    align-items: stretch;
+  }
+  @media (max-width: 800px) { .pain-grid { grid-template-columns: 1fr; } .pain-arrow { display: none; } }
+  .pain-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+  }
+  .pain-card.bad { border-left: 3px solid var(--danger); }
+  .pain-card.good { border-left: 3px solid var(--success); }
+  .pain-arrow {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px;
+    color: var(--primary);
+  }
+  .pain-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 10px;
+  }
+  .pain-card.bad h3 { color: var(--danger); }
+  .pain-card.good h3 { color: var(--success); }
+  .pain-flow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    background: #fafaf7;
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-top: 8px;
+  }
+  .pain-flow .ok { color: var(--success); }
+  .pain-flow .err { color: var(--danger); }
+  .pain-flow .warn { color: var(--warn); }
+
+  /* ===== Mock UI ===== */
+  .mock-ui {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 16px -2px rgba(0,0,0,0.05);
+  }
+  .mock-titlebar {
+    display: flex; align-items: center; gap: 6px;
+    background: #efebe2;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mock-dot { width: 10px; height: 10px; border-radius: 50%; background: #d4cfc1; }
+  .mock-url {
+    margin-left: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+  }
+  .mock-body { padding: 18px 20px; }
+  .mock-h {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .mock-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  .mock-table th {
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 11px;
+    color: var(--ink-soft);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mock-table td {
+    padding: 10px;
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--ink-mid);
+  }
+  .mock-table tr:last-child td { border-bottom: none; }
+  .mock-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-success { background: rgba(16, 185, 129, 0.12); color: var(--success); }
+  .badge-warn { background: rgba(245, 158, 11, 0.12); color: var(--warn); }
+  .badge-danger { background: rgba(244, 63, 94, 0.12); color: var(--danger); }
+  .badge-info { background: rgba(59, 130, 246, 0.12); color: var(--info); }
+  .badge-neutral { background: rgba(99, 102, 241, 0.12); color: var(--neutral); }
+  .badge-gray { background: rgba(124, 122, 114, 0.12); color: var(--ink-soft); }
+  .mock-btn {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 500;
+    background: var(--primary-soft);
+    color: var(--primary);
+    border: 1px solid rgba(47, 111, 94, 0.2);
+    cursor: pointer;
+  }
+  .mock-row-actions { display: flex; gap: 6px; }
+  .mock-action { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 5px; background: #f0ede5; color: var(--ink-soft); font-size: 11px; }
+  .mock-action.danger { background: rgba(244, 63, 94, 0.1); color: var(--danger); }
+  .mock-action.success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+  .mock-action.info { background: rgba(59, 130, 246, 0.1); color: var(--info); }
+
+  .mock-block {
+    background: #fafaf7;
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    color: var(--ink-mid);
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 10px;
+  }
+  .mock-block .label { color: var(--ink-soft); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; font-family: 'Outfit', sans-serif; }
+
+  .mock-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #f0ede5;
+    color: var(--ink-mid);
+    font-size: 11px;
+    border-radius: 10px;
+    margin-right: 4px;
+  }
+  .mock-tip {
+    background: rgba(47, 111, 94, 0.05);
+    border: 1px solid rgba(47, 111, 94, 0.18);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--ink-mid);
+    margin-top: 12px;
+  }
+  .mock-tip b { color: var(--primary); }
+
+  /* ===== Flow diagram ===== */
+  .flow-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.025);
+  }
+
+  /* ===== ER diagram ===== */
+  .er-wrap {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    align-items: stretch;
+  }
+  @media (max-width: 800px) { .er-wrap { grid-template-columns: 1fr; } }
+  .er-table {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .er-head {
+    background: var(--primary-soft);
+    color: var(--primary);
+    padding: 10px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+  }
+  .er-row {
+    padding: 7px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--ink-mid);
+    border-bottom: 1px solid var(--line-soft);
+    display: flex;
+    justify-content: space-between;
+  }
+  .er-row:last-child { border-bottom: none; }
+  .er-row .pk { color: var(--primary); font-weight: 600; }
+  .er-row .fk { color: var(--accent-warm); }
+  .er-caption {
+    text-align: center;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  .er-relations {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+  }
+  .er-rel {
+    font-size: 12px;
+    color: var(--ink-soft);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .er-rel b { color: var(--primary); }
+
+  /* ===== Linking hub ===== */
+  .hub-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 24px;
+  }
+  .hub-grid {
+    display: grid;
+    grid-template-columns: 1fr 220px 1fr;
+    gap: 24px;
+    align-items: center;
+  }
+  @media (max-width: 800px) { .hub-grid { grid-template-columns: 1fr; } }
+  .hub-side { display: flex; flex-direction: column; gap: 10px; }
+  .hub-pill {
+    background: #fafaf7;
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .hub-pill b { color: var(--primary); }
+  .hub-core {
+    background: var(--primary-soft);
+    border: 2px solid var(--primary);
+    border-radius: 14px;
+    padding: 22px 18px;
+    text-align: center;
+    color: var(--primary);
+  }
+  .hub-core-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 18px;
+    margin: 0 0 4px;
+  }
+  .hub-core-sub { font-size: 12px; color: var(--ink-soft); }
+
+  /* ===== Phase timeline ===== */
+  .phase-list { list-style: none; padding: 0; margin: 0; position: relative; }
+  .phase-list::before {
+    content: "";
+    position: absolute;
+    left: 9px; top: 8px; bottom: 8px;
+    width: 2px;
+    background: linear-gradient(180deg, var(--primary), var(--accent-warm));
+    opacity: 0.4;
+    border-radius: 1px;
+  }
+  .phase-item {
+    position: relative;
+    padding: 0 0 28px 36px;
+  }
+  .phase-item:last-child { padding-bottom: 0; }
+  .phase-item::before {
+    content: "";
+    position: absolute;
+    left: 2px; top: 6px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: white;
+    border: 3px solid var(--primary);
+    box-shadow: 0 0 0 4px var(--bg);
+  }
+  .phase-item.warm::before { border-color: var(--accent-warm); }
+  .phase-h {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .phase-h .tag {
+    display: inline-block;
+    margin-left: 8px;
+    font-size: 10.5px;
+    padding: 2px 8px;
+    background: var(--primary-soft);
+    color: var(--primary);
+    border-radius: 10px;
+    font-weight: 500;
+  }
+  .phase-h .tag.warm { background: rgba(201, 123, 63, 0.12); color: var(--accent-warm); }
+  .phase-p { color: var(--ink-mid); font-size: 13.5px; margin: 0; }
+  .phase-p + .phase-p { margin-top: 4px; }
+
+  /* ===== Footer ===== */
+  .footer {
+    margin-top: 80px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--ink-soft);
+    text-align: center;
+  }
+
+  /* ===== Status grid (DDL workflow detail) ===== */
+  .status-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 13px;
+  }
+  .status-row:last-child { border-bottom: none; }
+  .status-row .label { color: var(--ink-soft); font-size: 12px; min-width: 88px; }
+  .status-row .desc { color: var(--ink-mid); }
+
+  /* Mermaid overrides */
+  .mermaid { font-family: 'Outfit', sans-serif !important; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ===== Hero ===== -->
+  <header class="hero">
+    <span class="hero-tag">ARCHERY v0.5.0 · 设计稿</span>
+    <h1>DDL 跨库同步<br><em>业务库 ↔ 历史库</em> · 功能图说</h1>
+    <p class="hero-sub">解决"业务库 DDL 变更容易遗漏同步到历史库"的痛点 — DBA 配库对白名单，Archery 自动判断 + 自动建历史库 DDL 工单，业务 RD 啥都不用管。</p>
+    <div class="hero-meta">
+      <span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        作者 mavis
+      </span>
+      <span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        2026-08-21
+      </span>
+      <span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        v0.5.0
+      </span>
+      <span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        docs/designs/2026-08-21_ddl-sync-pair-design.md
+      </span>
+      <span style="color: var(--accent-warm); font-weight: 500;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        当前状态：v0.5.0 详细设计完成 · 未开工
+      </span>
+    </div>
+  </header>
+
+  <!-- ===== 01 痛点 ===== -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">01</span>
+      <h2 class="section-title">痛点 — 业务库 DDL 容易漏同步到历史库</h2>
+    </div>
+    <div class="section-sub">业务库跟历史库通过<b>时间戳同步</b>数据，但 DDL 不自动同步。漏了 ADD COLUMN 同步就直接断。</div>
+
+    <div class="pain-grid">
+      <div class="pain-card bad">
+        <h3>现状 · 漏同步场景</h3>
+        <div class="pain-flow">
+          业务库 <span class="ok">ADD COLUMN card_serial</span> ✓<br>
+          历史库 <span class="err">Unknown column 'card_serial'</span> ✗<br>
+          同步任务 <span class="err">crash / 数据丢失</span>
+        </div>
+        <p style="margin-top: 14px;">业务 RD 改完 DDL 跑完没异常，但 <b>时间戳同步任务跑历史库直接挂</b>，要 DBA 手动补 ALTER。</p>
+      </div>
+      <div class="pain-arrow">→</div>
+      <div class="pain-card good">
+        <h3>DDL 跨库同步后</h3>
+        <div class="pain-flow">
+          业务库 <span class="ok">ADD COLUMN card_serial</span> ✓<br>
+          Archery 识别表进白名单 →<br>
+          历史库 <span class="ok">自动建 DDL 工单 → 执行成功</span> ✓<br>
+          同步任务 <span class="ok">继续跑通</span>
+        </div>
+        <p style="margin-top: 14px;">业务 RD 跟以前一样提单，<b>历史库工单自动生成</b>，走同一审批人审批。</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 18px;">
+      <h3>漏同步的 7 种 DDL 各自怎么算</h3>
+      <table class="mock-table" style="margin-top: 6px;">
+        <thead>
+          <tr>
+            <th>DDL 类型</th>
+            <th>历史库是否要同步</th>
+            <th>漏同步后果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ADD COLUMN</code></td>
+            <td><span class="mock-badge badge-danger">必须</span></td>
+            <td>时间戳同步跑历史库报 <code>Unknown column</code>，同步断</td>
+          </tr>
+          <tr>
+            <td><code>MODIFY COLUMN</code>（改类型/长度）</td>
+            <td><span class="mock-badge badge-danger">必须</span></td>
+            <td>同步超长字段报错 / 类型转换报错</td>
+          </tr>
+          <tr>
+            <td><code>CHANGE COLUMN</code>（重命名+改类型）</td>
+            <td><span class="mock-badge badge-danger">必须</span></td>
+            <td>历史库字段对不上，同步逻辑出错</td>
+          </tr>
+          <tr>
+            <td><code>RENAME TABLE</code></td>
+            <td><span class="mock-badge badge-danger">必须</span></td>
+            <td>同步任务找不到原表</td>
+          </tr>
+          <tr>
+            <td><code>DROP COLUMN</code></td>
+            <td><span class="mock-badge badge-warn">可选</span></td>
+            <td>历史数据保留，后续清理时再同步</td>
+          </tr>
+          <tr>
+            <td><code>ADD INDEX</code> / <code>DROP INDEX</code></td>
+            <td><span class="mock-badge badge-gray">通常不用</span></td>
+            <td>历史库数据少，索引意义不大</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===== 02 核心思路 ===== -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">02</span>
+      <h2 class="section-title">核心思路 — 8/21 拍板</h2>
+    </div>
+    <div class="section-sub">历史库只同步<b>部分表</b>（不是全量），业务 RD 不知道"要不要同步"。解法：<b>DBA 配库对白名单，Archery 自动判断</b>。</div>
+
+    <div class="flow-wrap">
+      <svg viewBox="0 0 980 280" style="width:100%; height:auto; font-family: 'Outfit', sans-serif;">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f6f5e"/>
+          </marker>
+          <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c7a72"/>
+          </marker>
+        </defs>
+
+        <!-- Step 1 -->
+        <rect x="20" y="100" width="160" height="80" rx="10" fill="#fff" stroke="#e9e3d6" stroke-width="1.5"/>
+        <text x="100" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#14171e">业务 RD 提 DDL 工单</text>
+        <text x="100" y="152" text-anchor="middle" font-size="11" fill="#7c7a72">SQL 写好提交</text>
+        <text x="100" y="168" text-anchor="middle" font-size="11" fill="#7c7a72">不关心要不要同步</text>
+
+        <!-- Arrow 1 -->
+        <line x1="180" y1="140" x2="220" y2="140" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- Step 2 (DBA pre-config) -->
+        <rect x="20" y="220" width="160" height="50" rx="8" fill="rgba(47,111,94,0.05)" stroke="#2f6f5e" stroke-width="1" stroke-dasharray="4 3"/>
+        <text x="100" y="240" text-anchor="middle" font-size="11" font-weight="600" fill="#2f6f5e">DBA 提前配：</text>
+        <text x="100" y="258" text-anchor="middle" font-size="10.5" fill="#3a4256">库对白名单 (业务库↔历史库)</text>
+
+        <!-- Step 3 -->
+        <rect x="220" y="100" width="200" height="80" rx="10" fill="#fff" stroke="#2f6f5e" stroke-width="1.5"/>
+        <text x="320" y="125" text-anchor="middle" font-size="12" font-weight="600" fill="#14171e">Archery 解析 DDL</text>
+        <text x="320" y="145" text-anchor="middle" font-size="10.5" fill="#3a4256">拿目标表名 + 库名</text>
+        <text x="320" y="160" text-anchor="middle" font-size="10.5" fill="#3a4256">查 DdlSyncPair 配置</text>
+        <text x="320" y="175" text-anchor="middle" font-size="10.5" fill="#3a4256">查 DdlSyncTable 白名单</text>
+
+        <line x1="100" y1="220" x2="280" y2="180" stroke="#2f6f5e" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>
+
+        <!-- Arrow 2 -->
+        <line x1="420" y1="140" x2="460" y2="140" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- Step 4: Decision -->
+        <rect x="460" y="60" width="200" height="50" rx="8" fill="rgba(16,185,129,0.08)" stroke="#10b981" stroke-width="1.5"/>
+        <text x="560" y="80" text-anchor="middle" font-size="12" font-weight="600" fill="#10b981">在白名单？</text>
+        <text x="560" y="97" text-anchor="middle" font-size="10.5" fill="#3a4256">pair.enabled && table 配过</text>
+
+        <rect x="460" y="170" width="200" height="50" rx="8" fill="rgba(124,122,114,0.08)" stroke="#7c7a72" stroke-width="1.5"/>
+        <text x="560" y="190" text-anchor="middle" font-size="12" font-weight="600" fill="#7c7a72">不在白名单</text>
+        <text x="560" y="207" text-anchor="middle" font-size="10.5" fill="#7c7a72">DDL 类型不需同步 / 未配</text>
+
+        <line x1="660" y1="85" x2="700" y2="85" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="660" y1="195" x2="700" y2="195" stroke="#7c7a72" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+        <text x="675" y="78" font-size="10" font-weight="600" fill="#2f6f5e">是</text>
+        <text x="675" y="188" font-size="10" font-weight="600" fill="#7c7a72">否</text>
+
+        <!-- Step 5 (Yes) -->
+        <rect x="700" y="60" width="240" height="50" rx="8" fill="rgba(47,111,94,0.1)" stroke="#2f6f5e" stroke-width="1.5"/>
+        <text x="820" y="80" text-anchor="middle" font-size="12" font-weight="600" fill="#2f6f5e">自动建历史库 SqlWorkflow</text>
+        <text x="820" y="97" text-anchor="middle" font-size="10.5" fill="#3a4256">复用 audit_drivers 审批流</text>
+
+        <line x1="820" y1="110" x2="820" y2="140" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- Step 6 -->
+        <rect x="700" y="140" width="240" height="80" rx="10" fill="#fff" stroke="#e9e3d6" stroke-width="1.5"/>
+        <text x="820" y="165" text-anchor="middle" font-size="12" font-weight="600" fill="#14171e">写 DdlSyncHistory 审计</text>
+        <text x="820" y="183" text-anchor="middle" font-size="10.5" fill="#3a4256">source_wf_id + target_wf_id</text>
+        <text x="820" y="200" text-anchor="middle" font-size="10.5" fill="#3a4256">sync_status: pending → success</text>
+        <text x="820" y="215" text-anchor="middle" font-size="10.5" fill="#3a4256">工单详情页 "本表已配置同步" 提示</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ===== 03 五个核心页面 ===== -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">03</span>
+      <h2 class="section-title">5 个核心页面</h2>
+    </div>
+    <div class="section-sub">3 个 DBA 专属 + 1 个工单详情提示 + 1 个巡检兜底。</div>
+
+    <!-- 页面 1: 库对管理列表 -->
+    <h3 style="font-size: 14px; font-weight: 600; color: var(--primary); margin: 22px 0 8px;">① 库对管理列表 <code style="font-size: 12px; background: var(--primary-soft); color: var(--primary); padding: 2px 6px; border-radius: 4px;">/ddl_sync/pair_list/</code> <span style="color: var(--ink-soft); font-weight: 400;">DBA 专属</span></h3>
+    <div class="mock-ui">
+      <div class="mock-titlebar">
+        <span class="mock-dot"></span>
+        <span class="mock-dot"></span>
+        <span class="mock-dot"></span>
+        <span class="mock-url">prodarchery.ahggwl.com:9123/ddl_sync/pair_list/</span>
+      </div>
+      <div class="mock-body">
+        <div class="mock-h">
+          <span>🔗 DDL 同步库对管理</span>
+          <span class="mock-btn">+ 新建库对</span>
+        </div>
+        <table class="mock-table">
+          <thead>
+            <tr>
+              <th>配对名</th>
+              <th>业务库</th>
+              <th style="text-align: center;">⇄</th>
+              <th>历史库</th>
+              <th>模式</th>
+              <th>同步表数</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>accesscard 库对</b></td>
+              <td>hly_accesscard @ 134</td>
+              <td style="text-align: center; color: var(--primary);">⇄</td>
+              <td>hly_history @ X</td>
+              <td><span class="mock-badge badge-info">白名单</span></td>
+              <td>3 / 12</td>
+              <td>
+                <div class="mock-row-actions">
+                  <span class="mock-action success">✏</span>
+                  <span class="mock-action info">📋</span>
+                  <span class="mock-action">📊</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><b>log 库对</b></td>
+              <td>hly_log @ 134</td>
+              <td style="text-align: center; color: var(--primary);">⇄</td>
+              <td>hly_log_hist @ X</td>
+              <td><span class="mock-badge badge-warn">黑名单</span></td>
+              <td>10 / 12</td>
+              <td>
+                <div class="mock-row-actions">
+                  <span class="mock-action success">✏</span>
+                  <span class="mock-action info">📋</span>
+                  <span class="mock-action">📊</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><b>accesscard_log_archive 库对</b></td>
+              <td>hly_accesscard @ 134</td>
+              <td style="text-align: center; color: var(--primary);">⇄</td>
+              <td>hly_log_archive @ Y</td>
+              <td><span class="mock-badge badge-gray">已禁用</span></td>
+              <td>—</td>
+              <td>
+                <div class="mock-row-actions">
+                  <span class="mock-action success">✏</span>
+                  <span class="mock-action info">📋</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 页面 2: 库对详情 -->
+    <h3 style="font-size: 14px; font-weight: 600; color: var(--primary); margin: 28px 0 8px;">② 库对详情 <code style="font-size: 12px; background: var(--primary-soft); color: var(--primary); padding: 2px 6px; border-radius: 4px;">/ddl_sync/pair/&lt;id&gt;/detail/</code> <span style="color: var(--ink-soft); font-weight: 400;">DBA 配同步表</span></h3>
+    <div class="mock-ui">
+      <div class="mock-titlebar">
+        <span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+        <span class="mock-url">prodarchery.ahggwl.com:9123/ddl_sync/pair/1/detail/</span>
+      </div>
+      <div class="mock-body">
+        <div class="mock-h">
+          <span>accesscard 库对 · <span class="mock-badge badge-info">白名单</span></span>
+        </div>
+        <div class="mock-block">
+          <div class="label">业务库</div>
+          hly_accesscard (172.20.2.134:3306)
+        </div>
+        <div class="mock-block">
+          <div class="label">历史库</div>
+          hly_history (172.20.2.X:3306)
+        </div>
+        <div style="font-size: 13px; font-weight: 600; margin: 14px 0 8px;">同步表清单 · 3 / 12</div>
+        <table class="mock-table">
+          <thead>
+            <tr><th>表名</th><th>同步状态</th><th>字段数</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>accesscard_black_detail</code></td>
+              <td><span class="mock-badge badge-success">同步</span></td>
+              <td>35</td>
+              <td><span class="mock-action success">✏</span> <span class="mock-action danger">🗑</span></td>
+            </tr>
+            <tr>
+              <td><code>accesscard_log</code></td>
+              <td><span class="mock-badge badge-success">同步</span></td>
+              <td>12</td>
+              <td><span class="mock-action success">✏</span> <span class="mock-action danger">🗑</span></td>
+            </tr>
+            <tr>
+              <td><code>accesscard_audit</code></td>
+              <td><span class="mock-badge badge-success">同步</span></td>
+              <td>8</td>
+              <td><span class="mock-action success">✏</span> <span class="mock-action danger">🗑</span></td>
+            </tr>
+            <tr style="background: #fafaf7;">
+              <td colspan="4" style="text-align: center; color: var(--ink-soft); font-size: 12px;">… 还有 9 张表未配置同步 <span class="mock-btn" style="margin-left: 12px;">+ 添加同步表</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="mock-tip" style="margin-top: 14px;">
+          <b>最近 5 次同步历史</b> · #12345 业务库工单 8/21 19:30 [已完成] 历史库 #12346 执行成功<br>
+          <b>🔍 立即跑巡检 (C 方案兜底)</b>
+        </div>
+      </div>
+    </div>
+
+    <!-- 页面 3: 业务库 DDL 工单详情 -->
+    <h3 style="font-size: 14px; font-weight: 600; color: var(--primary); margin: 28px 0 8px;">③ 业务库 DDL 工单详情 <span style="color: var(--ink-soft); font-weight: 400;">核心 UX 改造 — 业务 RD 看到"本表已配置同步"</span></h3>
+    <div class="mock-ui">
+      <div class="mock-titlebar">
+        <span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+        <span class="mock-url">prodarchery.ahggwl.com:9123/detail/12345/</span>
+      </div>
+      <div class="mock-body">
+        <div class="mock-h">
+          <span>SQL 工单 <code>#12345</code> <span class="mock-badge badge-info">DDL 跨库同步</span></span>
+          <span style="font-size: 12px; color: var(--ink-soft);">业务 RD @张三 · 2026-08-21 19:00</span>
+        </div>
+        <div class="mock-block" style="background: #fafaf7; color: var(--ink);">
+          <code style="color: var(--ink);">ALTER TABLE accesscard_black_detail ADD COLUMN card_serial VARCHAR(64) DEFAULT NULL;</code>
+        </div>
+        <div style="font-size: 13px; font-weight: 600; margin: 14px 0 8px;">执行状态</div>
+        <div class="status-row">
+          <span class="label">✅ 业务库</span>
+          <span class="mock-badge badge-success">已执行</span>
+          <span class="desc">hly_accesscard @ 134 · 完成 2026-08-21 19:30 · 影响 0 行 · 耗时 2.3s</span>
+        </div>
+        <div class="status-row">
+          <span class="label">🔄 历史库</span>
+          <span class="mock-badge badge-info">审核中</span>
+          <span class="desc">hly_history @ X · <b>DDL 工单 #12346</b> · DBA @李四 待审 · <a style="color: var(--info);">查看 →</a></span>
+        </div>
+        <div class="mock-tip">
+          💡 本表 <code>accesscard_black_detail</code> <b>已配置进历史库同步</b>（accesscard 库对 · 白名单）。<br>
+          业务库审批通过后，Archery 自动生成历史库 DDL 工单，走同一审批人审批。
+        </div>
+      </div>
+    </div>
+
+    <!-- 页面 4: 历史库 DDL 工单列表 -->
+    <h3 style="font-size: 14px; font-weight: 600; color: var(--primary); margin: 28px 0 8px;">④ 历史库 DDL 工单列表 <code style="font-size: 12px; background: var(--primary-soft); color: var(--primary); padding: 2px 6px; border-radius: 4px;">/ddl_sync/history_workflows/</code> <span style="color: var(--ink-soft); font-weight: 400;">DBA 兜底视角</span></h3>
+    <div class="mock-ui">
+      <div class="mock-titlebar">
+        <span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+        <span class="mock-url">prodarchery.ahggwl.com:9123/ddl_sync/history_workflows/</span>
+      </div>
+      <div class="mock-body">
+        <div class="mock-h"><span>🔗 历史库 DDL 工单 [由业务库联动生成]</span></div>
+        <table class="mock-table">
+          <thead>
+            <tr>
+              <th>工单</th>
+              <th>业务库</th>
+              <th>表</th>
+              <th>时间</th>
+              <th>状态</th>
+              <th>原工单</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>#12346</code></td>
+              <td>accesscard</td>
+              <td><code>accesscard_black_detail</code></td>
+              <td>8/21 19:30</td>
+              <td><span class="mock-badge badge-warn">审核中</span></td>
+              <td><a style="color: var(--info);">→ #12345</a></td>
+            </tr>
+            <tr>
+              <td><code>#12281</code></td>
+              <td>accesscard</td>
+              <td><code>accesscard_log</code></td>
+              <td>8/19 14:12</td>
+              <td><span class="mock-badge badge-success">已完成</span></td>
+              <td><a style="color: var(--info);">→ #12280</a></td>
+            </tr>
+            <tr>
+              <td><code>#12100</code></td>
+              <td>log</td>
+              <td><code>accesscard_log_archive</code></td>
+              <td>8/15 10:00</td>
+              <td><span class="mock-badge badge-danger">失败</span></td>
+              <td><a style="color: var(--info);">→ #12099</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 页面 5: 库对巡检结果 -->
+    <h3 style="font-size: 14px; font-weight: 600; color: var(--primary); margin: 28px 0 8px;">⑤ 库对巡检结果 <code style="font-size: 12px; background: var(--primary-soft); color: var(--primary); padding: 2px 6px; border-radius: 4px;">/ddl_sync/inspect/result/&lt;pair_id&gt;/</code> <span style="color: var(--ink-soft); font-weight: 400;">C 方案兜底</span></h3>
+    <div class="mock-ui">
+      <div class="mock-titlebar">
+        <span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+        <span class="mock-url">prodarchery.ahggwl.com:9123/ddl_sync/inspect/result/1/</span>
+      </div>
+      <div class="mock-body">
+        <div class="mock-h">
+          <span>accesscard 库对 · 巡检结果</span>
+          <span style="font-size: 12px; color: var(--ink-soft);">2026-08-21 20:00</span>
+        </div>
+        <div style="font-size: 13px; font-weight: 600; margin: 8px 0 8px; color: var(--danger);">🔴 1 张表 schema 不一致</div>
+        <div style="background: rgba(244, 63, 94, 0.04); border: 1px solid rgba(244, 63, 94, 0.18); border-radius: 8px; padding: 12px; font-size: 12.5px; margin-bottom: 12px;">
+          <b>accesscard_black_detail</b> · <span class="mock-badge badge-danger">5 列缺失</span><br>
+          <code>card_serial (8/21 漏同步)</code> · <code>idx_xxx (8/15 漏同步)</code><br>
+          详情: 业务库新增 5 个字段 / 历史库 0 个 — 业务库 DDL 未联动到历史库，需要补 DDL 工单。<br>
+          <span class="mock-btn" style="margin-top: 8px;">生成补 DDL →</span>
+        </div>
+        <div style="font-size: 13px; font-weight: 600; margin: 12px 0 8px; color: var(--success);">🟢 2 张表 schema 一致</div>
+        <div style="font-size: 12.5px; color: var(--ink-mid);">
+          <code>accesscard_log</code> · <code>accesscard_audit</code> — 同步正常，无需修复。
+        </div>
+        <div class="mock-tip">
+          ⚠️ 此巡检由 DBA @张三 在 8/21 20:00 <b>手动触发</b>，建议配定时任务 (每天凌晨跑) + 不一致推钉钉给历史库 DBA。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 04 数据模型 ===== -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">04</span>
+      <h2 class="section-title">数据模型 — 3 张表</h2>
+    </div>
+    <div class="section-sub"><code>ext_ddl_sync_pair</code> + <code>ext_ddl_sync_table</code> + <code>ext_ddl_sync_history</code>，跟现有 <code>ext_*</code> 命名一致。</div>
+
+    <div class="er-wrap">
+      <div class="er-table">
+        <div class="er-head">ext_ddl_sync_pair</div>
+        <div class="er-row"><span class="pk">🔑 id</span><span>PK</span></div>
+        <div class="er-row"><span>name</span><span>varchar(128)</span></div>
+        <div class="er-row"><span class="fk">→ source_instance_id</span><span>FK</span></div>
+        <div class="er-row"><span>source_db</span><span>varchar(64)</span></div>
+        <div class="er-row"><span class="fk">→ target_instance_id</span><span>FK</span></div>
+        <div class="er-row"><span>target_db</span><span>varchar(64)</span></div>
+        <div class="er-row"><span>sync_mode</span><span>whitelist / blacklist</span></div>
+        <div class="er-row"><span>enabled</span><span>bool</span></div>
+        <div class="er-row"><span>created_by / created_at / updated_at</span><span>—</span></div>
+      </div>
+
+      <div class="er-table">
+        <div class="er-head">ext_ddl_sync_table</div>
+        <div class="er-row"><span class="pk">🔑 id</span><span>PK</span></div>
+        <div class="er-row"><span class="fk">→ pair_id</span><span>FK</span></div>
+        <div class="er-row"><span>table_name</span><span>varchar(128)</span></div>
+        <div class="er-row"><span>transform_rule</span><span>JSON (Phase 2)</span></div>
+        <div class="er-row"><span>created_at</span><span>datetime</span></div>
+        <div style="background: rgba(47,111,94,0.04); padding: 8px 14px; font-size: 11.5px; color: var(--ink-soft); font-family: 'JetBrains Mono', monospace;">
+          ↳ unique(pair, table_name)
+        </div>
+      </div>
+
+      <div class="er-table">
+        <div class="er-head">ext_ddl_sync_history</div>
+        <div class="er-row"><span class="pk">🔑 id</span><span>PK</span></div>
+        <div class="er-row"><span class="fk">→ pair_id</span><span>FK</span></div>
+        <div class="er-row"><span class="fk">→ source_workflow_id</span><span>FK (SqlWorkflow)</span></div>
+        <div class="er-row"><span class="fk">→ target_workflow_id</span><span>FK (Nullable)</span></div>
+        <div class="er-row"><span>table_name / ddl_text</span><span>varchar / text</span></div>
+        <div class="er-row"><span>sync_status</span><span>pending / created / success / failed / skipped</span></div>
+        <div class="er-row"><span>created_at / finished_at</span><span>datetime</span></div>
+      </div>
+    </div>
+
+    <div class="er-relations">
+      <span class="er-rel">pair <b>1 : N</b> table</span>
+      <span class="er-rel">pair <b>1 : N</b> history</span>
+      <span class="er-rel">history <b>N : 1</b> SqlWorkflow (源 + 目标)</span>
+    </div>
+  </section>
+
+  <!-- ===== 05 联动 ===== -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">05</span>
+      <h2 class="section-title">联动 5 个老功能</h2>
+    </div>
+    <div class="section-sub">不是孤立的 — 跟 5 个二次开发全部联动，所以能在 2 周内出活。</div>
+
+    <div class="hub-wrap">
+      <div class="hub-grid">
+        <div class="hub-side">
+          <div class="hub-pill"><b>v0.4.5</b> DDL 智能回滚</div>
+          <div class="hub-pill"><b>v0.3.0</b> gh-ost 无锁</div>
+          <div class="hub-pill"><b>v0.3.x</b> 大表 DDL 防呆</div>
+        </div>
+        <div class="hub-core">
+          <div class="hub-core-title">DDL 跨库同步<br>v0.5.0</div>
+          <div class="hub-core-sub">业务库 ↔ 历史库</div>
+        </div>
+        <div class="hub-side">
+          <div class="hub-pill"><b>v0.2.0</b> 钉钉 OA</div>
+          <div class="hub-pill"><b>audit_drivers</b> 3 级审批</div>
+          <div class="hub-pill"><b>mirage</b> 字段加密</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+        <div class="card" style="padding: 14px 16px;">
+          <h3 style="font-size: 13px;">v0.4.5 智能回滚</h3>
+          <p style="font-size: 12.5px;">历史库 DDL 工单也走智能回滚 (ADD COLUMN 逆向 DROP COLUMN)，失败能自动回。</p>
+        </div>
+        <div class="card" style="padding: 14px 16px;">
+          <h3 style="font-size: 13px;">v0.3.0 gh-ost</h3>
+          <p style="font-size: 12.5px;">历史库 DDL 大表检测走同一阈值，超过自动套 gh-ost 避免锁表。</p>
+        </div>
+        <div class="card" style="padding: 14px 16px;">
+          <h3 style="font-size: 13px;">v0.3.x 大表防呆</h3>
+          <p style="font-size: 12.5px;">历史库 DDL 提单时也走大表防呆 (大表 → 提示 gh-ost / 立即执行 / 终止)。</p>
+        </div>
+        <div class="card" style="padding: 14px 16px;">
+          <h3 style="font-size: 13px;">v0.2.0 钉钉 OA + audit_drivers</h3>
+          <p style="font-size: 12.5px;">历史库 DDL 工单审批人跟业务库一样，审批消息推钉钉，DBA 不用切系统。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 06 实施阶段 ===== -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">06</span>
+      <h2 class="section-title">实施阶段 — 短期 C → 中期 B</h2>
+    </div>
+    <div class="section-sub">先 C 跑通主链路，B 加 transform_rule / 巡检定时任务 / 钉钉通知。</div>
+
+    <ol class="phase-list">
+      <li class="phase-item">
+        <h4 class="phase-h">Phase 1 · 短期 C <span class="tag">推荐先做</span></h4>
+        <p class="phase-p">库对管理列表 + 库对详情两个页面，让 DBA 能配白名单表。</p>
+        <p class="phase-p">跑通主链路：业务库提 DDL → 识别表 → 自动建历史库工单 → 走同一审批。</p>
+        <p class="phase-p" style="color: var(--ink-soft); font-size: 12.5px;">预估 2-3 天 · 估时根据 DBA 配库对工作量</p>
+      </li>
+      <li class="phase-item">
+        <h4 class="phase-h">Phase 2 · 中期 B 增量 <span class="tag warm">后续</span></h4>
+        <p class="phase-p">3 张表 0001-0003 migration 推 110 prod + 库对巡检 (C 方案兜底) 页面 + 业务库 DDL 工单详情"本表已配置同步" 提示。</p>
+        <p class="phase-p" style="color: var(--ink-soft); font-size: 12.5px;">预估 1-2 周</p>
+      </li>
+      <li class="phase-item warm">
+        <h4 class="phase-h">Phase 3 · 增强 <span class="tag warm">长期</span></h4>
+        <p class="phase-p">定时巡检 (每天凌晨) + 不一致推钉钉 + transform_rule 字段级调整 (skip_columns / rename_columns)。</p>
+        <p class="phase-p" style="color: var(--ink-soft); font-size: 12.5px;">预估 2-3 周</p>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ===== 07 当前状态 ===== -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">07</span>
+      <h2 class="section-title">当前状态 & 下一步</h2>
+    </div>
+    <div class="section-sub">8/21 设计稿完整，<b>未开工</b>。8/22-8/27 实战推 110 + gh-ost 收尾占满。</div>
+
+    <div class="grid-2">
+      <div class="card" style="border-left: 3px solid var(--success);">
+        <h3>已完成</h3>
+        <p>8/21 详细设计稿 · docs/designs/2026-08-21_ddl-sync-pair-design.md (50KB MD + 145KB HTML)</p>
+        <p>5 个核心页面 mockup · 3 张表 ER · 5 个老功能联动 · 实施阶段 C → B</p>
+        <p>commit: <b>尚未 commit</b> (设计稿 8/21 写完一直 untracked)</p>
+      </div>
+      <div class="card" style="border-left: 3px solid var(--accent-warm);">
+        <h3>待办（可选）</h3>
+        <p>① 先 commit 设计稿防丢 (5 min) · ② 跟 8/27 实战 gh-ost / 字段 diff / 权限拆分 沉淀交叉检查设计</p>
+        <p>③ Phase 1 开 2-3 天：库对管理 + 库对详情 · ④ 跑通主链路 + 1-2 真实业务库演练</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Footer ===== -->
+  <footer class="footer">
+    Archery v0.5.0 · DDL 跨库同步功能图说 · 设计人 mavis · 2026-08-21 (HTML 重制 2026-08-27)<br>
+    配套：<a style="color: var(--primary);" href="docs/designs/2026-08-21_ddl-sync-pair-design.md">MD 版详细设计稿</a> · <a style="color: var(--primary);" href="docs/designs/2026-08-21_ddl-sync-pair-design.html">HTML 原版</a>
+  </footer>
+
+</div>
+</body>
+</html>
