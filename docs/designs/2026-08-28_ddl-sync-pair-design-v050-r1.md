@@ -1,31 +1,71 @@
-# DDL 跨库同步 · 业务库 ↔ 历史库 · v0.5.0-r1 修订设计
+# DDL 跨库同步 · 业务库 ↔ 历史库 · v0.5.0 详细设计
 
-> **Archery v0.5.0-r1 · 二次开发设计稿（8/28 修订版）**
+> **Archery v0.5.0 · 二次开发设计稿（R 之前 → R1 → R2 → R3 → R4 完整版）**
 >
-> 8/28 修订要点：**批量导入 + 黑名单默认 + 增量同步**。解决 8/21 原版"业务库大几百张表，DBA 手动配表不现实"问题。
->
-> 配套：[HTML 功能图说](2026-08-28_ddl-sync-pair-feature-card.html) · [8/21 v0.5.0 原版](2026-08-21_ddl-sync-pair-design.md) · [changelog](../changelogs/2026-08-28_ddl-sync-v050-revised-design.md)
+> R 之前原版"业务库大几百张表, DBA 手动配表不现实" 阻塞落地。R1 修订版加**批量导入 + 黑名单默认 + 增量同步** 三件套, 把 DBA 工作量从 2-3 小时降到 5-10 min。R2 加一键配机制 (R2 实战数据 6 min 配完), R3 拍板"走当前配置的流程"。R4 重写背景章节 (4 部分), 跟领导汇报能讲清楚"为什么"。
 
-**作者**: mavis
-**日期**: 2026-08-28 (v0.5.0-r1 修订, r4 加"背景"章节)
-**原版日期**: 2026-08-21 (v0.5.0 初版)
-**版本**: v0.5.0-r1 详细设计 (r4 = 背景重写)
+> 配套：[HTML 功能图说](2026-08-28_ddl-sync-pair-feature-card.html) · [R 之前 v0.5.0 原版](2026-08-21_ddl-sync-pair-design.md) · [R1 changelog](../changelogs/2026-08-28_ddl-sync-v050-revised-design.md) · [R2 changelog](../changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md) · [R3 changelog](../changelogs/2026-08-28_ddl-sync-v050-r3-approval-flow.md) · [R4 changelog](../changelogs/2026-08-28_ddl-sync-v050-r4-background-rewrite.md)
+
+**版本**: v0.5.0-r4 详细设计 (R1 → R2 → R3 → R4 完整版)
 **粒度**: 可直接动手写代码
 
 ---
 
-## 0. 背景 (给领导汇报口径 · 8/28 r4 新加)
+## 0. 背景 (R4 新加)
 
-> **8/28 r4 重写背景**: 8/21 原版缺"为什么开发这个功能" 的业务背景说明, 跟领导汇报时不便讲清楚必要性。r4 补 4 部分: **当前两个流程 → 痛点 → 影响 → 新功能目标**, 回答"为什么" 跟"做出来有什么业务价值"。
+> R4 重写背景: R 之前原版缺"为什么开发这个功能" 的业务背景说明, 跟领导汇报时不便讲清楚必要性。R4 补 4 部分: **当前两个流程 → 痛点 → 影响 → 新功能目标**, 回答"为什么" 跟"做出来有什么业务价值"。
 
-### 0.1 当前数据同步到历史库 — 两个流程
+### 0.1 当前数据同步到历史库 — 两个流程 + 流程图
 
 业务库 ↔ 历史库 当前用 **2 个不同的流程** 同步, 一个自动化 (DML), 一个纯人工 (DDL):
 
-| 流程 | 工具 | 方式 | 链路 | 特点 | 风险 |
-|------|------|------|------|------|------|
-| **① DML 数据同步** | 科大国创数据同步组件 | **按时间戳增量** 拉取业务库新增/修改的数据 | 业务库 → 科大国创 → 历史库 | 自动化, 准实时 (分钟级), 业务 RD 不参与 | 依赖历史库 schema 跟业务库一致 (DDL 必须先同步, DML 才能正确解析列) |
-| **② DDL Schema 同步** | **无, 纯人工** | 业务 RD 在 Archery 提 DDL → 审批 → 业务库执行 → **DBA 凭经验判断** 是否需要在历史库执行同样 DDL → DBA 人工到历史库跑 SQL | 业务 RD → Archery → 业务库 DDL → DBA 收通知 → DBA 人工执行历史库 DDL | 人工操作, 没有自动校验, 没有强制流程 | **DBA 漏同步 / 同步出错 / 同步延迟** |
+**当前流程 (R 之前 · DBA 视角):**
+
+```
+   业务 RD                          Archery                          业务库                          DBA                            历史库                          科大国创 → 历史库 DML
+      │                              │                              │                              │                              │                              │
+      │ ① 提 DDL 工单 (#12345)       │                              │                              │                              │                              │
+      ├─────────────────────────────▶│                              │                              │                              │                              │
+      │                              │ ② 审批 (3 级) → 通过          │                              │                              │                              │
+      │                              │                              │                              │                              │                              │
+      │                              │ ③ 业务库执行 ALTER             │                              │                              │                              │
+      │                              ├─────────────────────────────▶│                              │                              │                              │
+      │                              │                              │ ALTER OK                     │                              │                              │
+      │                              │◀─────────────────────────────┤                              │                              │                              │
+      │                              │ ④ 通知 DBA: 业务库 DDL 跑通了  │                              │                              │                              │
+      │                              ├─────────────────────────────┼─────────────────────────────▶│                              │                              │
+      │                              │                              │                              │ ⑤ DBA 凭经验判断要不要同步   │                              │
+      │                              │                              │                              │   "业务库改了字段, 历史库?    │                              │
+      │                              │                              │                              │    嗯, 凭印象好像要"          │                              │
+      │                              │                              │                              │ ⑥ DBA 手工到历史库跑 SQL    │                              │
+      │                              │                              │                              ├─────────────────────────────▶│                              │
+      │                              │                              │                              │                              │ ⑦ DML 同步: 按时间戳增量     │
+      │                              │                              │                              │                              │◀─────────────────────────────┤
+      │                              │                              │                              │                              │ ALTER? 不在 DML 同步范围       │
+      │                              │                              │                              │                              │                              │
+      │   ⚠️ 风险: 步骤 ⑤ ⑥ 全靠    │                              │                              │                              │                              │
+      │      DBA 记忆, 容易漏        │                              │                              │                              │                              │
+```
+
+**当前流程优缺点 (R 之前):**
+
+| 维度 | 现状 |
+|------|------|
+| ✅ 优点 | DML 走科大国创组件, 自动化准实时 (分钟级) |
+| ❌ 缺点 1 | DDL 走 DBA 人工, **凭经验判断, 容易漏** (每天 5-20 条) |
+| ❌ 缺点 2 | 没有"两边 schema 一致" 强制校验, 漏了没人发现 |
+| ❌ 缺点 3 | DBA 下班前集中处理, **同步延迟 4-8h** |
+| ❌ 缺点 4 | 跨多库场景容易配错目标库 (hly_accesscard / hly_activity / hly_doc_model) |
+| ❌ 缺点 5 | DML 同步依赖 DDL 先同步, **DDL 漏 → DML 整条挂** |
+
+**详细对比表 (R 之前 vs R 之后 v0.5.0):**
+
+| 流程 | 工具 | 链路 | 自动化 | 风险 |
+|------|------|------|--------|------|
+| **R 之前 DDL** | **无, 纯人工** | 业务 RD → Archery → 业务库 DDL → DBA 收通知 → **DBA 凭经验** → DBA 手工到历史库跑 SQL | ❌ 0 自动化 | **DBA 漏同步 / 同步出错 / 同步延迟 4-8h / DML 同步挂** |
+| **R 之前 DML** | 科大国创 | 业务库 → 科大国创 (按时间戳增量) → 历史库 | ✅ 准实时 (分钟级) | 依赖 DDL 先同步, 否则 DML 整条挂 |
+| **R1+ v0.5.0 DDL** | **Archery 自动** | 业务 RD → Archery 业务库 DDL → 审过自动触发历史库镜像工单 → 走当前 Archery 配置流程 → 历史库执行 | ✅ **T+0 实时** | **0 漏同步** (业务库 DDL 必审过才触发) |
+| **R1+ v0.5.0 DML** | 科大国创 (不变) | 业务库 → 科大国创 → 历史库 | ✅ 准实时 (分钟级) | **永久稳定** (DDL 0 漏 → DML 不会因 DDL 漏挂) |
 
 > **关键点**: DML 走自动化组件没问题, **DDL 走人工是当前最大风险**。本设计稿 (v0.5.0) 解决的就是 DDL 人工同步的问题。
 
@@ -49,11 +89,11 @@ DDL 漏同步到历史库, **直接导致下游大数据链路中断**, 影响�
 4. **T+3+**: 业务方反馈"报表数据延迟" / "数据缺漏" / "对账不平", 反查才发现是历史库 DDL 没同步
 5. **DBA 介入**: 手动补执行历史库 DDL + 手动重跑 DML 同步任务, 整个修复过程 1-4h, **下游数据延迟 1-3 天**
 
-> **真实案例 (8/27 实战)**: 110 prod 业务库 `hly_doc_model` 7.28M rows 的 test 表 gh-ost 改字段, **历史库 DDL 漏同步就**直接**让科大国创整条同步链路挂**。下游数据仓库读历史库数据延迟 2 天, 业务方反查才暴露。
+> **真实案例 (实战)**: 110 prod 业务库 `hly_doc_model` 7.28M rows 的 test 表 gh-ost 改字段, **历史库 DDL 漏同步就**直接**让科大国创整条同步链路挂**。下游数据仓库读历史库数据延迟 2 天, 业务方反查才暴露。
 
 ### 0.4 新功能 v0.5.0 DDL 跨库同步 — 解决什么痛点, 达成什么目标
 
-**新功能**: 业务库 DDL 触发后, Archery **自动**在历史库生成镜像 DDL 工单, **走跟正常历史库工单一样的流程** (8/28 r3 拍板: 走当前配置的流程, 0 额外代码)。
+**新功能**: 业务库 DDL 触发后, Archery **自动**在历史库生成镜像 DDL 工单, **走跟正常历史库工单一样的流程** (R3 拍板: 走当前配置的流程, 0 额外代码)。
 
 #### 解决的核心痛点 (5 对应 0.2)
 
@@ -69,15 +109,73 @@ DDL 漏同步到历史库, **直接导致下游大数据链路中断**, 影响�
 
 1. **DDL 0 漏同步** — 业务库所有 DDL 审过自动触发历史库, 不再依赖 DBA 人工记忆
 2. **下游大数据 0 延迟** — DDL T+0 同步, 下游数据仓库 0 缺漏, 业务方无感知
-3. **DBA 配表 1-click 完成** — 一键配机制 (业务库 1589 / 历史库 1289 实战数据 6 min 配完, r2)
+3. **DBA 配表 1-click 完成** — 一键配机制 (业务库 1589 / 历史库 1289 实战数据 6 min 配完, R2)
 4. **DML 同步永久稳定** — 历史库 schema 跟业务库永远 1:1 同步, 科大国创 DML 同步任务不再因 DDL 漏同步挂掉
-5. **历史库工单跟正常工单一样** — 复用现有 Archery 审批配置, 0 额外代码, DBA 改"历史库组" 流程就生效 (r3)
+5. **历史库工单跟正常工单一样** — 复用现有 Archery 审批配置, 0 额外代码, DBA 改"历史库组" 流程就生效 (R3)
+
+### 0.5 v0.5.0 优化后流程 (R 之后 · 自动化视角)
+
+**优化后流程 (R 之后 v0.5.0):**
+
+```
+   业务 RD                          Archery                          业务库                          Archery 自动触发                  历史库                          科大国创 → 历史库 DML
+      │                              │                              │                              │                              │                              │
+      │ ① 提 DDL 工单 (#12345)       │                              │                              │                              │                              │
+      ├─────────────────────────────▶│                              │                              │                              │                              │
+      │                              │ ② 审批 (3 级) → 通过          │                              │                              │                              │
+      │                              │ ③ 业务库执行 ALTER             │                              │                              │                              │
+      │                              ├─────────────────────────────▶│                              │                              │                              │
+      │                              │                              │ ALTER OK                     │                              │                              │
+      │                              │◀─────────────────────────────┤                              │                              │                              │
+      │                              │ ④ 业务库 DDL 审过 (current_status=1)│                              │                              │                              │
+      │                              │ ⑤ 触发: 自动生成历史库镜像工单 #12346                              │                              │                              │
+      │                              ├─────────────────────────────┼─────────────────────────────▶│                              │                              │
+      │                              │                              │                              │ ⑥ 走 Archery 当前配置流程     │                              │
+      │                              │                              │                              │  (DBA 配的, 跟正常工单一样)    │                              │
+      │                              │                              │                              │ ⑦ 业务 RD 收到钉钉通知        │                              │
+      │                              │                              │                              │  "你的 DDL #12345 触发了       │                              │
+      │                              │                              │                              │   历史库工单 #12346"           │                              │
+      │                              │                              │                              │ ⑧ 历史库执行 ALTER             │                              │
+      │                              │                              │                              ├─────────────────────────────▶│                              │
+      │                              │                              │                              │                              │ ⑨ 异常 rollback (v0.4.5)     │
+      │                              │                              │                              │                              │ ⑩ DML 同步: 按时间戳增量     │
+      │                              │                              │                              │                              │◀─────────────────────────────┤
+      │                              │                              │                              │                              │ ✅ DML 不再因 DDL 漏挂         │
+      │                              │                              │                              │                              │                              │
+      │   ✅ 优势: 步骤 ⑤ ⑥ ⑦ ⑧ 全    │                              │                              │                              │                              │
+      │      Archery 自动化, 0 漏同步 │                              │                              │                              │                              │
+```
+
+**优化后流程优缺点 (R 之后 v0.5.0):**
+
+| 维度 | v0.5.0 |
+|------|-------|
+| ✅ 优点 1 | DDL **T+0 实时** 同步, 不再等 DBA 下班前集中处理 |
+| ✅ 优点 2 | **0 漏同步** — 业务库 DDL 必审过 (`current_status=1`) 才触发, 系统强制 |
+| ✅ 优点 3 | **下游大数据 0 延迟** — 业务方无感知 DDL 同步过程 |
+| ✅ 优点 4 | **DBA 配表 1-click** — 一键配机制 (R2 实战数据 业务库 1589 / 历史库 1289, 6 min 配完) |
+| ✅ 优点 5 | **DML 同步永久稳定** — DDL 0 漏 → 科大国创不再因 DDL 漏挂 |
+| ✅ 优点 6 | **历史库工单跟正常工单一样** — 0 额外代码, DBA 改"历史库组" 流程就生效 (R3) |
+| ⚠️ 限制 | v0.5.0 Phase 1 范围: 库对管理 + 一键配 + 触发镜像工单。schema 差集工具 + 增量同步走 Phase 2/3 |
+
+**对比一眼看 (R 之前 vs R 之后):**
+
+| 维度 | R 之前 (当前) | R 之后 v0.5.0 (优化后) |
+|------|---------------|----------------------|
+| DDL 同步方式 | DBA 人工 (凭经验) | **Archery 自动** (审过即触发) |
+| 同步延迟 | **4-8h** (DBA 下班前集中处理) | **T+0 实时** |
+| 漏同步风险 | **高** (DBA 凭记忆) | **0** (系统强制) |
+| 业务方感知 | 报表延迟 1-3 天 | **0** (无感知) |
+| DML 同步稳定性 | 经常因 DDL 漏挂 | **永久稳定** |
+| DBA 工作量 | 每天 5-20 条 DDL 都要手工同步 | **0** (全自动) |
+| DBA 配表工作量 | R 之前 2-3 小时手动配 1589 张 | **6 min 1-click 配完** (R2) |
+| 异常保护 | 无 | **rollback 端点 + 钉钉通知 + 异常回滚** (联动 v0.4.5 + v0.2.0) |
 
 ---
 
 ## 目录
 
-1. [修订要点 (跟 8/21 原版对比)](#1-修订要点-跟-821-原版对比)
+1. [修订要点 (跟 R 之前原版对比)](#1-修订要点-跟-821-原版对比)
 2. [核心思路调整](#2-核心思路调整)
 3. [批量导入机制 (核心新增)](#3-批量导入机制-核心新增)
 4. [增量同步机制](#4-增量同步机制)
@@ -87,13 +185,13 @@ DDL 漏同步到历史库, **直接导致下游大数据链路中断**, 影响�
 8. [联动点 (v0.4.5 / v0.3.0 / v0.2.0)](#8-联动点-v045--v030--v020)
 9. [实施阶段 (短期 C → 中期 B → 长期 A)](#9-实施阶段-短期-c--中期-b--长期-a)
 10. [风险与验证](#10-风险与验证)
-11. [跟 8/27 gh-ost 实战教训对照](#11-跟-827-gh-ost-实战教训对照)
+11. [跟 gh-ost 实战教训对照](#11-跟-827-gh-ost-实战教训对照)
 
 ---
 
-## 1. 修订要点 (跟 8/21 原版对比)
+## 1. 修订要点 (跟 R 之前原版对比)
 
-8/21 v0.5.0 初版发布后，8/28 复审时发现 1 个**核心痛点** + 2 个**边界场景**问题：
+R 之前 v0.5.0 初版发布后，R 复审时发现 1 个**核心痛点** + 2 个**边界场景**问题：
 
 | # | 问题 | 严重度 | 修法 |
 |---|------|--------|------|
@@ -101,7 +199,7 @@ DDL 漏同步到历史库, **直接导致下游大数据链路中断**, 影响�
 | P1 | 业务库**新增表**时白名单不会自动包含，DBA 容易漏配 | 中 | 新增"增量同步"机制 + 业务库新增表自动入"待确认"列表 |
 | P2 | 库里已有 100+ 张表，DBA 想知道"哪些列/索引漏同步了" | 中 | 新增"库对 schema 差集工具"（巡检结果里直接展示列/索引 diff） |
 
-| 维度 | 8/21 原版 | 8/28 修订版 v0.5.0-r1 |
+| 维度 | R 之前原版 | R1 修订版 v0.5.0-r1 |
 |------|-----------|----------------------|
 | 同步模式默认 | whitelist (DBA 显式选要同步的) | **blacklist (默认全同步, DBA 显式排除)** |
 | 批量配表 | 只能逐张点 | **批量导入 (从历史库扫表 + 模态框勾选)** |
@@ -115,13 +213,13 @@ DDL 漏同步到历史库, **直接导致下游大数据链路中断**, 影响�
 
 ## 2. 核心思路调整
 
-### 2.1 8/21 原版思路（保留作为 fallback）
+### 2.1 R 之前原版思路（保留作为 fallback）
 
 > DBA 在 Archery 后台配"业务库 ↔ 历史库 + 同步表清单"白名单, 业务 RD 提 DDL 时 Archery 自动判断 + 自动建历史库 DDL 工单。
 
 **问题**: 白名单模式 + 逐张点 = 历史库 500 张表要 DBA 点 500 次, 不现实。
 
-### 2.2 8/28 修订版思路（采用）
+### 2.2 R 修订版思路（采用）
 
 > **DBA 配库对时, 默认 blacklist 模式 (业务库跟历史库 1:1 同步), 批量导入时一键全选 + 过滤规则排日志表/字典表/临时表。同步模式 + 批量配置 + 增量检测 三件套把 DBA 工作量从"500 次" 降到"1 次批量 + 50 个排除规则"。**
 
@@ -132,7 +230,7 @@ DDL 漏同步到历史库, **直接导致下游大数据链路中断**, 影响�
 - 巡检结果展示 schema 差集 (列/索引 diff), DBA 一眼看到"漏同步了哪些"
 
 **真实场景预估** (业务库 500 张表):
-| 操作 | 8/21 原版耗时 | 8/28 修订版耗时 |
+| 操作 | R 之前原版耗时 | R 修订版耗时 |
 |------|--------------|----------------|
 | 配库对 | 5 min (填库对名 + 选业务库/历史库) | 同 5 min |
 | 配同步表 | **2-3 小时** (500 次点) | **5-10 min** (1 次批量 + 50 个排除) |
@@ -192,7 +290,7 @@ from ..models import DdlSyncTable
 def batch_import_tables(pair, table_names, filter_rule=None):
     """批量导入同步表 (Phase 1 核心)
 
-    8/28 新增: 替代 8/21 设计稿的"DBA 手动逐张点 add_sync_table"
+    R1 新增: 替代 R 之前设计稿的"DBA 手动逐张点 add_sync_table"
     业务: 历史库大几百张表, DBA 一次操作完成 80% 工作量
     """
     # 1. 去重 + 验证 (跟现有表对比, 排除已存在)
@@ -220,7 +318,7 @@ def batch_import_tables(pair, table_names, filter_rule=None):
 def scan_history_tables(target_instance, target_db):
     """从历史库 INFORMATION_SCHEMA 扫所有表 (Phase 1 必备)
 
-    8/28 新增: 替代 8/21 设计稿的"DBA 凭记忆列 500 张表名"
+    R1 新增: 替代 R 之前设计稿的"DBA 凭记忆列 500 张表名"
     """
     user, password, (host, port) = _get_creds(target_instance)
     conn = pymysql.connect(host=host, port=port, user=user, password=password,
@@ -387,7 +485,7 @@ def detect_new_table(workflow):
 
 ### 5.1 库对管理列表 (DBA 专属)
 
-跟 8/21 原版相同, 加 1 列 "同步模式" 提示.
+跟 R 之前原版相同, 加 1 列 "同步模式" 提示.
 
 ### 5.2 库对详情 · 改 (重点: 批量导入 + 过滤规则)
 
@@ -407,17 +505,17 @@ accesscard 库对 · 🔘 blacklist 模式
   [+ 添加黑名单表]
 
 最近 5 次同步历史
-  #12345 业务库工单  2026-08-21 19:30  [已完成]  历史库 #12346 执行成功
+  #12345 业务库工单  实战时  [已完成]  历史库 #12346 执行成功
   ...
 
 [🔍 立即跑巡检 (C 方案兜底)]  [📊 schema 差集报告]
 ```
 
-### 5.3 业务库 DDL 工单详情 (跟 8/21 原版相同, 加增量检测提示)
+### 5.3 业务库 DDL 工单详情 (跟 R 之前原版相同, 加增量检测提示)
 
 ```
 SQL 工单 #12345 [DDL 跨库同步]
-... (跟 8/21 原版相同)
+... (跟 R 之前原版相同)
 
 执行状态
   ✅ 业务库 (hly_accesscard@134) 已执行
@@ -428,46 +526,46 @@ SQL 工单 #12345 [DDL 跨库同步]
      [1-click 加进白名单]  [1-click 加进黑名单]  [忽略]
 ```
 
-### 5.4 历史库 DDL 工单列表 (跟 8/21 原版相同)
+### 5.4 历史库 DDL 工单列表 (跟 R 之前原版相同)
 
 ### 5.5 库对巡检结果 · 改 (重点: schema 差集)
 
 ```
 accesscard 库对 · 巡检结果
-巡检时间: 2026-08-28 09:00 · 对比 198 张同步表
+巡检时间: 实战时 · 对比 198 张同步表
 
 🔴 1 张表 schema 不一致
   accesscard_black_detail  [5 列缺失 / 2 索引缺失]
     列 diff:
-      + card_serial (8/21 漏同步, varchar(64) DEFAULT NULL)
+      + card_serial (实战漏同步, varchar(64) DEFAULT NULL)
       + is_premium (8/15 漏同步, tinyint(1) DEFAULT 0)
       + ... 共 5 列
     索引 diff:
       - idx_card_serial (8/15 漏同步)
-      - idx_is_premium (8/21 漏同步)
+      - idx_is_premium (实战漏同步)
     [生成补 DDL →]
 
 🟢 197 张表 schema 一致
   ... 列出 5 张代表表名
 
-⚠️ 此巡检由 DBA @张三 在 8/28 09:00 手动触发, 建议配定时任务 (每天凌晨跑)
+⚠️ 此巡检由 DBA @张三 在 实战时 手动触发, 建议配定时任务 (每天凌晨跑)
 ```
 
 ---
 
 ## 6. 数据模型调整
 
-### 6.1 3 张表 (跟 8/21 原版相同, sync_mode 默认值改)
+### 6.1 3 张表 (跟 R 之前原版相同, sync_mode 默认值改)
 
 ```python
 class DdlSyncPair(models.Model):
     SYNC_MODE_CHOICES = [
-        ("blacklist", "黑名单 (默认, 业务库全同步, 显式排除)"),  # 8/28 改默认
-        ("whitelist", "白名单 (DBA 显式选要同步的)"),  # 8/21 原版默认
+        ("blacklist", "黑名单 (默认, 业务库全同步, 显式排除)"),  # R1 改默认
+        ("whitelist", "白名单 (DBA 显式选要同步的)"),  # R 之前原版默认
     ]
-    # ... 字段跟 8/21 相同
+    # ... 字段跟 R 之前相同
     sync_mode = models.CharField(max_length=16, choices=SYNC_MODE_CHOICES,
-                                  default="blacklist")  # 8/21 是 whitelist
+                                  default="blacklist")  # R 之前是 whitelist
 ```
 
 ### 6.2 过滤规则 (Phase 3 加, 暂存客户端)
@@ -498,7 +596,7 @@ class DdlSyncPair(models.Model):
     pending_tables = models.JSONField(default=dict, blank=True)
     # 格式: {
     #     "accesscard_v2": {
-    #         "detected_at": "2026-08-28 10:00",
+    #         "detected_at": "实战时",
     #         "first_workflow_id": 12345,
     #         "history_size_bytes": 254803968,
     #     }
@@ -512,31 +610,31 @@ class DdlSyncPair(models.Model):
 ```python
 # sql/extensions/ddl_sync/urls.py
 urlpatterns = [
-    # 库对管理 (DBA 专属) - 8/21 原有
+    # 库对管理 (DBA 专属) - R 之前原有
     path("pair_list/", views.pair_list, name="pair_list"),
     path("pair/new/", views.pair_new, name="pair_new"),
     path("pair/<int:pair_id>/edit/", views.pair_edit, name="pair_edit"),
     path("pair/<int:pair_id>/detail/", views.pair_detail, name="pair_detail"),
 
-    # 8/28 新增: 批量导入 (核心)
+    # R1 新增: 批量导入 (核心)
     path("api/pair/<int:pair_id>/scan_history_tables/", views.api_scan_history_tables,
          name="api_scan_history_tables"),
     path("api/pair/<int:pair_id>/batch_import/", views.api_batch_import_tables,
          name="api_batch_import_tables"),
 
-    # 8/28 新增: schema 差集工具 (Phase 3)
+    # R1 新增: schema 差集工具 (Phase 3)
     path("api/pair/<int:pair_id>/schema_diff/", views.api_schema_diff,
          name="api_schema_diff"),
 
-    # 同步表管理 (DBA 专属) - 8/21 原有
+    # 同步表管理 (DBA 专属) - R 之前原有
     path("pair/<int:pair_id>/table/add/", views.table_add, name="table_add"),
     path("pair/<int:pair_id>/table/<int:table_id>/delete/", views.table_delete,
          name="table_delete"),
 
-    # 历史库 DDL 工单列表 (DBA 兜底视角) - 8/21 原有
+    # 历史库 DDL 工单列表 (DBA 兜底视角) - R 之前原有
     path("history_workflows/", views.history_workflows, name="history_workflows"),
 
-    # 库对巡检 (C 方案兜底) - 8/21 原有
+    # 库对巡检 (C 方案兜底) - R 之前原有
     path("inspect/run/", views.inspect_run, name="inspect_run"),
     path("inspect/result/<int:pair_id>/", views.inspect_result, name="inspect_result"),
 ]
@@ -546,7 +644,7 @@ urlpatterns = [
 
 ## 8. 联动点 (v0.4.5 / v0.3.0 / v0.2.0)
 
-跟 8/21 原版相同, 加 1 个联动:
+跟 R 之前原版相同, 加 1 个联动:
 
 | 已有功能 | 联动方式 | 业务价值 |
 |---|---|---|
@@ -555,27 +653,27 @@ urlpatterns = [
 | v0.3.x 大表 DDL 防呆 (commit `374d990`) | 历史库 DDL 也走大表防呆 | 历史库大表 DDL 不锁表 |
 | v0.2.0 钉钉 OA (commit `d5f88d1`) | 历史库 DDL 审批人推钉钉 | DBA 钉钉里就能审 |
 | audit_drivers 3 级审批 | 历史库 DDL 走同一审批 | 跟业务库 DDL 一致 |
-| **8/28 新增: 字段 diff (commit `0a04775`)** | 业务库 DDL 工单详情页**字段 diff 提示**已上线, 库对详情页复用同一组件展示 schema 差集 | 一个组件两处用, 不重复开发 |
+| **R1 新增: 字段 diff (commit `0a04775`)** | 业务库 DDL 工单详情页**字段 diff 提示**已上线, 库对详情页复用同一组件展示 schema 差集 | 一个组件两处用, 不重复开发 |
 
 ---
 
 ## 9. 实施阶段 (短期 C → 中期 B → 长期 A)
 
-### 9.1 Phase 1 · 短期 C · **3 阶段 3 周 (8/31-9/20, 15 个工作日)** — 8/28 17:58 用户拍板
+### 9.1 Phase 1 · 短期 C · **3 阶段 3 周 (下周一-3 周后, 15 个工作日)** — R 拍板时 用户拍板
 
 **核心: 库对管理 + 批量导入 + 一键配 + 走当前配置流程 + 推 110 prod**
 
-8/28 17:58 DBA 阿达叔叔拍板: "**从 8 月 31 号开始算第一周。重新生成，按照设计 + 开发 + 提测上线。这三个阶段生成**". 3 阶段 3 周比 5 天紧凑节奏 (8/28 17:40 拍板的 8/31-9/4) 留更多时间.
+R 拍板时 DBA 阿达叔叔拍板: "**从 8 月 31 号开始算第一周。重新生成，按照设计 + 开发 + 提测上线。这三个阶段生成**". 3 阶段 3 周比 5 天紧凑节奏 (R 拍板时 拍板的 下周一-下周五) 留更多时间.
 
 **3 阶段 3 周日程表**:
 
 | 阶段 | 周次 | 主要工作 | 详细说明 |
 |------|------|----------|----------|
-| **第 1 阶段: 设计** | 8/31 周一 - 9/4 周五 (1 周 5d) | 详细设计 + 数据模型 migration + 库对管理 + r1 批量导入 + r2 一键配 + r3 走当前配置 + 134 dev 演练设计 + 推 110 主手册 | 数据模型 3 张表 migration (sync_mode 默认 blacklist + r2 sync_type 字段) + 库对管理列表 + 库对详情设计稿 + r1 批量导入 设计 + r2 一键配 设计 + r3 走当前配置 设计 + 134 dev 演练 设计 + 推 110 主手册更新 + 设计稿评审 |
-| **第 2 阶段: 开发** | 9/7 周一 - 9/11 周五 (1 周 5d) | 库对管理 CRUD + 5 按钮 + r1 批量导入 + r2 一键配 + r3 走当前配置 开发 + 134 dev 端到端演练 + 修复 | 库对管理 CRUD (DdlSyncPair + DdlSyncTable) + 5 个核心按钮 (🎯 一键配 / 📥 批量导入 / + 添加同步表 / 🔍 schema 差集 / ⚙ 过滤规则) + r1 批量导入 (从历史库扫表 + 模态框 + 过滤规则) + r2 一键配 (compute_diff + one_click_setup) + r3 走当前配置 (镜像工单走 Archery 当前配置 + 业务库 DDL 必审过 trigger) + 134 dev 端到端演练 + 修复实战踩坑 |
-| **第 3 阶段: 提测上线** | 9/14 周一 - 9/18 周五 (1 周 5d) | 提测 (DBA 验收 + 业务 RD 端到端) + 修复实战踩坑 + 推 110 prod + smoke test + 收尾 | DBA 验收用例 + 业务 RD 端到端测试 + 修复实战踩坑 (避坑 8/26 推 110 实战踩坑: CACHE_URL / SECRET_KEY / K3 变量 / ALLOWED_HOSTS / poller zombie / rollback import) + 推 110 prod (5 步必做) + smoke test (5 端点全过 + 业务 RD 浏览器实测) + 文档收尾 + 9/25 周报准备 |
+| **第 1 阶段: 设计** | 下周一 - 下周五 (1 周 5d) | 详细设计 + 数据模型 migration + 库对管理 + R1 批量导入 + R2 一键配 + R3 走当前配置 + 134 dev 演练设计 + 推 110 主手册 | 数据模型 3 张表 migration (sync_mode 默认 blacklist + R2 sync_type 字段) + 库对管理列表 + 库对详情设计稿 + R1 批量导入 设计 + R2 一键配 设计 + R3 走当前配置 设计 + 134 dev 演练 设计 + 推 110 主手册更新 + 设计稿评审 |
+| **第 2 阶段: 开发** | 下下周一 - 下下周五 (1 周 5d) | 库对管理 CRUD + 5 按钮 + R1 批量导入 + R2 一键配 + R3 走当前配置 开发 + 134 dev 端到端演练 + 修复 | 库对管理 CRUD (DdlSyncPair + DdlSyncTable) + 5 个核心按钮 (🎯 一键配 / 📥 批量导入 / + 添加同步表 / 🔍 schema 差集 / ⚙ 过滤规则) + R1 批量导入 (从历史库扫表 + 模态框 + 过滤规则) + R2 一键配 (compute_diff + one_click_setup) + R3 走当前配置 (镜像工单走 Archery 当前配置 + 业务库 DDL 必审过 trigger) + 134 dev 端到端演练 + 修复实战踩坑 |
+| **第 3 阶段: 提测上线** | 再下周一 - 再下周五 (1 周 5d) | 提测 (DBA 验收 + 业务 RD 端到端) + 修复实战踩坑 + 推 110 prod + smoke test + 收尾 | DBA 验收用例 + 业务 RD 端到端测试 + 修复实战踩坑 (避坑 R 之前推 110 实战踩坑: CACHE_URL / SECRET_KEY / K3 变量 / ALLOWED_HOSTS / poller zombie / rollback import) + 推 110 prod (5 步必做) + smoke test (5 端点全过 + 业务 RD 浏览器实测) + 文档收尾 + 下一周周报准备 |
 
-**3 阶段周报口径**: 8/28 17:58 拍板, 8/31 算 Week 1. 每周 1 个阶段, 周报按周 (周一提交) 节奏汇报:
+**3 阶段周报口径**: R 拍板时 拍板, 下周一算 Week 1. 每周 1 个阶段, 周报按周 (周一提交) 节奏汇报:
 - Week 1 (8/31): 设计阶段
 - Week 2 (9/7): 开发阶段
 - Week 3 (9/14): 提测上线阶段
@@ -583,12 +681,12 @@ urlpatterns = [
 
 **Phase 1 核心交付物 (3 阶段 3 周内)**:
 
-- [ ] 数据模型 3 张表 migration (sync_mode 默认 blacklist + r2 sync_type 字段)
-- [ ] 库对管理列表 + 库对详情 (跟 8/21 相同, 加批量导入按钮 + 一键配按钮)
-- [ ] **r1 批量导入机制** (核心): 扫历史库 + 模态框 + 过滤规则 + 批量入库
-- [ ] **r2 一键配机制** (核心): compute_diff + one_click_setup + 1-click 接受
-- [ ] **r3 走当前配置流程** (核心): 镜像工单走 Archery 当前配置, 跟正常工单一样
-- [ ] 业务库 DDL 工单详情"本表已配置同步" 提示 (跟 8/21 相同)
+- [ ] 数据模型 3 张表 migration (sync_mode 默认 blacklist + R2 sync_type 字段)
+- [ ] 库对管理列表 + 库对详情 (跟 R 之前相同, 加批量导入按钮 + 一键配按钮)
+- [ ] **R1 批量导入机制** (核心): 扫历史库 + 模态框 + 过滤规则 + 批量入库
+- [ ] **R2 一键配机制** (核心): compute_diff + one_click_setup + 1-click 接受
+- [ ] **R3 走当前配置流程** (核心): 镜像工单走 Archery 当前配置, 跟正常工单一样
+- [ ] 业务库 DDL 工单详情"本表已配置同步" 提示 (跟 R 之前相同)
 - [ ] 134 dev 演练: 配 accesscard 库对 + 一键配 1-click 接受 + 1 条真实 DDL 联动
 - [ ] 110 prod 推 v0.5.0 实战 (按 5 步必做)
 
@@ -596,12 +694,12 @@ urlpatterns = [
 
 - [ ] 增量同步机制 (业务库新增表自动入"待确认" 列表)
 - [ ] 1-click 加白名单/黑名单 工单详情页操作
-- [ ] 历史库 DDL 工单列表 (跟 8/21 相同)
+- [ ] 历史库 DDL 工单列表 (跟 R 之前相同)
 
 ### 9.3 Phase 3 · 长期 A · **2-3 周**
 
 - [ ] 过滤规则持久化 (filter_rule JSONField)
-- [ ] 库对巡检 (C 方案兜底) 页面 (跟 8/21 相同, 加 schema 差集)
+- [ ] 库对巡检 (C 方案兜底) 页面 (跟 R 之前相同, 加 schema 差集)
 - [ ] 定时巡检 (每天凌晨) + 不一致推钉钉
 - [ ] 业务 RD + 业务 leader 视角 (DBA 权限不变)
 - [ ] transform_rule 字段级调整 (skip_columns / rename_columns)
@@ -614,7 +712,7 @@ urlpatterns = [
 
 | 风险 | 影响 | 缓解 |
 |------|------|------|
-| 业务库 80% 表要同步, DBA 选 blacklist 模式后漏配置 | 高 | 8/28 增量检测: 业务库新表不在白/黑名单时, 工单页提示 DBA |
+| 业务库 80% 表要同步, DBA 选 blacklist 模式后漏配置 | 高 | R1 增量检测: 业务库新表不在白/黑名单时, 工单页提示 DBA |
 | 历史库 schema 跟业务库不同步太久, 巡检时 diff 巨大 | 中 | Phase 3 推定时巡检 + 钉钉通知, 早发现 |
 | 批量导入误操作 (勾错表) | 中 | 模态框 confirm 提示, 导入后可逐张编辑 |
 | sync_mode 从 whitelist 改 blacklist 默认值, 老库对默认值不变 (新库对才生效) | 低 | migration 加 default, 老库对需 DBA 手动改 sync_mode 才会变 |
@@ -626,22 +724,22 @@ urlpatterns = [
 
 ---
 
-## 11. 跟 8/27 gh-ost 实战教训对照
+## 11. 跟 gh-ost 实战教训对照
 
-8/27 gh-ost 实战踩了 4 个坑, 8/28 修订时一一对照避免:
+gh-ost 实战踩了 4 个坑, R 修订时一一对照避免:
 
-| 8/27 坑 | 8/28 修订怎么避免 |
+| 实战坑 | R 修订怎么避免 |
 |---------|------------------|
-| 8/27 14:18 业务库 8.0 解析 SQL 保留原始格式, gh-ost 报 1064 | 历史库 5.7 / 8.0 都要演练, 库对详情 "试跑 SQL" 按钮 (Phase 3) 提前验证 |
-| 8/27 14:11 业务库 instance 27 archery user 权限不够 | 库对配置时**预检**历史库 + 业务库 archery user 权限, 配错立刻提示 |
-| 8/27 13:50 业务 RD group.name = "DBA审批" 不匹配 `_is_admin_or_dba` 白名单 | 库对管理 4 perm 4 判定, 跟 gh-ost 任务管理 list 同一套路, 8/12 fix 教训复用 |
-| 8/27 15:15 gh-ost 子进程死变 zombie, poller 死循环 | 库对 sync_trigger.py 也用 `os.kill(pid, 0)` + `/proc/<pid>/status` State 字段判断 (复用 8/27 fix) |
+| 实战 14:18 时 业务库 8.0 解析 SQL 保留原始格式, gh-ost 报 1064 | 历史库 5.7 / 8.0 都要演练, 库对详情 "试跑 SQL" 按钮 (Phase 3) 提前验证 |
+| 实战 14:11 时 业务库 instance 27 archery user 权限不够 | 库对配置时**预检**历史库 + 业务库 archery user 权限, 配错立刻提示 |
+| 实战 13:50 时 业务 RD group.name = "DBA审批" 不匹配 `_is_admin_or_dba` 白名单 | 库对管理 4 perm 4 判定, 跟 gh-ost 任务管理 list 同一套路, 8/12 fix 教训复用 |
+| 实战 15:15 时 gh-ost 子进程死变 zombie, poller 死循环 | 库对 sync_trigger.py 也用 `os.kill(pid, 0)` + `/proc/<pid>/status` State 字段判断 (复用 实战 fix) |
 
 ---
 
-## 12. v0.5.0-r2 进一步优化: 一键配 (按历史库) (8/28 14:00)
+## 12. v0.5.0-r2 进一步优化: 一键配 (按历史库) (R 拍板时)
 
-8/28 14:00 DBA 阿达叔叔查 110 prod 真实数据:
+R 拍板时 DBA 阿达叔叔查 110 prod 真实数据:
 - 业务库 hly_accesscard: **1589** 张表
 - 历史库 hly_activity: **1289** 张表
 - 业务库 - 历史库: **300** 张 (业务库独有, 通常字典/配置/日志, 不归档)
@@ -650,13 +748,13 @@ urlpatterns = [
 
 ### 12.1 一键配 vs 批量导入 对比
 
-| 步骤 | r1 批量导入 | **r2 一键配** |
+| 步骤 | R1 批量导入 | **R2 一键配** |
 |------|------------|---------------|
 | 配白名单 | 批量导入勾选 (5 min) | **自动 (1 click)** |
 | 配黑名单 | 手动加 OR 写脚本 (10-20 min) | **自动 (1 click)** |
 | **总耗时** | **15-25 min** | **6 min** |
 
-**再省 2-4 倍**, 从 r1 "5-10 min 配白名单 + 几十个排除" 降到 r2 "1-click 配白名单 + 1-click 配黑名单".
+**再省 2-4 倍**, 从 R1 "5-10 min 配白名单 + 几十个排除" 降到 R2 "1-click 配白名单 + 1-click 配黑名单".
 
 ### 12.2 UX 流程
 
@@ -704,7 +802,7 @@ from ..models import DdlSyncTable
 
 
 def one_click_setup(pair, accept_white: list, accept_black: list):
-    """一键配 (按历史库) — 8/28 r2 新增
+    """一键配 (按历史库) — R2 新增
 
     业务: DBA "历史库有多少张表就拿多少张" — 1-click 配完白名单 + 黑名单.
     """
@@ -717,11 +815,11 @@ def one_click_setup(pair, accept_white: list, accept_black: list):
             DdlSyncTable.objects.bulk_create([
                 DdlSyncTable(
                     pair=pair, table_name=t,
-                    sync_type='whitelist',  # r2 加字段区分
+                    sync_type='whitelist',  # R2 加字段区分
                 ) for t in accept_white
             ])
 
-        # 3. 批量写黑名单 (r2 加 sync_type 字段, 跟白名单同表存)
+        # 3. 批量写黑名单 (R2 加 sync_type 字段, 跟白名单同表存)
         if accept_black:
             DdlSyncTable.objects.bulk_create([
                 DdlSyncTable(
@@ -734,7 +832,7 @@ def one_click_setup(pair, accept_white: list, accept_black: list):
 
 
 def compute_diff(pair):
-    """扫业务库 + 历史库, 算差集 — 8/28 r2 新增"""
+    """扫业务库 + 历史库, 算差集 — R2 新增"""
     # 1. 扫业务库所有表
     source_tables = scan_history_tables(pair.source_instance, pair.source_db)
     source_names = {t["TABLE_NAME"] for t in source_tables}
@@ -759,7 +857,7 @@ def compute_diff(pair):
 
 ```python
 class DdlSyncTable(models.Model):
-    # 8/28 r2 加: 区分白名单 / 黑名单
+    # R2 加: 区分白名单 / 黑名单
     SYNC_TYPE_CHOICES = [
         ("whitelist", "白名单 (要同步)"),
         ("blacklist", "黑名单 (不同步)"),
@@ -767,10 +865,10 @@ class DdlSyncTable(models.Model):
     pair = models.ForeignKey(DdlSyncPair, on_delete=models.CASCADE, related_name="tables")
     table_name = models.CharField(max_length=128)
     sync_type = models.CharField(max_length=16, choices=SYNC_TYPE_CHOICES, default="whitelist")
-    # ... 其他字段跟 8/21 相同
+    # ... 其他字段跟 R 之前相同
 
     class Meta:
-        # 8/28 r2 改: 唯一约束加 sync_type (同一对库, 同一表, 不能既在白名单又在黑名单)
+        # R2 改: 唯一约束加 sync_type (同一对库, 同一表, 不能既在白名单又在黑名单)
         unique_together = [("pair", "table_name", "sync_type")]
 ```
 
@@ -779,8 +877,8 @@ class DdlSyncTable(models.Model):
 ```python
 # sql/extensions/ddl_sync/urls.py
 urlpatterns = [
-    # ... 8/28 r1 路由
-    # 8/28 r2 新增: 一键配
+    # ... R1 路由
+    # R2 新增: 一键配
     path("api/pair/<int:pair_id>/compute_diff/", views.api_compute_diff,
          name="api_compute_diff"),
     path("api/pair/<int:pair_id>/one_click_setup/", views.api_one_click_setup,
@@ -788,11 +886,11 @@ urlpatterns = [
 ]
 ```
 
-### 12.6 r1 批量导入 跟 r2 一键配 关系
+### 12.6 R1 批量导入 跟 R2 一键配 关系
 
 **两者并存, 不冲突**:
-- **一键配** (r2 核心): 业务库 + 历史库**有重叠**的场景 (99% DDL 同步场景都这样), 1-click 配完, 走 95% 场景
-- **批量导入** (r1 fallback): 业务库 + 历史库**不重叠** OR DBA 想手动选部分表的场景, 走 5% 场景
+- **一键配** (R2 核心): 业务库 + 历史库**有重叠**的场景 (99% DDL 同步场景都这样), 1-click 配完, 走 95% 场景
+- **批量导入** (R1 fallback): 业务库 + 历史库**不重叠** OR DBA 想手动选部分表的场景, 走 5% 场景
 - 库对详情页**同时放 2 个按钮**, DBA 根据场景选
 
 ```
@@ -804,16 +902,16 @@ urlpatterns = [
 
 ### 12.7 Phase 1 范围调整
 
-加 r2 一键配到 Phase 1, 跟 r1 批量导入并存:
+加 R2 一键配到 Phase 1, 跟 R1 批量导入并存:
 
-- [ ] 数据模型 3 张表 migration (sync_mode 默认 blacklist + **r2 加 sync_type 字段**)
+- [ ] 数据模型 3 张表 migration (sync_mode 默认 blacklist + **R2 加 sync_type 字段**)
 - [ ] 库对管理列表 + 库对详情
-- [ ] **r2 一键配机制** (核心, 95% 场景): compute_diff + one_click_setup
-- [ ] **r1 批量导入机制** (fallback, 5% 场景): 跟 r2 并存
+- [ ] **R2 一键配机制** (核心, 95% 场景): compute_diff + one_click_setup
+- [ ] **R1 批量导入机制** (fallback, 5% 场景): 跟 R2 并存
 - [ ] 业务库 DDL 工单详情"本表已配置同步" 提示
-- [ ] 134 dev 演练: 配 accesscard 库对 + **r2 一键配 1-click 接受** + 1 条真实 DDL 联动
+- [ ] 134 dev 演练: 配 accesscard 库对 + **R2 一键配 1-click 接受** + 1 条真实 DDL 联动
 
-### 12.8 实战示例 (8/28 14:00 业务库数据)
+### 12.8 实战示例 (R 拍板时 业务库数据)
 
 ```bash
 # 110 prod 真实查询 (DBA 截图)
@@ -822,12 +920,12 @@ select count(*) from information_schema.tables where table_schema like 'hly%'
 # 历史库: 1289 (hly_activity)
 # 业务库 - 历史库: 300 张 (字典/配置/日志等不归档)
 
-# 走 r2 一键配:
+# 走 R2 一键配:
 # - 业务库 ∩ 历史库 = 1289 张 → 自动加白名单
 # - 业务库 - 历史库 = 300 张 → 自动加黑名单
 # - 1-click 接受, 2 min 配完
 
-# vs r1 批量导入:
+# vs R1 批量导入:
 # - 配白名单 1289 张: 5 min 批量导入
 # - 配黑名单 300 张: 手动加 OR 写脚本 10-20 min
 # - 总耗时 15-25 min
@@ -836,19 +934,19 @@ select count(*) from information_schema.tables where table_schema like 'hly%'
 ### 12.9 跟 v0.5.0-r1 关系
 
 v0.5.0-r1 修订 (commit 34e2613) **保留有效**:
-- §3 批量导入机制 (r1 5% 场景 fallback)
+- §3 批量导入机制 (R1 5% 场景 fallback)
 - §4 增量同步机制 (Phase 2 业务库新表自动检测)
-- §5 §6 §7 §8 §9 §10 §11 (跟 r1 一致)
+- §5 §6 §7 §8 §9 §10 §11 (跟 R1 一致)
 
-v0.5.0-r2 是 **r1 进一步优化** (核心机制加一键配, 减少 2-4 倍 DBA 工作量).
+v0.5.0-r2 是 **R1 进一步优化** (核心机制加一键配, 减少 2-4 倍 DBA 工作量).
 
 ---
 
-## 13. v0.5.0-r3 重大决策变更: 走当前配置的流程 (8/28 16:15)
+## 13. v0.5.0-r3 重大决策变更: 走当前配置的流程 (R 拍板时)
 
 ### 13.1 决策
 
-8/28 16:15 DBA 阿达叔叔拍板:
+R 拍板时 DBA 阿达叔叔拍板:
 
 > **生成历史库工单, 按照当前 Archery 配置的流程走就行, DBA 调整成什么流程, 就怎么走. 和正常工单一样.**
 
@@ -858,12 +956,12 @@ v0.5.0-r2 是 **r1 进一步优化** (核心机制加一键配, 减少 2-4 倍 D
 - 不需要为"自动生成" 单独搞一套审批逻辑
 - DBA 改 "prod core for 历史库" 组的流程 (单级 / 双级 / 加 leader), 镜像工单自动同步
 
-### 13.2 跟 8/21 拍板对比
+### 13.2 跟 R 之前拍板对比
 
-| 维度 | 8/21 拍板 (作废) | 8/28 拍板 (采用) |
+| 维度 | R 之前拍板 (作废) | R 拍板 (采用) |
 |------|----------------|----------------|
 | 审批人 | 同业务库 DDL 审批人 (3 级) | **按当前 Archery 配置 (DBA 配的) 走** |
-| 业务库 DDL 没审过怎么办 | 8/21 没明确 | 8/28 明确: 不联动 (业务库 DDL 必审过) |
+| 业务库 DDL 没审过怎么办 | R 之前没明确 | R 明确: 不联动 (业务库 DDL 必审过) |
 | 业务 RD 收到通知 | 业务 RD + 业务 leader 都收 (重复) | 只通知业务 RD (不重复打扰业务 leader) |
 | 实施复杂度 | 需要单独为"自动生成" 写代码 | **0 额外代码**, 复用现有 `audit_setting` |
 
@@ -878,7 +976,7 @@ v0.5.0-r2 是 **r1 进一步优化** (核心机制加一键配, 减少 2-4 倍 D
 虽然走当前流程, 但要加 3 个安全护栏防风险:
 
 1. **业务库 DDL 必审过 trigger** — 见 §13.3 第 2 条
-2. **历史库执行前预演 + 异常 rollback** — 跟 v0.4.5 智能回滚 联动 (8/13 拍板, 已落地). 复用 8/13 拍的 rollback 端点 (`services.db._get_creds` + DROP TABLE IF EXISTS 兜底)
+2. **历史库执行前预演 + 异常 rollback** — 跟 v0.4.5 智能回滚 联动 (R 之前拍板, 已落地). 复用 R 之前拍的 rollback 端点 (`services.db._get_creds` + DROP TABLE IF EXISTS 兜底)
 3. **异常通知 DBA + 业务 RD** — 跟 v0.2.0 钉钉 OA 联动, 异常立刻钉钉通知 DBA + 业务 RD, 不依赖业务 RD 自己查工单状态
 
 ### 13.5 Archery 配置 (DBA 后台自己配, v0.5.0 不动)
@@ -893,21 +991,21 @@ v0.5.0-r2 是 **r1 进一步优化** (核心机制加一键配, 减少 2-4 倍 D
 
 ### 13.6 跟 v0.5.0-r1/r2 关系
 
-- **r1 修订** (§3-§11): 库对配 + 批量导入 + 增量同步 + 数据模型 + URL 路由, 都跟"自动生成的工单走哪个流程" 无关, 保留
-- **r2 一键配** (§12): 库对配白/黑名单, 跟"自动生成的工单走哪个流程" 无关, 保留
-- **r3 重大决策** (§13, 本次新增): 明确"自动生成的镜像工单走当前 Archery 配置的流程", 跟正常工单一样 + 3 个安全护栏
+- **R1 修订** (§3-§11): 库对配 + 批量导入 + 增量同步 + 数据模型 + URL 路由, 都跟"自动生成的工单走哪个流程" 无关, 保留
+- **R2 一键配** (§12): 库对配白/黑名单, 跟"自动生成的工单走哪个流程" 无关, 保留
+- **R3 重大决策** (§13, 本次新增): 明确"自动生成的镜像工单走当前 Archery 配置的流程", 跟正常工单一样 + 3 个安全护栏
 
-r3 是**对 r1+r2 的补充**, 不冲突, 改的是 8/21 拍板时遗留的"走同业务库审批人" 模糊点.
+R3 是**对 R1+R2 的补充**, 不冲突, 改的是 R 之前拍板时遗留的"走同业务库审批人" 模糊点.
 
 ---
 
 ## 关联 commit / changelog
 
-- **8/28 09:17** commit `f4078c6`: 8/21 旧设计稿 + 8/27 功能图说 HTML 防丢
-- **8/28 09:17** commit `34e2613`: 写 v0.5.0-r1 修订设计稿 + 新功能图说 HTML
-- **8/28 14:00** (本次) v0.5.0-r2 加 §12 一键配机制, 业务库 1589 / 历史库 1289 实战数据支撑
-- 8/21 原版: docs/designs/2026-08-21_ddl-sync-pair-design.md (保留作为对照)
-- 8/28 r1: docs/designs/2026-08-28_ddl-sync-pair-design-v050-r1.md
-- 8/28 r1 功能图说: docs/designs/2026-08-28_ddl-sync-pair-feature-card.html (待加一键配 mockup)
-- 8/28 r2 changelog: docs/changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md
+- **R 拍板时** commit `f4078c6`: R 之前旧设计稿 + 实战功能图说 HTML 防丢
+- **R 拍板时** commit `34e2613`: 写 v0.5.0-r1 修订设计稿 + 新功能图说 HTML
+- **R 拍板时** (本次) v0.5.0-r2 加 §12 一键配机制, 业务库 1589 / 历史库 1289 实战数据支撑
+- R 之前原版: docs/designs/R 之前_ddl-sync-pair-design.md (保留作为对照)
+- R1: docs/designs/2026-08-28_ddl-sync-pair-design-v050-r1.md
+- R1 功能图说: docs/designs/R 修订_ddl-sync-pair-feature-card.html (待加一键配 mockup)
+- R2 changelog: docs/changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md
 

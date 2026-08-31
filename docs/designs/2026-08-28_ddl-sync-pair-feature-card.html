@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DDL 跨库同步 v0.5.0-r3 · 业务库 ↔ 历史库 · 功能图说 (8/28 16:30 修订)</title>
+<title>DDL 跨库同步 v0.5.0-r4 · 业务库 ↔ 历史库 · 功能图说</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -375,35 +375,31 @@
   <!-- ===== Hero ===== -->
   <header class="hero">
     <div class="hero-tag-row">
-      <span class="hero-tag">ARCHERY v0.5.0-r3</span>
-      <span class="hero-tag new">8/28 16:30 修订</span>
+      <span class="hero-tag">ARCHERY v0.5.0-r4</span>
+      <span class="hero-tag new">R4 完整版</span>
       <span class="hero-tag warn">解决"大表配 1589 次"问题</span>
-      <span class="hero-tag new">r2 一键配 6 min</span>
-      <span class="hero-tag new">r3 走当前配置流程</span>
+      <span class="hero-tag new">R2 一键配 6 min</span>
+      <span class="hero-tag new">R3 走当前配置流程</span>
     </div>
-    <h1>DDL 跨库同步<br><em>业务库 ↔ 历史库</em> · v0.5.0-r3</h1>
+    <h1>DDL 跨库同步<br><em>业务库 ↔ 历史库</em> · v0.5.0-r4</h1>
     <p class="hero-sub">
       v0.5.0 初版是"DBA 手动一张张点配置同步表" — 业务库 1589 张 = DBA 点 1589 次，<b>不现实</b>。<br>
-      8/28 14:00 业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 实战数据 (DBA 查 <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code>)，<b>r1 批量导入 5-10 min 仍嫌慢</b>。<br>
-      <b>r2 一键配</b>：<b>"历史库有多少张表就拿多少张"</b> — 白名单 = 历史库 1289 张, 黑名单 = 业务库独有 300 张, 1-click 配完 <b>6 min</b>。<br>
-      <b>r3 走当前配置流程</b>：自动生成的历史库镜像工单, 按当前 Archery 配置走, 跟正常历史库工单一样 — <b>0 额外代码, DBA 改配置就生效</b>。
+      R2 实战数据 业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 (DBA 查 <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code>)，<b>R1 批量导入 5-10 min 仍嫌慢</b>。<br>
+      <b>R2 一键配</b>：<b>"历史库有多少张表就拿多少张"</b> — 白名单 = 历史库 1289 张, 黑名单 = 业务库独有 300 张, 1-click 配完 <b>6 min</b>。<br>
+      <b>R3 走当前配置流程</b>：自动生成的历史库镜像工单, 按当前 Archery 配置走, 跟正常历史库工单一样 — <b>0 额外代码, DBA 改配置就生效</b>。
     </p>
     <div class="hero-meta">
       <span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        作者 mavis
+        v0.5.0 · Archery 二次开发设计稿
       </span>
       <span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        2026-08-28 修订
-      </span>
-      <span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-        v0.5.0-r1
+        R 之前 → R1 → R2 → R3 → R4 完整版
       </span>
       <span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        v0.5.0 原版 → 8/28 v0.5.0-r2 修订
+        R4 背景重写
       </span>
       <span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -412,13 +408,13 @@
     </div>
   </header>
 
-  <!-- ===== 00 背景 (给领导汇报 · 4 部分) ===== -->
+  <!-- ===== 00 背景 (4 部分) ===== -->
   <section>
     <div class="section-head">
       <span class="section-num">00</span>
       <h2 class="section-title">背景 · 为什么开发这个功能</h2>
     </div>
-    <div class="section-sub">给领导汇报口径: <b>当前两个流程 → 痛点 → 影响 → 新功能目标</b>, 4 部分讲清楚必要性。</div>
+    <div class="section-sub"><b>当前两个流程 → 痛点 → 影响 → 新功能目标</b>, 4 部分讲清楚必要性。</div>
 
     <div class="grid-2">
       <div class="card">
@@ -437,6 +433,27 @@
       </div>
     </div>
 
+    <!-- ===== 流程图 1: 当前 (R 之前) DBA 视角 ===== -->
+    <div class="card" style="margin-top:14px;border-left:3px solid var(--danger)">
+      <h3>当前流程图 (R 之前 · DBA 视角) + 优缺点</h3>
+      <div style="background:#fafaf7;border:1px solid var(--line-soft);border-radius:8px;padding:14px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-mid);line-height:1.7;white-space:pre;overflow-x:auto">
+业务 RD ──①提 DDL 工单──▶ Archery ──②审批 (3 级) ──▶ 业务库 ──③执行 ALTER──▶ Archery ──④通知 DBA──▶ DBA ──⑤凭经验判断──▶ DBA ──⑥手工到历史库跑 SQL──▶ 历史库
+                                                                                                                                                                                                  │
+                                                                                                                                                                                                  └─ ⑦ 科大国创按时间戳 DML 增量同步 (DDL 不在 DML 范围, 漏同步风险)
+      </div>
+      <table class="compare-table" style="font-size:12px">
+        <thead><tr><th>维度</th><th>当前 (R 之前)</th></tr></thead>
+        <tbody>
+          <tr><td>✅ 优点</td><td>DML 走科大国创组件, 自动化准实时 (分钟级)</td></tr>
+          <tr><td>❌ 缺点 1</td><td><b>DDL 走 DBA 人工, 凭经验判断, 容易漏</b> (每天 5-20 条)</td></tr>
+          <tr><td>❌ 缺点 2</td><td>没有"两边 schema 一致" 强制校验, 漏了没人发现</td></tr>
+          <tr><td>❌ 缺点 3</td><td>DBA 下班前集中处理, <b>同步延迟 4-8h</b></td></tr>
+          <tr><td>❌ 缺点 4</td><td>跨多库场景容易配错目标库 (hly_accesscard / hly_activity / hly_doc_model)</td></tr>
+          <tr><td>❌ 缺点 5</td><td>DML 同步依赖 DDL 先同步, <b>DDL 漏 → DML 整条挂</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+
     <div class="card" style="margin-top:14px;border-left:3px solid var(--danger)">
       <h3>③ 影响 · DDL 漏同步的真实业务影响链路</h3>
       <p><b>T+0 当天</b>: 业务库 DDL 跑通 · 业务 RD 不知道历史库没同步 (DML 在偷偷失败重试)</p>
@@ -444,12 +461,36 @@
       <p><b>T+1 ~ T+3</b>: 下游大数据 (数据仓库 / 报表 / 风控 / 决策支持) 读历史库, "昨天数据没进来" / "缺字段" / "JOIN 失败"</p>
       <p><b>T+3+</b>: 业务方反馈"报表数据延迟" / "数据缺漏" / "对账不平", 反查才发现是历史库 DDL 没同步</p>
       <p><b>DBA 介入</b>: 手动补执行历史库 DDL + 手动重跑 DML 同步任务, 修复 1-4h · <b>下游数据延迟 1-3 天</b></p>
-      <p style="color:var(--accent-warm);font-size:12px;margin-top:8px">📌 真实案例 (8/27 实战): 110 prod 业务库 hly_doc_model 7.28M rows test 表 gh-ost 改字段 · 历史库 DDL 漏同步 → 科大国创整条同步链路挂 · 下游数据仓库延迟 2 天, 业务方反查才暴露</p>
+      <p style="color:var(--accent-warm);font-size:12px;margin-top:8px">📌 真实案例 (实战): 业务库 hly_doc_model 7.28M rows test 表 gh-ost 改字段 · 历史库 DDL 漏同步 → 科大国创整条同步链路挂 · 下游数据仓库延迟 2 天, 业务方反查才暴露</p>
+    </div>
+
+    <!-- ===== 流程图 2: 优化后 (R 之后 v0.5.0) 自动化视角 ===== -->
+    <div class="card" style="margin-top:14px;border-left:3px solid var(--primary)">
+      <h3>优化后流程图 (R 之后 v0.5.0 · 自动化视角) + 优缺点</h3>
+      <div style="background:#fafaf7;border:1px solid var(--line-soft);border-radius:8px;padding:14px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-mid);line-height:1.7;white-space:pre;overflow-x:auto">
+业务 RD ──①提 DDL──▶ Archery ──②审批──▶ 业务库 ──③执行 ALTER──▶ Archery ──④current_status=1 审过──▶ Archery 自动 ──⑤生成历史库镜像工单──▶ Archery ──⑥走当前配置流程──▶ 历史库 ──⑧执行 ALTER──▶ 历史库
+                                                                                                                                                                                              │
+                                                                                                                                                                                              ├─ ⑦业务 RD 收到钉钉通知
+                                                                                                                                                                                              │
+                                                                                                                                                                                              └─ ⑨异常 rollback (v0.4.5) + ⑩科大国创 DML 增量同步 (DDL 0 漏 → DML 永远不挂)
+      </div>
+      <table class="compare-table" style="font-size:12px">
+        <thead><tr><th>维度</th><th>v0.5.0 (R 之后)</th></tr></thead>
+        <tbody>
+          <tr><td>✅ 优点 1</td><td>DDL <b>T+0 实时</b> 同步, 不再等 DBA 下班前集中处理</td></tr>
+          <tr><td>✅ 优点 2</td><td><b>0 漏同步</b> — 业务库 DDL 必审过 (current_status=1) 才触发, 系统强制</td></tr>
+          <tr><td>✅ 优点 3</td><td><b>下游大数据 0 延迟</b> — 业务方无感知 DDL 同步过程</td></tr>
+          <tr><td>✅ 优点 4</td><td><b>DBA 配表 1-click</b> — 一键配机制 (R2 实战数据 业务库 1589 / 历史库 1289, 6 min 配完)</td></tr>
+          <tr><td>✅ 优点 5</td><td><b>DML 同步永久稳定</b> — DDL 0 漏 → 科大国创不再因 DDL 漏挂</td></tr>
+          <tr><td>✅ 优点 6</td><td><b>历史库工单跟正常工单一样</b> — 0 额外代码, DBA 改"历史库组" 流程就生效 (R3)</td></tr>
+          <tr><td>⚠️ 限制</td><td>v0.5.0 Phase 1 范围: 库对管理 + 一键配 + 触发镜像工单。schema 差集工具 + 增量同步走 Phase 2/3</td></tr>
+        </tbody>
+      </table>
     </div>
 
     <div class="card" style="margin-top:14px;border-left:3px solid var(--primary)">
       <h3>④ 新功能 v0.5.0 DDL 跨库同步 · 解决什么痛点, 达成什么目标</h3>
-      <p><b>新功能一句话</b>: 业务库 DDL 审过 → Archery <b>自动</b>在历史库生成镜像 DDL 工单 → 走当前配置的流程 (跟正常历史库工单一样, r3 拍板)</p>
+      <p><b>新功能一句话</b>: 业务库 DDL 审过 → Archery <b>自动</b>在历史库生成镜像 DDL 工单 → 走当前配置的流程 (跟正常历史库工单一样, R3 拍板)</p>
       <p style="margin-top:8px"><b>解决的痛点 (对应 ② 5 个)</b>:</p>
       <p>· 痛点 1 漏同步 → 业务库 DDL 审过自动触发历史库镜像工单 · <b>0 漏同步</b></p>
       <p>· 痛点 2 没校验 → 业务库 DDL 必审过 (<code>current_status=1 PASSED</code>) 才触发 · 实时校验</p>
@@ -459,9 +500,9 @@
       <p style="margin-top:8px"><b>达成的 5 个目标</b>:</p>
       <p>1 · <b>DDL 0 漏同步</b> — 不再依赖 DBA 人工记忆</p>
       <p>2 · <b>下游大数据 0 延迟</b> — DDL T+0 同步, 业务方无感知</p>
-      <p>3 · <b>DBA 配表 1-click 完成</b> — 一键配机制 (业务库 1589 / 历史库 1289 实战数据 6 min 配完, r2)</p>
+      <p>3 · <b>DBA 配表 1-click 完成</b> — 一键配机制 (业务库 1589 / 历史库 1289 实战数据 6 min 配完, R2)</p>
       <p>4 · <b>DML 同步永久稳定</b> — 历史库 schema 跟业务库永远 1:1 同步</p>
-      <p>5 · <b>历史库工单跟正常工单一样</b> — 0 额外代码, DBA 改"历史库组" 流程就生效 (r3)</p>
+      <p>5 · <b>历史库工单跟正常工单一样</b> — 0 额外代码, DBA 改"历史库组" 流程就生效 (R3)</p>
     </div>
   </section>
 
@@ -478,7 +519,7 @@
         <tr>
           <th>维度</th>
           <th>v0.5.0 原版</th>
-          <th>8/28 v0.5.0-r1 修订</th>
+          <th>R1 修订</th>
         </tr>
       </thead>
       <tbody>
@@ -551,7 +592,7 @@
       </div>
       <div class="work-arrow">→</div>
       <div class="work-card good">
-        <h3>8/28 v0.5.0-r2 一键配</h3>
+        <h3>R2 一键配</h3>
         <div class="work-row">
           <span class="label">配库对</span>
           <span class="val">5 min</span>
@@ -576,7 +617,7 @@
     </div>
 
     <p style="margin-top: 18px; padding: 12px 16px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 10px; font-size: 13px; color: var(--ink-mid);">
-      🎯 <b>结论</b>：DBA 工作量从 <b style="color: var(--danger);">2-3 小时</b> 降到 <b style="color: var(--success);">6 min</b>（1-click 配白 + 1-click 配黑），<b>降低 95%</b>。r1 批量导入 5-10 min + 50 个排除 → r2 1-click 接受即可。
+      🎯 <b>结论</b>：DBA 工作量从 <b style="color: var(--danger);">2-3 小时</b> 降到 <b style="color: var(--success);">6 min</b>（1-click 配白 + 1-click 配黑），<b>降低 95%</b>。R1 批量导入 5-10 min + 50 个排除 → R2 1-click 接受即可。
     </p>
   </section>
 
@@ -584,7 +625,7 @@
   <section>
     <div class="section-head">
       <span class="section-num">03</span>
-      <h2 class="section-title">批量导入 — 8/28 核心新增</h2>
+      <h2 class="section-title">批量导入 — R1 核心新增</h2>
     </div>
     <div class="section-sub">从历史库 <b>INFORMATION_SCHEMA.TABLES</b> 扫表 → 模态框显示 → 全选/反选/过滤 → 批量入库。</div>
 
@@ -760,11 +801,11 @@
     </div>
   </section>
 
-  <!-- ===== 05 一键配模态框 (r2 核心) ===== -->
+  <!-- ===== 05 一键配模态框 (R2 核心) ===== -->
   <section>
     <div class="section-head">
       <span class="section-num">05</span>
-      <h2 class="section-title">🎯 一键配 (按历史库) — 8/28 14:00 r2 核心</h2>
+      <h2 class="section-title">🎯 一键配 (按历史库) — R2 核心</h2>
     </div>
     <div class="section-sub">实战数据 <b>业务库 1589 / 历史库 1289</b>，算差集自动建议白名单 1289 + 黑名单 300，DBA <b>1-click 接受</b> 配完，<b>6 min</b> 完成。</div>
 
@@ -877,7 +918,7 @@
 
         <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: var(--ink-mid); margin-bottom: 14px;">
           ℹ️ 业务库加新表时, Archery 自动检测 + "待确认" 流程让 DBA 1-click 决定 (Phase 2)<br>
-          <b style="color: var(--primary);">🔗 联动</b>：库对配完后, 业务库 DDL 提交时 Archery 自动建历史库镜像工单, <b>走当前 Archery 配置的流程</b> (r3 决策, 跟正常历史库工单一样) — 见 §10
+          <b style="color: var(--primary);">🔗 联动</b>：库对配完后, 业务库 DDL 提交时 Archery 自动建历史库镜像工单, <b>走当前 Archery 配置的流程</b> (R3 决策, 跟正常历史库工单一样) — 见 §10
         </div>
       </div>
       <div class="modal-footer">
@@ -887,7 +928,7 @@
     </div>
 
     <p style="margin-top: 18px; padding: 12px 16px; background: rgba(47, 111, 94, 0.06); border: 1px solid rgba(47, 111, 94, 0.2); border-radius: 10px; font-size: 13px; color: var(--ink-mid);">
-      🎯 <b>r2 核心洞察</b>: 业务库 ∩ 历史库 = 1289 张 (<b>历史库有多少张就拿多少张</b>, DBA 原话) — 业务库 - 历史库 = 300 张 (<b>业务库独有, 通常字典/配置/日志, 不归档</b>). 一键配 = 1-click 配完, <b>6 min</b> 完成, 比 r1 批量导入 (15-25 min) 再快 <b>2-4 倍</b>.
+      🎯 <b>R2 核心洞察</b>: 业务库 ∩ 历史库 = 1289 张 (<b>历史库有多少张就拿多少张</b>, DBA 原话) — 业务库 - 历史库 = 300 张 (<b>业务库独有, 通常字典/配置/日志, 不归档</b>). 一键配 = 1-click 配完, <b>6 min</b> 完成, 比 R1 批量导入 (15-25 min) 再快 <b>2-4 倍</b>.
     </p>
   </section>
 
@@ -897,7 +938,7 @@
       <span class="section-num">06</span>
       <h2 class="section-title">库对详情页 · 双按钮布局</h2>
     </div>
-    <div class="section-sub">库对详情加 <b>5 个按钮 (3 核心 + 2 辅助)</b>: 🎯 一键配 (r2 核心) / 📥 批量导入 (r1 fallback) / + 添加同步表 + 🔍 schema 差集 / ⚙ 过滤规则。sync_mode 默认 blacklist。</div>
+    <div class="section-sub">库对详情加 <b>5 个按钮 (3 核心 + 2 辅助)</b>: 🎯 一键配 (R2 核心) / 📥 批量导入 (R1 fallback) / + 添加同步表 + 🔍 schema 差集 / ⚙ 过滤规则。sync_mode 默认 blacklist。</div>
 
     <div class="mock-ui">
       <div class="mock-titlebar">
@@ -990,7 +1031,7 @@
         </div>
 
         <div class="mock-tip" style="margin-top: 14px;">
-          <b>最近 5 次同步历史</b> · #12345 业务库工单 8/26 19:30 [已完成] 历史库 #12346 执行成功<br>
+          <b>最近 5 次同步历史</b> · #12345 业务库工单 [实战时] [已完成] 历史库 #12346 执行成功<br>
           <div style="display: flex; gap: 8px; margin-top: 8px;">
             <span class="mock-btn primary" style="cursor: pointer;">🔍 立即跑巡检</span>
             <span class="mock-btn outline" style="cursor: pointer;">📊 schema 差集报告</span>
@@ -1062,9 +1103,9 @@
   <section>
     <div class="section-head">
       <span class="section-num">08</span>
-      <h2 class="section-title">实施阶段 — Phase 1 含一键配 (r2)</h2>
+      <h2 class="section-title">实施阶段 — Phase 1 含一键配 (R2)</h2>
     </div>
-    <div class="section-sub">Phase 1 含 <b>r2 一键配</b> (核心) + <b>r1 批量导入</b> (fallback)，2-3 天出活。</div>
+    <div class="section-sub">Phase 1 含 <b>R2 一键配</b> (核心) + <b>R1 批量导入</b> (fallback)，2-3 天出活。</div>
 
     <ol class="phase-list">
       <li class="phase-item">
@@ -1086,19 +1127,19 @@
     </ol>
   </section>
 
-  <!-- ===== 09 跟 8/27 gh-ost 教训对照 ===== -->
+  <!-- ===== 09 跟 gh-ost (实战) 教训对照 ===== -->
   <section>
     <div class="section-head">
       <span class="section-num">09</span>
-      <h2 class="section-title">跟 8/27 gh-ost 实战教训对照</h2>
+      <h2 class="section-title">跟 gh-ost 实战教训对照</h2>
     </div>
-    <div class="section-sub">8/27 gh-ost 实战踩了 4 个坑, 8/28 修订时一一对照避免。</div>
+    <div class="section-sub">gh-ost 实战踩了 4 个坑, R 修订时一一对照避免。</div>
 
     <table class="compare-table">
       <thead>
         <tr>
-          <th style="width: 36%;">8/27 实战坑</th>
-          <th>8/28 v0.5.0-r1 修订怎么避免</th>
+          <th style="width: 36%;">实战坑</th>
+          <th>R1 修订怎么避免</th>
         </tr>
       </thead>
       <tbody>
@@ -1116,7 +1157,7 @@
         </tr>
         <tr>
           <td class="col-old"><b>15:15 poller zombie</b><br>gh-ost 子进程死变 zombie, poller 死循环 30 min</td>
-          <td class="col-new">库对 sync_trigger.py 也用 <code>os.kill(pid, 0)</code> + <code>/proc/&lt;pid&gt;/status</code> State 字段 (复用 8/27 fix)</td>
+          <td class="col-new">库对 sync_trigger.py 也用 <code>os.kill(pid, 0)</code> + <code>/proc/&lt;pid&gt;/status</code> State 字段 (复用 实战 fix)</td>
         </tr>
       </tbody>
     </table>
@@ -1126,7 +1167,7 @@
   <section>
     <div class="section-head">
       <span class="section-num">10</span>
-      <h2 class="section-title">🔄 v0.5.0-r3 重大决策变更 — 走当前配置的流程 (8/28 16:15)</h2>
+      <h2 class="section-title">🔄 v0.5.0-r3 重大决策变更 — 走当前配置的流程</h2>
     </div>
     <div class="section-sub">
       这是个<b>优雅的设计原则</b> — 自动生成的历史库镜像工单跟正常历史库工单走一样的审计流, DBA 改 Archery 配置就生效, <b>0 额外代码</b>。
@@ -1142,13 +1183,13 @@
       </ul>
     </div>
 
-    <h3 style="font-size: 16px; font-weight: 600; margin: 20px 0 10px;">📊 r1 vs r3 拍板对比</h3>
+    <h3 style="font-size: 16px; font-weight: 600; margin: 20px 0 10px;">📊 R1 vs R3 拍板对比</h3>
     <table class="compare-table">
       <thead>
         <tr>
           <th style="width: 30%;">维度</th>
-          <th style="width: 35%;">r1 拍板 (作废)</th>
-          <th>r3 拍板 (采用)</th>
+          <th style="width: 35%;">R1 拍板 (作废)</th>
+          <th>R3 拍板 (采用)</th>
         </tr>
       </thead>
       <tbody>
@@ -1185,7 +1226,7 @@
       <div class="card" style="border-left: 3px solid var(--warn);">
         <h3>🛡️ 3 安全护栏</h3>
         <p><b>1. 业务库 DDL 必审过 trigger</b> — 跟实施原则 2 一致 (底线)</p>
-        <p><b>2. 历史库执行前预演 + 异常 rollback</b> — 跟 v0.4.5 智能回滚 联动 (8/13 拍板, 已落地)</p>
+        <p><b>2. 历史库执行前预演 + 异常 rollback</b> — 跟 v0.4.5 智能回滚 联动 (R 之前拍板, 已落地)</p>
         <p><b>3. 异常通知 DBA + 业务 RD</b> — 跟 v0.2.0 钉钉 OA 联动, 异常立刻钉钉通知</p>
       </div>
     </div>
@@ -1209,14 +1250,14 @@
       <span class="section-num">11</span>
       <h2 class="section-title">当前状态 & 下一步</h2>
     </div>
-    <div class="section-sub">v0.5.0-r3 决策落地 (r1 库对配 + r2 一键配 + r3 走当前配置流程), 实战数据 1589/1289/300/1100 已对齐, <b>未开工</b>。等用户拍板 Phase 1 启动。</div>
+    <div class="section-sub">v0.5.0-r3 决策落地 (R1 库对配 + R2 一键配 + R3 走当前配置流程), 实战数据 1589/1289/300/1100 已对齐, <b>未开工</b>。等用户拍板 Phase 1 启动。</div>
 
     <div class="grid-2">
       <div class="card" style="border-left: 3px solid var(--success);">
         <h3>已完成</h3>
         <p>v0.5.0-r1 修订设计稿 · docs/designs/2026-08-28_ddl-sync-pair-design-v050-r1.md (24KB MD)</p>
-        <p>新功能图说 HTML · docs/designs/2026-08-28_ddl-sync-pair-feature-card.html (本页)</p>
-        <p>changelog · docs/changelogs/2026-08-28_ddl-sync-v050-revised-design.md</p>
+        <p>新功能图说 HTML · docs/designs/R 修订_ddl-sync-pair-feature-card.html (本页)</p>
+        <p>changelog · docs/changelogs/R 修订_ddl-sync-v050-revised-design.md</p>
       </div>
       <div class="card" style="border-left: 3px solid var(--accent-warm);">
         <h3>待办（等拍板）</h3>
@@ -1229,9 +1270,9 @@
 
   <!-- ===== Footer ===== -->
   <footer class="footer">
-    Archery v0.5.0-r3 · DDL 跨库同步功能图说（8/28 16:30 修订） · 设计人 mavis<br>
-    实战数据：业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 (DBA 8/28 14:00 110 prod 查询, <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code>)<br>
-    配套：<a style="color: var(--primary);" href="2026-08-28_ddl-sync-pair-design-v050-r1.md">MD r1+r2+r3 详设 (§12 一键配 + §13 走当前配置流程)</a> · <a style="color: var(--ink-soft);" href="2026-08-21_ddl-sync-pair-design.md">v0.5.0 原版 (对照)</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md">r2 changelog</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r3-approval-flow.md">r3 changelog</a>
+    Archery v0.5.0-r4 · DDL 跨库同步功能图说<br>
+    实战数据：业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 (DBA R 拍板时 110 prod 查询, <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code>)<br>
+    配套：<a style="color: var(--primary);" href="2026-08-28_ddl-sync-pair-design-v050-r1.md">MD R1+R2+R3+R4 详设 (§12 一键配 + §13 走当前配置流程)</a> · <a style="color: var(--ink-soft);" href="2026-08-21_ddl-sync-pair-design.md">v0.5.0 原版 (对照)</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md">R2 changelog</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r3-approval-flow.md">R3 changelog</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r4-background-rewrite.md">R4 changelog</a>
   </footer>
 
 </div>
