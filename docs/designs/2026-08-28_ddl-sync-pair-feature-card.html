@@ -412,6 +412,59 @@
     </div>
   </header>
 
+  <!-- ===== 00 背景 (给领导汇报 · 4 部分) ===== -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">00</span>
+      <h2 class="section-title">背景 · 为什么开发这个功能</h2>
+    </div>
+    <div class="section-sub">给领导汇报口径: <b>当前两个流程 → 痛点 → 影响 → 新功能目标</b>, 4 部分讲清楚必要性。</div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>① 当前数据同步到历史库 · 两个流程</h3>
+        <p><b>DML 数据同步</b>: 科大国创数据同步组件 · 按时间戳增量 · 自动化准实时 (分钟级) · 业务 RD 不参与</p>
+        <p><b>DDL Schema 同步</b>: <b style="color:var(--danger)">无工具, 纯人工</b> · DBA 凭经验判断 · 人工到历史库跑 SQL</p>
+        <p style="color:var(--ink-soft);font-size:12px;margin-top:8px">→ DML 走自动化组件没问题, <b>DDL 走人工是当前最大风险</b>。本设计稿解决的就是 DDL 人工同步的问题。</p>
+      </div>
+      <div class="card">
+        <h3>② 痛点 · DDL 人工同步 5 个具体问题</h3>
+        <p>1 · <b>DBA 漏同步</b> (每天 DDL 工单 5-20 条, 凭记忆判断) — <b style="color:var(--danger)">高</b></p>
+        <p>2 · <b>没有自动校验</b> (业务库 DDL 跑通 ≠ 历史库 DDL 跑了) — <b style="color:var(--danger)">高</b></p>
+        <p>3 · 同步不及时 (DBA 下班前集中处理, 延迟 4-8h) — 中</p>
+        <p>4 · 跨业务库多库容易配错 (hly_accesscard / hly_activity / hly_doc_model) — 中</p>
+        <p>5 · <b>DML 同步依赖 DDL 先同步</b> (历史库没 DDL → 科大国创整条挂) — <b style="color:var(--danger)">高</b></p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px;border-left:3px solid var(--danger)">
+      <h3>③ 影响 · DDL 漏同步的真实业务影响链路</h3>
+      <p><b>T+0 当天</b>: 业务库 DDL 跑通 · 业务 RD 不知道历史库没同步 (DML 在偷偷失败重试)</p>
+      <p><b>T+1 第二天</b>: 科大国创 DML 同步任务<b style="color:var(--danger)">整体失败</b> (e.g. 业务库加字段, 历史库没, INSERT 报错, 整条挂)</p>
+      <p><b>T+1 ~ T+3</b>: 下游大数据 (数据仓库 / 报表 / 风控 / 决策支持) 读历史库, "昨天数据没进来" / "缺字段" / "JOIN 失败"</p>
+      <p><b>T+3+</b>: 业务方反馈"报表数据延迟" / "数据缺漏" / "对账不平", 反查才发现是历史库 DDL 没同步</p>
+      <p><b>DBA 介入</b>: 手动补执行历史库 DDL + 手动重跑 DML 同步任务, 修复 1-4h · <b>下游数据延迟 1-3 天</b></p>
+      <p style="color:var(--accent-warm);font-size:12px;margin-top:8px">📌 真实案例 (8/27 实战): 110 prod 业务库 hly_doc_model 7.28M rows test 表 gh-ost 改字段 · 历史库 DDL 漏同步 → 科大国创整条同步链路挂 · 下游数据仓库延迟 2 天, 业务方反查才暴露</p>
+    </div>
+
+    <div class="card" style="margin-top:14px;border-left:3px solid var(--primary)">
+      <h3>④ 新功能 v0.5.0 DDL 跨库同步 · 解决什么痛点, 达成什么目标</h3>
+      <p><b>新功能一句话</b>: 业务库 DDL 审过 → Archery <b>自动</b>在历史库生成镜像 DDL 工单 → 走当前配置的流程 (跟正常历史库工单一样, r3 拍板)</p>
+      <p style="margin-top:8px"><b>解决的痛点 (对应 ② 5 个)</b>:</p>
+      <p>· 痛点 1 漏同步 → 业务库 DDL 审过自动触发历史库镜像工单 · <b>0 漏同步</b></p>
+      <p>· 痛点 2 没校验 → 业务库 DDL 必审过 (<code>current_status=1 PASSED</code>) 才触发 · 实时校验</p>
+      <p>· 痛点 3 不及时 → <b>T+0 实时触发</b>, 不再下班前集中处理</p>
+      <p>· 痛点 4 跨多库配错 → DBA 配库对时 <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code> 跨多库, 一次配多业务库多历史库</p>
+      <p>· 痛点 5 DML 同步挂 → <b>DDL 0 漏同步 → DML 同步永久稳定</b> (科大国创不再因 DDL 漏同步挂)</p>
+      <p style="margin-top:8px"><b>达成的 5 个目标</b>:</p>
+      <p>1 · <b>DDL 0 漏同步</b> — 不再依赖 DBA 人工记忆</p>
+      <p>2 · <b>下游大数据 0 延迟</b> — DDL T+0 同步, 业务方无感知</p>
+      <p>3 · <b>DBA 配表 1-click 完成</b> — 一键配机制 (业务库 1589 / 历史库 1289 实战数据 6 min 配完, r2)</p>
+      <p>4 · <b>DML 同步永久稳定</b> — 历史库 schema 跟业务库永远 1:1 同步</p>
+      <p>5 · <b>历史库工单跟正常工单一样</b> — 0 额外代码, DBA 改"历史库组" 流程就生效 (r3)</p>
+    </div>
+  </section>
+
   <!-- ===== 01 核心改动对比 ===== -->
   <section>
     <div class="section-head">
