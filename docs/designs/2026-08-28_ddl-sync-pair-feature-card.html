@@ -466,11 +466,22 @@
     <div class="card" style="margin-top:14px;border-left:3px solid var(--primary)">
       <h3>优化后流程图 (R 之后 v0.5.0 · 自动化视角) + 优缺点</h3>
       <div style="background:#fafaf7;border:1px solid var(--line-soft);border-radius:8px;padding:14px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-mid);line-height:1.7;white-space:pre;overflow-x:auto">
-业务 RD ──①提 DDL──▶ Archery ──②审批──▶ 业务库 ──③执行 ALTER──▶ Archery ──④current_status=1 审过──▶ Archery 自动 ──⑤生成历史库镜像工单──▶ Archery ──⑥走当前配置流程──▶ 历史库 ──⑧执行 ALTER──▶ 历史库
-                                                                                                                                                                                              │
-                                                                                                                                                                                              ├─ ⑦业务 RD 收到钉钉通知
-                                                                                                                                                                                              │
-                                                                                                                                                                                              └─ ⑨异常 rollback (v0.4.5) + ⑩科大国创 DML 增量同步 (DDL 0 漏 → DML 永远不挂)
+   业务 RD                       Archery                          业务库                       Archery 自动                       历史库
+      │                              │                              │                                │                                │
+      │ ① 提 DDL 工单                │                              │                                │                                │
+      ├─────────────────────────────▶│                              │                                │                                │
+      │                              │ ② 审批                       │                                │                                │
+      ├──────────────────────────────┼─────────────────────────────▶│                                │                                │
+      │                              │                              │ ③ 业务库执行 ALTER              │                                │
+      │                              │                              ├────────────────────────────────▶│                                │
+      │                              │                              │                                │ ④ 审过 (current_status=1)      │
+      │                              │                              │                                │ ⑤ 自动生成历史库镜像工单        │
+      │                              │                              │                                │ ⑥ 走当前 Archery 配置流程      │
+      │                              │                              │                                ├────────────────────────────────▶│
+      │                              │                              │                                │                                │ ⑧ 历史库执行 ALTER
+      │                              │                              │                                │                                │
+      │   ✅ 优势: 步骤 ④⑤⑥⑧ 全        │                              │                                │                                │
+      │      Archery 自动化, 0 漏同步  │                              │                                │                                │
       </div>
       <table class="compare-table" style="font-size:12px">
         <thead><tr><th>维度</th><th>v0.5.0 (R 之后)</th></tr></thead>
