@@ -437,9 +437,7 @@
     <div class="card" style="margin-top:14px;border-left:3px solid var(--danger)">
       <h3>当前流程图 (R 之前 · DBA 视角) + 优缺点</h3>
       <div style="background:#fafaf7;border:1px solid var(--line-soft);border-radius:8px;padding:14px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-mid);line-height:1.7;white-space:pre;overflow-x:auto">
-业务 RD ──①提 DDL 工单──▶ Archery ──②审批 (3 级) ──▶ 业务库 ──③执行 ALTER──▶ Archery ──④通知 DBA──▶ DBA ──⑤凭经验判断──▶ DBA ──⑥手工到历史库跑 SQL──▶ 历史库
-                                                                                                                                                                                                  │
-                                                                                                                                                                                                  └─ ⑦ 科大国创按时间戳 DML 增量同步 (DDL 不在 DML 范围, 漏同步风险)
+业务 RD ──①提 DDL 工单──▶ DBA ──②凭经验判断──▶ DBA ──③手工到历史库跑 SQL──▶ 历史库
       </div>
       <table class="compare-table" style="font-size:12px">
         <thead><tr><th>维度</th><th>当前 (R 之前)</th></tr></thead>
