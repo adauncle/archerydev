@@ -1,19 +1,19 @@
 # DDL 跨库同步 · 业务库 ↔ 历史库 · R1 详细设计
 
-> **Archery R1 · 二次开发设计稿（R 之前 → R1 → R2 → R3 → R4 完整版）**
+> **Archery R1 · 二次开发设计稿（R 之前 → R1 → R2 → R3 完整版）**
 >
-> R 之前原版"业务库大几百张表, DBA 手动配表不现实" 阻塞落地。R1 修订版加**批量导入 + 黑名单默认 + 增量同步** 三件套, 把 DBA 工作量从 2-3 小时降到 5-10 min。R2 加一键配机制 (R2 实战数据 6 min 配完), R3 拍板"走当前配置的流程"。R4 重写背景章节 (4 部分), 跟领导汇报能讲清楚"为什么"。
+> R 之前原版"业务库大几百张表, DBA 手动配表不现实" 阻塞落地。R1 修订版加**批量导入 + 黑名单默认 + 增量同步** 三件套, 把 DBA 工作量从 2-3 小时降到 5-10 min。R2 加一键配机制 (R2 实战数据 6 min 配完), R3 拍板"走当前配置的流程"。重写背景章节 (4 部分), 跟领导汇报能讲清楚"为什么"。
 
-> 配套：[HTML 功能图说](2026-08-28_ddl-sync-pair-feature-card.html) · [R 之前 R1 原版](2026-08-21_ddl-sync-pair-design.md) · [R1 changelog](../changelogs/2026-08-28_ddl-sync-v050-revised-design.md) · [R2 changelog](../changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md) · [R3 changelog](../changelogs/2026-08-28_ddl-sync-v050-r3-approval-flow.md) · [R4 changelog](../changelogs/2026-08-28_ddl-sync-v050-r4-background-rewrite.md)
+> 配套：[HTML 功能图说](2026-08-28_ddl-sync-pair-feature-card.html) · [R 之前原版](2026-08-21_ddl-sync-pair-design.md) · [R1 changelog](../changelogs/2026-08-28_ddl-sync-v050-revised-design.md) · [R2 changelog](../changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md) · [R3 changelog](../changelogs/2026-08-28_ddl-sync-v050-r3-approval-flow.md)
 
-**版本**: v0.5.0-r4 详细设计 (R1 → R2 → R3 → R4 完整版)
+**版本**: 详细设计 (R1 R2 R3 完整版)
 **粒度**: 可直接动手写代码
 
 ---
 
-## 0. 背景 (R4 新加)
+## 0. 背景 
 
-> R4 重写背景: R 之前原版缺"为什么开发这个功能" 的业务背景说明, 跟领导汇报时不便讲清楚必要性。R4 补 4 部分: **当前两个流程 → 痛点 → 影响 → 新功能目标**, 回答"为什么" 跟"做出来有什么业务价值"。
+> 重写背景: R 之前原版缺"为什么开发这个功能" 的业务背景说明, 跟领导汇报时不便讲清楚必要性。补 4 部分: **当前两个流程 → 痛点 → 影响 → 新功能目标**, 回答"为什么" 跟"做出来有什么业务价值"。
 
 ### 0.1 当前数据同步到历史库 — 两个流程 + 流程图
 
@@ -22,18 +22,18 @@
 **当前流程 (R 之前 · DBA 视角):**
 
 ```
-   业务 RD                            DBA                              历史库
-      │                                │                                │
-      │ ① 提 DDL 工单                  │                                │
-      ├───────────────────────────────▶│                                │
-      │                                │ ② 凭经验判断要不要同步          │
-      │                                │   "业务库改了字段, 历史库?      │
-      │                                │    嗯, 凭印象好像要"            │
-      │                                │ ③ 手工到历史库跑 SQL            │
-      │                                ├───────────────────────────────▶│
-      │                                │                                │
-      │   ⚠️ 风险: 步骤 ② ③ 全靠        │                                │
-      │      DBA 记忆, 容易漏          │                                │
+  业务 RD              DBA               历史库
+   │                │                │
+   │ ① 提 DDL 工单         │                │
+   ├───────────────────────────────▶│                │
+   │                │ ② 凭经验判断要不要同步     │
+   │                │  "业务库改了字段, 历史库?   │
+   │                │  嗯, 凭印象好像要"      │
+   │                │ ③ 手工到历史库跑 SQL      │
+   │                ├───────────────────────────────▶│
+   │                │                │
+   │  ⚠️ 风险: 步骤 ② ③ 全靠    │                │
+   │   DBA 记忆, 容易漏     │                │
 ```
 
 **当前流程优缺点 (R 之前):**
@@ -98,22 +98,22 @@ DDL 漏同步到历史库, **直接导致下游大数据链路中断**, 影响�
 **优化后流程 (R 之后 R1):**
 
 ```
-   业务 RD                       Archery                          业务库                       Archery 自动                       历史库
-      │                              │                              │                                │                                │
-      │ ① 提 DDL 工单                │                              │                                │                                │
-      ├─────────────────────────────▶│                              │                                │                                │
-      │                              │ ② 审批                       │                                │                                │
-      ├──────────────────────────────┼─────────────────────────────▶│                                │                                │
-      │                              │                              │ ③ 业务库执行 ALTER              │                                │
-      │                              │                              ├────────────────────────────────▶│                                │
-      │                              │                              │                                │ ④ 审过 (current_status=1)      │
-      │                              │                              │                                │ ⑤ 自动生成历史库镜像工单        │
-      │                              │                              │                                │ ⑥ 走当前 Archery 配置流程      │
-      │                              │                              │                                ├────────────────────────────────▶│
-      │                              │                              │                                │                                │ ⑧ 历史库执行 ALTER
-      │                              │                              │                                │                                │
-      │   ✅ 优势: 步骤 ④⑤⑥⑧ 全        │                              │                                │                                │
-      │      Archery 自动化, 0 漏同步  │                              │                                │                                │
+  业务 RD            Archery             业务库            Archery 自动            历史库
+   │               │               │                │                │
+   │ ① 提 DDL 工单        │               │                │                │
+   ├─────────────────────────────▶│               │                │                │
+   │               │ ② 审批            │                │                │
+   ├──────────────────────────────┼─────────────────────────────▶│                │                │
+   │               │               │ ③ 业务库执行 ALTER       │                │
+   │               │               ├────────────────────────────────▶│                │
+   │               │               │                │ ④ 审过 (current_status=1)   │
+   │               │               │                │ ⑤ 自动生成历史库镜像工单    │
+   │               │               │                │ ⑥ 走当前 Archery 配置流程   │
+   │               │               │                ├────────────────────────────────▶│
+   │               │               │                │                │ ⑧ 历史库执行 ALTER
+   │               │               │                │                │
+   │  ✅ 优势: 步骤 ④⑤⑥⑧ 全    │               │                │                │
+   │   Archery 自动化, 0 漏同步 │               │                │                │
 ```
 
 **优化后流程优缺点 (R 之后 R1):**
@@ -169,7 +169,7 @@ R 之前 R1 初版发布后，R 复审时发现 1 个**核心痛点** + 2 个**�
 | P1 | 业务库**新增表**时白名单不会自动包含，DBA 容易漏配 | 中 | 新增"增量同步"机制 + 业务库新增表自动入"待确认"列表 |
 | P2 | 库里已有 100+ 张表，DBA 想知道"哪些列/索引漏同步了" | 中 | 新增"库对 schema 差集工具"（巡检结果里直接展示列/索引 diff） |
 
-| 维度 | R 之前原版 | R1 修订版 v0.5.0-r1 |
+| 维度 | R 之前原版 | R1 修订版 R1 |
 |------|-----------|----------------------|
 | 同步模式默认 | whitelist (DBA 显式选要同步的) | **blacklist (默认全同步, DBA 显式排除)** |
 | 批量配表 | 只能逐张点 | **批量导入 (从历史库扫表 + 模态框勾选)** |
@@ -189,7 +189,7 @@ R 之前 R1 初版发布后，R 复审时发现 1 个**核心痛点** + 2 个**�
 
 **问题**: 白名单模式 + 逐张点 = 历史库 500 张表要 DBA 点 500 次, 不现实。
 
-### 2.2 R 修订版思路（采用）
+### 2.2 R1 修订版思路（采用）
 
 > **DBA 配库对时, 默认 blacklist 模式 (业务库跟历史库 1:1 同步), 批量导入时一键全选 + 过滤规则排日志表/字典表/临时表。同步模式 + 批量配置 + 增量检测 三件套把 DBA 工作量从"500 次" 降到"1 次批量 + 50 个排除规则"。**
 
@@ -200,7 +200,7 @@ R 之前 R1 初版发布后，R 复审时发现 1 个**核心痛点** + 2 个**�
 - 巡检结果展示 schema 差集 (列/索引 diff), DBA 一眼看到"漏同步了哪些"
 
 **真实场景预估** (业务库 500 张表):
-| 操作 | R 之前原版耗时 | R 修订版耗时 |
+| 操作 | R 之前原版耗时 | R1 修订版耗时 |
 |------|--------------|----------------|
 | 配库对 | 5 min (填库对名 + 选业务库/历史库) | 同 5 min |
 | 配同步表 | **2-3 小时** (500 次点) | **5-10 min** (1 次批量 + 50 个排除) |
@@ -217,35 +217,35 @@ R 之前 R1 初版发布后，R 复审时发现 1 个**核心痛点** + 2 个**�
 
 ```
 DBA 进库对详情页 → 点 [📥 批量导入] → 弹模态框
-  ↓
+ ↓
 模态框:
-  ┌─ 批量导入同步表 ─────────────────────────────┐
-  │ 从历史库 hly_history 自动扫描                     │
-  │ 找到 487 张表 (跟业务库差 13 张)                 │
-  │                                                 │
-  │ [全选] [反选] [搜索 ____________] [⚙ 过滤]   │
-  │                                                 │
-  │ 过滤规则 (可叠加):                                │
-  │   排除前缀: [_log, _bak, _tmp, _test]          │
-  │   排除后缀: [_history, _archive, _backup]      │
-  │   排除 ENGINE: [MEMORY, BLACKHOLE, MRG_MYISAM] │
-  │   仅保留 size > 0 的表 (排除空表)                │
-  │   ─ 过滤后剩余 198 张表, 待选 ─                │
-  │                                                 │
-  │ 列表 (滚动加载 + 复选框):                         │
-  │   ☐ accesscard_black_detail    243MB  35 列     │
-  │   ☐ accesscard_config          12KB   8 列      │
-  │   ☐ accesscard_log             1.2GB  12 列    ← 默认排除 (后缀 _log)
-  │   ☐ accesscard_audit           8KB    8 列      │
-  │   ... (198 张, 分页 50/页)                       │
-  │                                                 │
-  │ 已选中: 198 / 198                              │
-  │                                                 │
-  │ [取消]  [✓ 确认导入 (198 张)]                    │
-  └─────────────────────────────────────────────────┘
-  ↓
+ ┌─ 批量导入同步表 ─────────────────────────────┐
+ │ 从历史库 hly_history 自动扫描           │
+ │ 找到 487 张表 (跟业务库差 13 张)         │
+ │                         │
+ │ [全选] [反选] [搜索 ____________] [⚙ 过滤]  │
+ │                         │
+ │ 过滤规则 (可叠加):                │
+ │  排除前缀: [_log, _bak, _tmp, _test]     │
+ │  排除后缀: [_history, _archive, _backup]   │
+ │  排除 ENGINE: [MEMORY, BLACKHOLE, MRG_MYISAM] │
+ │  仅保留 size > 0 的表 (排除空表)        │
+ │  ─ 过滤后剩余 198 张表, 待选 ─        │
+ │                         │
+ │ 列表 (滚动加载 + 复选框):             │
+ │  ☐ accesscard_black_detail  243MB 35 列   │
+ │  ☐ accesscard_config     12KB  8 列   │
+ │  ☐ accesscard_log       1.2GB 12 列  ← 默认排除 (后缀 _log)
+ │  ☐ accesscard_audit      8KB  8 列   │
+ │  ... (198 张, 分页 50/页)            │
+ │                         │
+ │ 已选中: 198 / 198               │
+ │                         │
+ │ [取消] [✓ 确认导入 (198 张)]          │
+ └─────────────────────────────────────────────────┘
+ ↓
 DBA 点"确认导入" → 后端批量 INSERT 198 张
-  ↓
+ ↓
 库对详情: "已加 198 张同步表" + 列表
 ```
 
@@ -258,53 +258,53 @@ from ..models import DdlSyncTable
 
 
 def batch_import_tables(pair, table_names, filter_rule=None):
-    """批量导入同步表 (Phase 1 核心)
+  """批量导入同步表 (Phase 1 核心)
 
-    R1 新增: 替代 R 之前设计稿的"DBA 手动逐张点 add_sync_table"
-    业务: 历史库大几百张表, DBA 一次操作完成 80% 工作量
-    """
-    # 1. 去重 + 验证 (跟现有表对比, 排除已存在)
-    existing = set(
-        DdlSyncTable.objects.filter(pair=pair)
-        .values_list("table_name", flat=True)
-    )
-    new_tables = [t for t in table_names if t not in existing]
+  R1 新增: 替代 R 之前设计稿的"DBA 手动逐张点 add_sync_table"
+  业务: 历史库大几百张表, DBA 一次操作完成 80% 工作量
+  """
+  # 1. 去重 + 验证 (跟现有表对比, 排除已存在)
+  existing = set(
+    DdlSyncTable.objects.filter(pair=pair)
+    .values_list("table_name", flat=True)
+  )
+  new_tables = [t for t in table_names if t not in existing]
 
-    # 2. 批量 INSERT (单次 SQL, 性能比 500 次单插高 100 倍)
-    if not new_tables:
-        return 0
+  # 2. 批量 INSERT (单次 SQL, 性能比 500 次单插高 100 倍)
+  if not new_tables:
+    return 0
 
-    with transaction.atomic():
-        DdlSyncTable.objects.bulk_create([
-            DdlSyncTable(pair=pair, table_name=t) for t in new_tables
-        ])
+  with transaction.atomic():
+    DdlSyncTable.objects.bulk_create([
+      DdlSyncTable(pair=pair, table_name=t) for t in new_tables
+    ])
 
-    # 3. 写审计 (可选, Phase 3 加)
-    # SyncAuditLog.objects.create(...)
+  # 3. 写审计 (可选, Phase 3 加)
+  # SyncAuditLog.objects.create(...)
 
-    return len(new_tables)
+  return len(new_tables)
 
 
 def scan_history_tables(target_instance, target_db):
-    """从历史库 INFORMATION_SCHEMA 扫所有表 (Phase 1 必备)
+  """从历史库 INFORMATION_SCHEMA 扫所有表 (Phase 1 必备)
 
-    R1 新增: 替代 R 之前设计稿的"DBA 凭记忆列 500 张表名"
-    """
-    user, password, (host, port) = _get_creds(target_instance)
-    conn = pymysql.connect(host=host, port=port, user=user, password=password,
-                          database=target_db, connect_timeout=5, autocommit=True)
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            cur.execute("""
-                SELECT TABLE_NAME, DATA_LENGTH, TABLE_ROWS
-                FROM INFORMATION_SCHEMA.TABLES
-                WHERE TABLE_SCHEMA = %s
-                  AND TABLE_TYPE = 'BASE TABLE'  -- 排除视图
-                ORDER BY TABLE_NAME
-            """, [target_db])
-            return cur.fetchall()
-    finally:
-        conn.close()
+  R1 新增: 替代 R 之前设计稿的"DBA 凭记忆列 500 张表名"
+  """
+  user, password, (host, port) = _get_creds(target_instance)
+  conn = pymysql.connect(host=host, port=port, user=user, password=password,
+             database=target_db, connect_timeout=5, autocommit=True)
+  try:
+    with conn.cursor(pymysql.cursors.DictCursor) as cur:
+      cur.execute("""
+        SELECT TABLE_NAME, DATA_LENGTH, TABLE_ROWS
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = %s
+         AND TABLE_TYPE = 'BASE TABLE' -- 排除视图
+        ORDER BY TABLE_NAME
+      """, [target_db])
+      return cur.fetchall()
+  finally:
+    conn.close()
 ```
 
 ### 3.3 前端实现 (HTML mockup)
@@ -314,73 +314,73 @@ def scan_history_tables(target_instance, target_db):
 ```html
 <!-- 库对详情页 body -->
 <div class="d-flex justify-content-between">
-    <h3>同步表清单 · 198 / 487</h3>
-    <div>
-        <button class="btn btn-primary" id="btnBatchImport">📥 批量导入</button>
-        <button class="btn btn-outline-primary">+ 添加同步表</button>
-    </div>
+  <h3>同步表清单 · 198 / 487</h3>
+  <div>
+    <button class="btn btn-primary" id="btnBatchImport">📥 批量导入</button>
+    <button class="btn btn-outline-primary">+ 添加同步表</button>
+  </div>
 </div>
 
 <!-- 批量导入模态框 -->
 <div class="modal fade" id="batchImportModal">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">批量导入同步表</h5>
-                <button class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <!-- 历史库扫描结果 -->
-                <div class="alert alert-info">
-                    从历史库 <code>hly_history</code> 自动扫描, 找到 <b>487</b> 张表
-                    (跟业务库差 13 张)
-                </div>
-
-                <!-- 过滤规则 -->
-                <div class="row g-2 mb-3">
-                    <div class="col-md-6">
-                        <label class="form-label">排除前缀 (逗号分隔)</label>
-                        <input type="text" class="form-control" id="excludePrefix"
-                               placeholder="_log, _bak, _tmp, _test">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">排除后缀</label>
-                        <input type="text" class="form-control" id="excludeSuffix"
-                               placeholder="_history, _archive, _backup">
-                    </div>
-                </div>
-
-                <!-- 列表 + 复选框 -->
-                <div class="d-flex justify-content-between mb-2">
-                    <div>
-                        <button class="btn btn-sm btn-link" id="btnSelectAll">全选</button>
-                        <button class="btn btn-sm btn-link" id="btnSelectNone">反选</button>
-                        <input type="text" class="form-control form-control-sm d-inline-block"
-                               style="width: 200px;" placeholder="搜索表名" id="tableSearch">
-                    </div>
-                    <div>
-                        <span class="text-muted">已选 <b id="selectedCount">0</b> / <span id="totalCount">487</span></span>
-                    </div>
-                </div>
-
-                <div class="table-responsive" style="max-height: 400px;">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr><th><input type="checkbox" id="checkAll"></th>
-                                <th>表名</th><th>大小</th><th>列数</th><th>状态</th></tr>
-                        </thead>
-                        <tbody id="tableListBody">
-                            <!-- JS 渲染 -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button class="btn btn-primary" id="btnConfirmImport">✓ 确认导入</button>
-            </div>
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">批量导入同步表</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <!-- 历史库扫描结果 -->
+        <div class="alert alert-info">
+          从历史库 <code>hly_history</code> 自动扫描, 找到 <b>487</b> 张表
+          (跟业务库差 13 张)
         </div>
+
+        <!-- 过滤规则 -->
+        <div class="row g-2 mb-3">
+          <div class="col-md-6">
+            <label class="form-label">排除前缀 (逗号分隔)</label>
+            <input type="text" class="form-control" id="excludePrefix"
+                placeholder="_log, _bak, _tmp, _test">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">排除后缀</label>
+            <input type="text" class="form-control" id="excludeSuffix"
+                placeholder="_history, _archive, _backup">
+          </div>
+        </div>
+
+        <!-- 列表 + 复选框 -->
+        <div class="d-flex justify-content-between mb-2">
+          <div>
+            <button class="btn btn-sm btn-link" id="btnSelectAll">全选</button>
+            <button class="btn btn-sm btn-link" id="btnSelectNone">反选</button>
+            <input type="text" class="form-control form-control-sm d-inline-block"
+                style="width: 200px;" placeholder="搜索表名" id="tableSearch">
+          </div>
+          <div>
+            <span class="text-muted">已选 <b id="selectedCount">0</b> / <span id="totalCount">487</span></span>
+          </div>
+        </div>
+
+        <div class="table-responsive" style="max-height: 400px;">
+          <table class="table table-hover">
+            <thead>
+              <tr><th><input type="checkbox" id="checkAll"></th>
+                <th>表名</th><th>大小</th><th>列数</th><th>状态</th></tr>
+            </thead>
+            <tbody id="tableListBody">
+              <!-- JS 渲染 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary" id="btnConfirmImport">✓ 确认导入</button>
+      </div>
     </div>
+  </div>
 </div>
 ```
 
@@ -413,31 +413,31 @@ Phase 2 加, Phase 1 范围外:
 ```python
 # sql/extensions/ddl_sync/services/incremental.py
 def detect_new_table(workflow):
-    """业务库 DDL 工单提单时检测新表"""
-    table_name = _parse_first_table(workflow.sql_content)
-    pair = DdlSyncPair.objects.filter(
-        source_instance=workflow.instance,
-        source_db=workflow.db_name,
-        enabled=True
-    ).first()
-    if not pair:
-        return None  # 没配库对, 不检测
+  """业务库 DDL 工单提单时检测新表"""
+  table_name = _parse_first_table(workflow.sql_content)
+  pair = DdlSyncPair.objects.filter(
+    source_instance=workflow.instance,
+    source_db=workflow.db_name,
+    enabled=True
+  ).first()
+  if not pair:
+    return None # 没配库对, 不检测
 
-    # 检查白名单
-    if pair.tables.filter(table_name=table_name).exists():
-        return None  # 已在白名单, 正常联动
+  # 检查白名单
+  if pair.tables.filter(table_name=table_name).exists():
+    return None # 已在白名单, 正常联动
 
-    # 检查历史库
-    history_tables = scan_history_tables(pair.target_instance, pair.target_db)
-    history_table_names = {t["TABLE_NAME"] for t in history_tables}
+  # 检查历史库
+  history_tables = scan_history_tables(pair.target_instance, pair.target_db)
+  history_table_names = {t["TABLE_NAME"] for t in history_tables}
 
-    if table_name in history_table_names:
-        return {
-            "status": "needs_confirmation",
-            "message": f"检测到表 {table_name} 在历史库存在但未配置同步, 请 DBA 决定",
-            "history_size": next(t for t in history_tables if t["TABLE_NAME"] == table_name)["DATA_LENGTH"],
-        }
-    return None
+  if table_name in history_table_names:
+    return {
+      "status": "needs_confirmation",
+      "message": f"检测到表 {table_name} 在历史库存在但未配置同步, 请 DBA 决定",
+      "history_size": next(t for t in history_tables if t["TABLE_NAME"] == table_name)["DATA_LENGTH"],
+    }
+  return None
 ```
 
 ### 4.4 UX 提示
@@ -446,7 +446,7 @@ def detect_new_table(workflow):
 
 ```
 💡 增量检测: 检测到表 `accesscard_v2` 在历史库存在 (243MB) 但未配置同步
-   [1-click 加进白名单]  [1-click 加进黑名单]  [忽略]
+  [1-click 加进白名单] [1-click 加进黑名单] [忽略]
 ```
 
 ---
@@ -464,21 +464,21 @@ accesscard 库对 · 🔘 blacklist 模式
 业务库: hly_accesscard (172.20.2.134:3306) · 历史库: hly_history (172.20.2.X:3306)
 
 同步表清单 · 198 / 487 (已配)
-  [📥 批量导入] [+ 添加同步表] [🔍 schema 差集] [⚙ 过滤规则]
+ [📥 批量导入] [+ 添加同步表] [🔍 schema 差集] [⚙ 过滤规则]
 
-  accesscard_black_detail     [同步] 字段 35 个  ✏ 🗑
-  accesscard_config           [同步] 字段 8 个   ✏ 🗑
-  accesscard_audit            [同步] 字段 8 个   ✏ 🗑
-  ... 还有 195 张表 (分页)
-  
+ accesscard_black_detail   [同步] 字段 35 个 ✏ 🗑
+ accesscard_config      [同步] 字段 8 个  ✏ 🗑
+ accesscard_audit      [同步] 字段 8 个  ✏ 🗑
+ ... 还有 195 张表 (分页)
+ 
 黑名单表 (默认不同步) · 0 个
-  [+ 添加黑名单表]
+ [+ 添加黑名单表]
 
 最近 5 次同步历史
-  #12345 业务库工单  实战时  [已完成]  历史库 #12346 执行成功
-  ...
+ #12345 业务库工单 实战时 [已完成] 历史库 #12346 执行成功
+ ...
 
-[🔍 立即跑巡检 (C 方案兜底)]  [📊 schema 差集报告]
+[🔍 立即跑巡检 (C 方案兜底)] [📊 schema 差集报告]
 ```
 
 ### 5.3 业务库 DDL 工单详情 (跟 R 之前原版相同, 加增量检测提示)
@@ -488,12 +488,12 @@ SQL 工单 #12345 [DDL 跨库同步]
 ... (跟 R 之前原版相同)
 
 执行状态
-  ✅ 业务库 (hly_accesscard@134) 已执行
-  🔄 历史库 (hly_* 跨多库) [⇄ 联动] 按当前配置审核中
-       镜像工单 #12346 · 工单类型: SQL 上线申请 · 组: prod core for 历史库
-       业务库 DDL 已审过 (current_status=1 PASSED) 才触发, 跟正常历史库工单走一样的流
-  💡 增量检测: 检测到表 `accesscard_v2` 在历史库存在 (243MB) 但未配置同步
-     [1-click 加进白名单]  [1-click 加进黑名单]  [忽略]
+ ✅ 业务库 (hly_accesscard@134) 已执行
+ 🔄 历史库 (hly_* 跨多库) [⇄ 联动] 按当前配置审核中
+    镜像工单 #12346 · 工单类型: SQL 上线申请 · 组: prod core for 历史库
+    业务库 DDL 已审过 (current_status=1 PASSED) 才触发, 跟正常历史库工单走一样的流
+ 💡 增量检测: 检测到表 `accesscard_v2` 在历史库存在 (243MB) 但未配置同步
+   [1-click 加进白名单] [1-click 加进黑名单] [忽略]
 ```
 
 ### 5.4 历史库 DDL 工单列表 (跟 R 之前原版相同)
@@ -505,18 +505,18 @@ accesscard 库对 · 巡检结果
 巡检时间: 实战时 · 对比 198 张同步表
 
 🔴 1 张表 schema 不一致
-  accesscard_black_detail  [5 列缺失 / 2 索引缺失]
-    列 diff:
-      + card_serial (实战漏同步, varchar(64) DEFAULT NULL)
-      + is_premium (8/15 漏同步, tinyint(1) DEFAULT 0)
-      + ... 共 5 列
-    索引 diff:
-      - idx_card_serial (8/15 漏同步)
-      - idx_is_premium (实战漏同步)
-    [生成补 DDL →]
+ accesscard_black_detail [5 列缺失 / 2 索引缺失]
+  列 diff:
+   + card_serial (实战漏同步, varchar(64) DEFAULT NULL)
+   + is_premium (8/15 漏同步, tinyint(1) DEFAULT 0)
+   + ... 共 5 列
+  索引 diff:
+   - idx_card_serial (8/15 漏同步)
+   - idx_is_premium (实战漏同步)
+  [生成补 DDL →]
 
 🟢 197 张表 schema 一致
-  ... 列出 5 张代表表名
+ ... 列出 5 张代表表名
 
 ⚠️ 此巡检由 DBA @张三 在 实战时 手动触发, 建议配定时任务 (每天凌晨跑)
 ```
@@ -529,13 +529,13 @@ accesscard 库对 · 巡检结果
 
 ```python
 class DdlSyncPair(models.Model):
-    SYNC_MODE_CHOICES = [
-        ("blacklist", "黑名单 (默认, 业务库全同步, 显式排除)"),  # R1 改默认
-        ("whitelist", "白名单 (DBA 显式选要同步的)"),  # R 之前原版默认
-    ]
-    # ... 字段跟 R 之前相同
-    sync_mode = models.CharField(max_length=16, choices=SYNC_MODE_CHOICES,
-                                  default="blacklist")  # R 之前是 whitelist
+  SYNC_MODE_CHOICES = [
+    ("blacklist", "黑名单 (默认, 业务库全同步, 显式排除)"), # R1 改默认
+    ("whitelist", "白名单 (DBA 显式选要同步的)"), # R 之前原版默认
+  ]
+  # ... 字段跟 R 之前相同
+  sync_mode = models.CharField(max_length=16, choices=SYNC_MODE_CHOICES,
+                 default="blacklist") # R 之前是 whitelist
 ```
 
 ### 6.2 过滤规则 (Phase 3 加, 暂存客户端)
@@ -545,14 +545,14 @@ DBA 配过滤规则 (排除前缀/后缀/ENGINE 等) 暂存客户端, 不入库�
 ```python
 # Phase 3
 class DdlSyncPair(models.Model):
-    # ...
-    filter_rule = models.JSONField(default=dict, blank=True)
-    # 格式: {
-    #     "exclude_prefix": ["_log", "_bak", "_tmp", "_test"],
-    #     "exclude_suffix": ["_history", "_archive"],
-    #     "exclude_engine": ["MEMORY", "BLACKHOLE"],
-    #     "min_size_bytes": 0,  # 排除空表
-    # }
+  # ...
+  filter_rule = models.JSONField(default=dict, blank=True)
+  # 格式: {
+  #   "exclude_prefix": ["_log", "_bak", "_tmp", "_test"],
+  #   "exclude_suffix": ["_history", "_archive"],
+  #   "exclude_engine": ["MEMORY", "BLACKHOLE"],
+  #   "min_size_bytes": 0, # 排除空表
+  # }
 ```
 
 ### 6.3 业务库新增表"待确认" (Phase 2 加)
@@ -562,15 +562,15 @@ class DdlSyncPair(models.Model):
 ```python
 # Phase 2
 class DdlSyncPair(models.Model):
-    # ...
-    pending_tables = models.JSONField(default=dict, blank=True)
-    # 格式: {
-    #     "accesscard_v2": {
-    #         "detected_at": "实战时",
-    #         "first_workflow_id": 12345,
-    #         "history_size_bytes": 254803968,
-    #     }
-    # }
+  # ...
+  pending_tables = models.JSONField(default=dict, blank=True)
+  # 格式: {
+  #   "accesscard_v2": {
+  #     "detected_at": "实战时",
+  #     "first_workflow_id": 12345,
+  #     "history_size_bytes": 254803968,
+  #   }
+  # }
 ```
 
 ---
@@ -580,33 +580,33 @@ class DdlSyncPair(models.Model):
 ```python
 # sql/extensions/ddl_sync/urls.py
 urlpatterns = [
-    # 库对管理 (DBA 专属) - R 之前原有
-    path("pair_list/", views.pair_list, name="pair_list"),
-    path("pair/new/", views.pair_new, name="pair_new"),
-    path("pair/<int:pair_id>/edit/", views.pair_edit, name="pair_edit"),
-    path("pair/<int:pair_id>/detail/", views.pair_detail, name="pair_detail"),
+  # 库对管理 (DBA 专属) - R 之前原有
+  path("pair_list/", views.pair_list, name="pair_list"),
+  path("pair/new/", views.pair_new, name="pair_new"),
+  path("pair/<int:pair_id>/edit/", views.pair_edit, name="pair_edit"),
+  path("pair/<int:pair_id>/detail/", views.pair_detail, name="pair_detail"),
 
-    # R1 新增: 批量导入 (核心)
-    path("api/pair/<int:pair_id>/scan_history_tables/", views.api_scan_history_tables,
-         name="api_scan_history_tables"),
-    path("api/pair/<int:pair_id>/batch_import/", views.api_batch_import_tables,
-         name="api_batch_import_tables"),
+  # R1 新增: 批量导入 (核心)
+  path("api/pair/<int:pair_id>/scan_history_tables/", views.api_scan_history_tables,
+     name="api_scan_history_tables"),
+  path("api/pair/<int:pair_id>/batch_import/", views.api_batch_import_tables,
+     name="api_batch_import_tables"),
 
-    # R1 新增: schema 差集工具 (Phase 3)
-    path("api/pair/<int:pair_id>/schema_diff/", views.api_schema_diff,
-         name="api_schema_diff"),
+  # R1 新增: schema 差集工具 (Phase 3)
+  path("api/pair/<int:pair_id>/schema_diff/", views.api_schema_diff,
+     name="api_schema_diff"),
 
-    # 同步表管理 (DBA 专属) - R 之前原有
-    path("pair/<int:pair_id>/table/add/", views.table_add, name="table_add"),
-    path("pair/<int:pair_id>/table/<int:table_id>/delete/", views.table_delete,
-         name="table_delete"),
+  # 同步表管理 (DBA 专属) - R 之前原有
+  path("pair/<int:pair_id>/table/add/", views.table_add, name="table_add"),
+  path("pair/<int:pair_id>/table/<int:table_id>/delete/", views.table_delete,
+     name="table_delete"),
 
-    # 历史库 DDL 工单列表 (DBA 兜底视角) - R 之前原有
-    path("history_workflows/", views.history_workflows, name="history_workflows"),
+  # 历史库 DDL 工单列表 (DBA 兜底视角) - R 之前原有
+  path("history_workflows/", views.history_workflows, name="history_workflows"),
 
-    # 库对巡检 (C 方案兜底) - R 之前原有
-    path("inspect/run/", views.inspect_run, name="inspect_run"),
-    path("inspect/result/<int:pair_id>/", views.inspect_result, name="inspect_result"),
+  # 库对巡检 (C 方案兜底) - R 之前原有
+  path("inspect/run/", views.inspect_run, name="inspect_run"),
+  path("inspect/result/<int:pair_id>/", views.inspect_result, name="inspect_result"),
 ]
 ```
 
@@ -629,11 +629,11 @@ urlpatterns = [
 
 ## 9. 实施阶段 (短期 C → 中期 B → 长期 A)
 
-### 9.1 Phase 1 · 短期 C · **3 阶段 3 周 (下周一-3 周后, 15 个工作日)** — R 拍板时 用户拍板
+### 9.1 Phase 1 · 短期 C · **3 阶段 3 周 (下周一-3 周后, 15 个工作日)** — 用户拍板
 
 **核心: 库对管理 + 批量导入 + 一键配 + 走当前配置流程 + 推 110 prod**
 
-R 拍板时 DBA 阿达叔叔拍板: "**从 8 月 31 号开始算第一周。重新生成，按照设计 + 开发 + 提测上线。这三个阶段生成**". 3 阶段 3 周比 5 天紧凑节奏 (R 拍板时 拍板的 下周一-下周五) 留更多时间.
+ DBA 阿达叔叔拍板: "**从 8 月 31 号开始算第一周。重新生成，按照设计 + 开发 + 提测上线。这三个阶段生成**". 3 阶段 3 周比 5 天紧凑节奏 ( 拍板的 下周一-下周五) 留更多时间.
 
 **3 阶段 3 周日程表**:
 
@@ -643,7 +643,7 @@ R 拍板时 DBA 阿达叔叔拍板: "**从 8 月 31 号开始算第一周。重�
 | **第 2 阶段: 开发** | 下下周一 - 下下周五 (1 周 5d) | 库对管理 CRUD + 5 按钮 + R1 批量导入 + R2 一键配 + R3 走当前配置 开发 + 134 dev 端到端演练 + 修复 | 库对管理 CRUD (DdlSyncPair + DdlSyncTable) + 5 个核心按钮 (🎯 一键配 / 📥 批量导入 / + 添加同步表 / 🔍 schema 差集 / ⚙ 过滤规则) + R1 批量导入 (从历史库扫表 + 模态框 + 过滤规则) + R2 一键配 (compute_diff + one_click_setup) + R3 走当前配置 (镜像工单走 Archery 当前配置 + 业务库 DDL 必审过 trigger) + 134 dev 端到端演练 + 修复实战踩坑 |
 | **第 3 阶段: 提测上线** | 再下周一 - 再下周五 (1 周 5d) | 提测 (DBA 验收 + 业务 RD 端到端) + 修复实战踩坑 + 推 110 prod + smoke test + 收尾 | DBA 验收用例 + 业务 RD 端到端测试 + 修复实战踩坑 (避坑 R 之前推 110 实战踩坑: CACHE_URL / SECRET_KEY / K3 变量 / ALLOWED_HOSTS / poller zombie / rollback import) + 推 110 prod (5 步必做) + smoke test (5 端点全过 + 业务 RD 浏览器实测) + 文档收尾 + 下一周周报准备 |
 
-**3 阶段周报口径**: R 拍板时 拍板, 下周一算 Week 1. 每周 1 个阶段, 周报按周 (周一提交) 节奏汇报:
+**3 阶段周报口径**: 拍板, 下周一算 Week 1. 每周 1 个阶段, 周报按周 (周一提交) 节奏汇报:
 - Week 1 (8/31): 设计阶段
 - Week 2 (9/7): 开发阶段
 - Week 3 (9/14): 提测上线阶段
@@ -707,9 +707,9 @@ gh-ost 实战踩了 4 个坑, R 修订时一一对照避免:
 
 ---
 
-## 12. v0.5.0-r2 进一步优化: 一键配 (按历史库) (R 拍板时)
+## 12. R2 进一步优化: 一键配 (按历史库)
 
-R 拍板时 DBA 阿达叔叔查 110 prod 真实数据:
+ DBA 阿达叔叔查 110 prod 真实数据:
 - 业务库 hly_accesscard: **1589** 张表
 - 历史库 hly_activity: **1289** 张表
 - 业务库 - 历史库: **300** 张 (业务库独有, 通常字典/配置/日志, 不归档)
@@ -732,35 +732,35 @@ R 拍板时 DBA 阿达叔叔查 110 prod 真实数据:
 
 ```
 ┌─ 🎯 一键配 (按历史库) ─────────────────────────────────┐
-│ 自动扫描历史库 + 业务库, 计算差集:                        │
-│                                                          │
-│   业务库 (hly_accesscard): 1589 张表                      │
-│   历史库 (hly_activity):   1289 张表                      │
-│   ─────────────────────────────                         │
-│   业务库 ∩ 历史库 (1289 张):  → 默认白名单 (建议全选)         │
-│   业务库 - 历史库 (300 张):   → 默认黑名单 (建议全选)         │
-│   历史库 - 业务库 (0 张):     → 0 张, 提示 DBA            │
-│                                                          │
-│ 提示: 白名单 1289 张 (从历史库扫, 全选)                     │
-│       黑名单 300 张 (业务库独有, 通常字典/配置/日志, 全选)     │
-│       DBA 可逐张调整, 1-click 接受即可                      │
-│                                                          │
-│  ⚙ 预览:                                                 │
-│    ✓ 白名单 (1289 张, 全选):                                │
-│       accesscard_black_detail  ✓ 存在 243MB                │
-│       accesscard_config        ✓ 存在 12KB                 │
-│       accesscard_audit         ✓ 存在 8KB                  │
-│       ... (分页 50/页)                                     │
-│                                                          │
-│    🚫 黑名单 (300 张, 全选):                                │
-│       dict_currency            ✗ 历史库无 4KB                │
-│       dict_country             ✗ 历史库无 8KB                │
-│       log_search               ✗ 历史库无 1.2GB              │
-│       ... (分页 50/页)                                     │
-│                                                          │
-│ 业务库加新表时, Archery 自动检测 + "待确认" 流程 (Phase 2)     │
-│                                                          │
-│         [取消]  [✓ 1-click 接受 (1289+300)]                  │
+│ 自动扫描历史库 + 业务库, 计算差集:            │
+│                             │
+│  业务库 (hly_accesscard): 1589 张表           │
+│  历史库 (hly_activity):  1289 张表           │
+│  ─────────────────────────────             │
+│  业务库 ∩ 历史库 (1289 张): → 默认白名单 (建议全选)     │
+│  业务库 - 历史库 (300 张):  → 默认黑名单 (建议全选)     │
+│  历史库 - 业务库 (0 张):   → 0 张, 提示 DBA      │
+│                             │
+│ 提示: 白名单 1289 张 (从历史库扫, 全选)           │
+│    黑名单 300 张 (业务库独有, 通常字典/配置/日志, 全选)   │
+│    DBA 可逐张调整, 1-click 接受即可           │
+│                             │
+│ ⚙ 预览:                         │
+│  ✓ 白名单 (1289 张, 全选):                │
+│    accesscard_black_detail ✓ 存在 243MB        │
+│    accesscard_config    ✓ 存在 12KB         │
+│    accesscard_audit     ✓ 存在 8KB         │
+│    ... (分页 50/页)                   │
+│                             │
+│  🚫 黑名单 (300 张, 全选):                │
+│    dict_currency      ✗ 历史库无 4KB        │
+│    dict_country       ✗ 历史库无 8KB        │
+│    log_search        ✗ 历史库无 1.2GB       │
+│    ... (分页 50/页)                   │
+│                             │
+│ 业务库加新表时, Archery 自动检测 + "待确认" 流程 (Phase 2)   │
+│                             │
+│     [取消] [✓ 1-click 接受 (1289+300)]         │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -772,74 +772,74 @@ from ..models import DdlSyncTable
 
 
 def one_click_setup(pair, accept_white: list, accept_black: list):
-    """一键配 (按历史库) — R2 新增
+  """一键配 (按历史库) — R2 新增
 
-    业务: DBA "历史库有多少张表就拿多少张" — 1-click 配完白名单 + 黑名单.
-    """
-    with transaction.atomic():
-        # 1. 清空现有的 (幂等, 重新配会覆盖)
-        DdlSyncTable.objects.filter(pair=pair).delete()
+  业务: DBA "历史库有多少张表就拿多少张" — 1-click 配完白名单 + 黑名单.
+  """
+  with transaction.atomic():
+    # 1. 清空现有的 (幂等, 重新配会覆盖)
+    DdlSyncTable.objects.filter(pair=pair).delete()
 
-        # 2. 批量写白名单 (bulk_create 性能高 100 倍)
-        if accept_white:
-            DdlSyncTable.objects.bulk_create([
-                DdlSyncTable(
-                    pair=pair, table_name=t,
-                    sync_type='whitelist',  # R2 加字段区分
-                ) for t in accept_white
-            ])
+    # 2. 批量写白名单 (bulk_create 性能高 100 倍)
+    if accept_white:
+      DdlSyncTable.objects.bulk_create([
+        DdlSyncTable(
+          pair=pair, table_name=t,
+          sync_type='whitelist', # R2 加字段区分
+        ) for t in accept_white
+      ])
 
-        # 3. 批量写黑名单 (R2 加 sync_type 字段, 跟白名单同表存)
-        if accept_black:
-            DdlSyncTable.objects.bulk_create([
-                DdlSyncTable(
-                    pair=pair, table_name=t,
-                    sync_type='blacklist',
-                ) for t in accept_black
-            ])
+    # 3. 批量写黑名单 (R2 加 sync_type 字段, 跟白名单同表存)
+    if accept_black:
+      DdlSyncTable.objects.bulk_create([
+        DdlSyncTable(
+          pair=pair, table_name=t,
+          sync_type='blacklist',
+        ) for t in accept_black
+      ])
 
-    return len(accept_white) + len(accept_black)
+  return len(accept_white) + len(accept_black)
 
 
 def compute_diff(pair):
-    """扫业务库 + 历史库, 算差集 — R2 新增"""
-    # 1. 扫业务库所有表
-    source_tables = scan_history_tables(pair.source_instance, pair.source_db)
-    source_names = {t["TABLE_NAME"] for t in source_tables}
+  """扫业务库 + 历史库, 算差集 — R2 新增"""
+  # 1. 扫业务库所有表
+  source_tables = scan_history_tables(pair.source_instance, pair.source_db)
+  source_names = {t["TABLE_NAME"] for t in source_tables}
 
-    # 2. 扫历史库所有表
-    target_tables = scan_history_tables(pair.target_instance, pair.target_db)
-    target_names = {t["TABLE_NAME"] for t in target_tables}
+  # 2. 扫历史库所有表
+  target_tables = scan_history_tables(pair.target_instance, pair.target_db)
+  target_names = {t["TABLE_NAME"] for t in target_tables}
 
-    # 3. 差集
-    white_candidates = source_names & target_names  # 业务库 ∩ 历史库
-    black_candidates = source_names - target_names  # 业务库独有
-    orphan = target_names - source_names             # 历史库独有 (业务库已删)
+  # 3. 差集
+  white_candidates = source_names & target_names # 业务库 ∩ 历史库
+  black_candidates = source_names - target_names # 业务库独有
+  orphan = target_names - source_names       # 历史库独有 (业务库已删)
 
-    return {
-        "white": sorted(white_candidates),
-        "black": sorted(black_candidates),
-        "orphan": sorted(orphan),
-    }
+  return {
+    "white": sorted(white_candidates),
+    "black": sorted(black_candidates),
+    "orphan": sorted(orphan),
+  }
 ```
 
 ### 12.4 数据模型微调 (DdlSyncTable 加 sync_type 字段)
 
 ```python
 class DdlSyncTable(models.Model):
-    # R2 加: 区分白名单 / 黑名单
-    SYNC_TYPE_CHOICES = [
-        ("whitelist", "白名单 (要同步)"),
-        ("blacklist", "黑名单 (不同步)"),
-    ]
-    pair = models.ForeignKey(DdlSyncPair, on_delete=models.CASCADE, related_name="tables")
-    table_name = models.CharField(max_length=128)
-    sync_type = models.CharField(max_length=16, choices=SYNC_TYPE_CHOICES, default="whitelist")
-    # ... 其他字段跟 R 之前相同
+  # R2 加: 区分白名单 / 黑名单
+  SYNC_TYPE_CHOICES = [
+    ("whitelist", "白名单 (要同步)"),
+    ("blacklist", "黑名单 (不同步)"),
+  ]
+  pair = models.ForeignKey(DdlSyncPair, on_delete=models.CASCADE, related_name="tables")
+  table_name = models.CharField(max_length=128)
+  sync_type = models.CharField(max_length=16, choices=SYNC_TYPE_CHOICES, default="whitelist")
+  # ... 其他字段跟 R 之前相同
 
-    class Meta:
-        # R2 改: 唯一约束加 sync_type (同一对库, 同一表, 不能既在白名单又在黑名单)
-        unique_together = [("pair", "table_name", "sync_type")]
+  class Meta:
+    # R2 改: 唯一约束加 sync_type (同一对库, 同一表, 不能既在白名单又在黑名单)
+    unique_together = [("pair", "table_name", "sync_type")]
 ```
 
 ### 12.5 URL 路由加 2 个端点
@@ -847,12 +847,12 @@ class DdlSyncTable(models.Model):
 ```python
 # sql/extensions/ddl_sync/urls.py
 urlpatterns = [
-    # ... R1 路由
-    # R2 新增: 一键配
-    path("api/pair/<int:pair_id>/compute_diff/", views.api_compute_diff,
-         name="api_compute_diff"),
-    path("api/pair/<int:pair_id>/one_click_setup/", views.api_one_click_setup,
-         name="api_one_click_setup"),
+  # ... R1 路由
+  # R2 新增: 一键配
+  path("api/pair/<int:pair_id>/compute_diff/", views.api_compute_diff,
+     name="api_compute_diff"),
+  path("api/pair/<int:pair_id>/one_click_setup/", views.api_one_click_setup,
+     name="api_one_click_setup"),
 ]
 ```
 
@@ -865,9 +865,9 @@ urlpatterns = [
 
 ```
 库对详情页
-  [🎯 一键配 (按历史库)]  ← 95% 场景 1-click
-  [📥 批量导入]            ← 5% 场景 fallback
-  [+ 添加同步表]           ← 兜底单张加
+ [🎯 一键配 (按历史库)] ← 95% 场景 1-click
+ [📥 批量导入]      ← 5% 场景 fallback
+ [+ 添加同步表]      ← 兜底单张加
 ```
 
 ### 12.7 Phase 1 范围调整
@@ -881,7 +881,7 @@ urlpatterns = [
 - [ ] 业务库 DDL 工单详情"本表已配置同步" 提示
 - [ ] 134 dev 演练: 配 accesscard 库对 + **R2 一键配 1-click 接受** + 1 条真实 DDL 联动
 
-### 12.8 实战示例 (R 拍板时 业务库数据)
+### 12.8 实战示例 ( 业务库数据)
 
 ```bash
 # 110 prod 真实查询 (DBA 截图)
@@ -901,22 +901,22 @@ select count(*) from information_schema.tables where table_schema like 'hly%'
 # - 总耗时 15-25 min
 ```
 
-### 12.9 跟 v0.5.0-r1 关系
+### 12.9 跟 R1 关系
 
-v0.5.0-r1 修订 (commit 34e2613) **保留有效**:
+R1 修订 (commit 34e2613) **保留有效**:
 - §3 批量导入机制 (R1 5% 场景 fallback)
 - §4 增量同步机制 (Phase 2 业务库新表自动检测)
 - §5 §6 §7 §8 §9 §10 §11 (跟 R1 一致)
 
-v0.5.0-r2 是 **R1 进一步优化** (核心机制加一键配, 减少 2-4 倍 DBA 工作量).
+R2 是 **R1 进一步优化** (核心机制加一键配, 减少 2-4 倍 DBA 工作量).
 
 ---
 
-## 13. v0.5.0-r3 重大决策变更: 走当前配置的流程 (R 拍板时)
+## 13. R3 重大决策变更: 走当前配置的流程
 
 ### 13.1 决策
 
-R 拍板时 DBA 阿达叔叔拍板:
+ DBA 阿达叔叔拍板:
 
 > **生成历史库工单, 按照当前 Archery 配置的流程走就行, DBA 调整成什么流程, 就怎么走. 和正常工单一样.**
 
@@ -928,7 +928,7 @@ R 拍板时 DBA 阿达叔叔拍板:
 
 ### 13.2 跟 R 之前拍板对比
 
-| 维度 | R 之前拍板 (作废) | R 拍板 (采用) |
+| 维度 | R 之前拍板 (作废) | R3 拍板 (采用) |
 |------|----------------|----------------|
 | 审批人 | 同业务库 DDL 审批人 (3 级) | **按当前 Archery 配置 (DBA 配的) 走** |
 | 业务库 DDL 没审过怎么办 | R 之前没明确 | R 明确: 不联动 (业务库 DDL 必审过) |
@@ -953,13 +953,13 @@ R 拍板时 DBA 阿达叔叔拍板:
 
 ```
 工单类型: SQL 上线申请
-组: prod core for 历史库       ← 跟现在一致
-变更审批流程: DBA              ← DBA 自己在 Archery 后台配, 想改就改
+组: prod core for 历史库    ← 跟现在一致
+变更审批流程: DBA       ← DBA 自己在 Archery 后台配, 想改就改
 ```
 
 `workflow_audit_setting.audit_setting_id=3` (group_id=5, audit_auth_groups='6,4,3,15,16') — 2024-01-16 创建, 当前 110 prod 实际细分为 'DBA审批' (id=3) / 'DBA执行' (id=16) / 'DBA组长' (id=14) / '副总' (id=15). 镜像工单自动走这个配置.
 
-### 13.6 跟 v0.5.0-r1/r2 关系
+### 13.6 跟 R1/r2 关系
 
 - **R1 修订** (§3-§11): 库对配 + 批量导入 + 增量同步 + 数据模型 + URL 路由, 都跟"自动生成的工单走哪个流程" 无关, 保留
 - **R2 一键配** (§12): 库对配白/黑名单, 跟"自动生成的工单走哪个流程" 无关, 保留
@@ -971,9 +971,9 @@ R3 是**对 R1+R2 的补充**, 不冲突, 改的是 R 之前拍板时遗留的"�
 
 ## 关联 commit / changelog
 
-- **R 拍板时** commit `f4078c6`: R 之前旧设计稿 + 实战功能图说 HTML 防丢
-- **R 拍板时** commit `34e2613`: 写 v0.5.0-r1 修订设计稿 + 新功能图说 HTML
-- **R 拍板时** (本次) v0.5.0-r2 加 §12 一键配机制, 业务库 1589 / 历史库 1289 实战数据支撑
+- **** commit `f4078c6`: R 之前旧设计稿 + 实战功能图说 HTML 防丢
+- **** commit `34e2613`: 写 R1 修订设计稿 + 新功能图说 HTML
+- **** (本次) R2 加 §12 一键配机制, 业务库 1589 / 历史库 1289 实战数据支撑
 - R 之前原版: docs/designs/R 之前_ddl-sync-pair-design.md (保留作为对照)
 - R1: docs/designs/2026-08-28_ddl-sync-pair-design-v050-r1.md
 - R1 功能图说: docs/designs/R 修订_ddl-sync-pair-feature-card.html (待加一键配 mockup)
