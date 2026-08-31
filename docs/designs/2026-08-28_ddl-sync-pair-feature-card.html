@@ -490,7 +490,7 @@
           <tr><td>✅ 优点 2</td><td><b>0 漏同步</b> — 业务库 DDL 必审过 (current_status=1) 才触发, 系统强制</td></tr>
           <tr><td>✅ 优点 3</td><td><b>下游大数据 0 延迟</b> — 业务方无感知 DDL 同步过程</td></tr>
           <tr><td>✅ 优点 4</td><td><b>DBA 配表 1-click</b> — 一键配机制 (R2 实战数据 业务库 1589 / 历史库 1289, 6 min 配完)</td></tr>
-          <tr><td>✅ 优点 5</td><td><b>DML 同步永久稳定</b> — DDL 0 漏 → 科大国创不再因 DDL 漏挂</td></tr>
+          <tr><td>✅ 优点 5</td><td><b>DML 同步永久稳定</b> — DDL 0 漏 → 同步组件不再因 DDL 漏挂</td></tr>
           <tr><td>✅ 优点 6</td><td><b>历史库工单跟正常工单一样</b> — 0 额外代码, DBA 改"历史库组" 流程就生效 (R3)</td></tr>
           <tr><td>⚠️ 限制</td><td>v0.5.0 Phase 1 范围: 库对管理 + 一键配 + 触发镜像工单。schema 差集工具 + 增量同步走 Phase 2/3</td></tr>
         </tbody>
@@ -498,20 +498,13 @@
     </div>
 
     <div class="card" style="margin-top:14px;border-left:3px solid var(--primary)">
-      <h3>④ 新功能 v0.5.0 DDL 跨库同步 · 解决什么痛点, 达成什么目标</h3>
+      <h3>④ 新功能 v0.5.0 DDL 跨库同步 · 解决什么痛点</h3>
       <p><b>新功能一句话</b>: 业务库 DDL 审过 → Archery <b>自动</b>在历史库生成镜像 DDL 工单 → 走当前配置的流程 (跟正常历史库工单一样, R3 拍板)</p>
-      <p style="margin-top:8px"><b>解决的痛点 (对应 ② 5 个)</b>:</p>
-      <p>· 痛点 1 漏同步 → 业务库 DDL 审过自动触发历史库镜像工单 · <b>0 漏同步</b></p>
+      <p style="margin-top:8px"><b>解决的痛点 (对应 ② 4 个, 痛点 1+5 合并表达)</b>:</p>
+      <p>· 痛点 1+5 漏同步 → 同步组件挂 → 业务库 DDL 审过自动触发历史库镜像工单 · <b>0 漏同步</b> + 同步组件不再因 DDL 漏同步挂</p>
       <p>· 痛点 2 没校验 → 业务库 DDL 必审过 (<code>current_status=1 PASSED</code>) 才触发 · 实时校验</p>
       <p>· 痛点 3 不及时 → <b>T+0 实时触发</b>, 不再下班前集中处理</p>
       <p>· 痛点 4 跨多库配错 → DBA 配库对时 <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code> 跨多库, 一次配多业务库多历史库</p>
-      <p>· 痛点 5 DML 同步挂 → <b>DDL 0 漏同步 → DML 同步永久稳定</b> (科大国创不再因 DDL 漏同步挂)</p>
-      <p style="margin-top:8px"><b>达成的 5 个目标</b>:</p>
-      <p>1 · <b>DDL 0 漏同步</b> — 不再依赖 DBA 人工记忆</p>
-      <p>2 · <b>下游大数据 0 延迟</b> — DDL T+0 同步, 业务方无感知</p>
-      <p>3 · <b>DBA 配表 1-click 完成</b> — 一键配机制 (业务库 1589 / 历史库 1289 实战数据 6 min 配完, R2)</p>
-      <p>4 · <b>DML 同步永久稳定</b> — 历史库 schema 跟业务库永远 1:1 同步</p>
-      <p>5 · <b>历史库工单跟正常工单一样</b> — 0 额外代码, DBA 改"历史库组" 流程就生效 (R3)</p>
     </div>
   </section>
 
