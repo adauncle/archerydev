@@ -1099,74 +1099,10 @@
   </div>
  </section>
 
- <!-- ===== 08 实施阶段 ===== -->
+ <!-- ===== 08 R3 重大决策变更 ===== -->
  <section>
   <div class="section-head">
    <span class="section-num">08</span>
-   <h2 class="section-title">实施阶段 — Phase 1 含一键配 (R2)</h2>
-  </div>
-  <div class="section-sub">Phase 1 含 <b>R2 一键配</b> (核心) + <b>R1 批量导入</b> (fallback)，2-3 天出活。</div>
-
-  <ol class="phase-list">
-   <li class="phase-item">
-    <h4 class="phase-h">Phase 1 · 短期 C <span class="tag new">推荐先做 · 2-3 天</span></h4>
-    <p class="phase-p"><b>核心: 库对管理 + 批量导入 + 模态框</b></p>
-    <p class="phase-p">· 3 张表 migration (sync_mode 默认 blacklist) · 库对管理列表 + 库对详情 · <b>批量导入机制 (从历史库扫表 + 模态框 + 过滤规则 + 批量入库)</b></p>
-    <p class="phase-p">· 业务库 DDL 工单详情"本表已配置同步" 提示 · 134 dev 演练: accesscard 库对 + 批量导入 1100 张表 + 1 条真实 DDL 联动</p>
-   </li>
-   <li class="phase-item">
-    <h4 class="phase-h">Phase 2 · 中期 B <span class="tag">1-2 周</span></h4>
-    <p class="phase-p">· <b>增量同步机制</b>（业务库新表自动入"待确认"列表）· 1-click 加白/黑名单工单详情页操作</p>
-    <p class="phase-p">· 历史库 DDL 工单列表 · 110 prod 推 R1 实战 (按 5 步必做)</p>
-   </li>
-   <li class="phase-item warm">
-    <h4 class="phase-h">Phase 3 · 长期 A <span class="tag warm">2-3 周</span></h4>
-    <p class="phase-p">· <b>过滤规则持久化 (filter_rule JSONField)</b> · <b>库对巡检 (C 方案兜底) 页面 + schema 差集工具</b></p>
-    <p class="phase-p">· 定时巡检 (每天凌晨) + 不一致推钉钉 · 业务 RD + 业务 leader 视角 · transform_rule 字段级调整 (skip_columns / rename_columns)</p>
-   </li>
-  </ol>
- </section>
-
- <!-- ===== 09 跟 gh-ost (实战) 教训对照 ===== -->
- <section>
-  <div class="section-head">
-   <span class="section-num">09</span>
-   <h2 class="section-title">跟 gh-ost 实战教训对照</h2>
-  </div>
-  <div class="section-sub">gh-ost 实战踩了 4 个坑, R 修订时一一对照避免。</div>
-
-  <table class="compare-table">
-   <thead>
-    <tr>
-     <th style="width: 36%;">实战坑</th>
-     <th>R3 修订怎么避免</th>
-    </tr>
-   </thead>
-   <tbody>
-    <tr>
-     <td class="col-old"><b>14:18 SQL syntax 1064</b><br>业务库 8.0 解析 SQL 保留原始格式, gh-ost 报 1064</td>
-     <td class="col-new">历史库 5.7 / 8.0 都要演练, 库对详情 "试跑 SQL" 按钮 (Phase 3) 提前验证</td>
-    </tr>
-    <tr>
-     <td class="col-old"><b>14:11 insufficient privileges</b><br>业务库 instance 27 archery user 权限不够</td>
-     <td class="col-new">库对配置时 <b>预检</b> 历史库 + 业务库 archery user 权限, 配错立刻提示</td>
-    </tr>
-    <tr>
-     <td class="col-old"><b>13:50 启动按钮缺失</b><br>业务 RD group.name = "DBA审批" 不匹配 _is_admin_or_dba 白名单</td>
-     <td class="col-new">库对管理 4 perm 4 判定, 跟 gh-ost 任务管理 list 同一套路 (8/12 fix 复用)</td>
-    </tr>
-    <tr>
-     <td class="col-old"><b>15:15 poller zombie</b><br>gh-ost 子进程死变 zombie, poller 死循环 30 min</td>
-     <td class="col-new">库对 sync_trigger.py 也用 <code>os.kill(pid, 0)</code> + <code>/proc/&lt;pid&gt;/status</code> State 字段 (复用 实战 fix)</td>
-    </tr>
-   </tbody>
-  </table>
- </section>
-
- <!-- ===== 10 R3 重大决策变更 ===== -->
- <section>
-  <div class="section-head">
-   <span class="section-num">10</span>
    <h2 class="section-title">🔄 R3 重大决策变更 — 走当前配置的流程</h2>
   </div>
   <div class="section-sub">
@@ -1244,10 +1180,10 @@
   </div>
  </section>
 
- <!-- ===== 11 当前状态 ===== -->
+ <!-- ===== 09 当前状态 ===== -->
  <section>
   <div class="section-head">
-   <span class="section-num">11</span>
+   <span class="section-num">09</span>
    <h2 class="section-title">当前状态 & 下一步</h2>
   </div>
   <div class="section-sub">R3 决策落地 (R1 库对配 + R2 一键配 + R3 走当前配置流程), 实战数据 1589/1289/300/1100 已对齐, <b>未开工</b>。等用户拍板 Phase 1 启动。</div>
