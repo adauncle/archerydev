@@ -12,6 +12,18 @@ PyMySQL 是两者都装了的库，所以选它。
     当前 SECRET_KEY 解不出来 → ``instance.get_username_password()`` 返回密文，
     MySQL 报 1045。开发者设置 ``CUSTOM_GH_OST_PRECHECK_*`` 后会优先用这套凭据直连，
     跳过 instance 解密（仅 dev/演练用，prod 不应启用）。
+
+## CUSTOM-MODIFIED: 探测 MySQL 真实 listen 端口 (8/31 @ mavis)
+8/31 17:53 业务 RD 冉升成 110 prod 提 gh-ost 工单 #7 (instance 5 prod core for etc 变更
+172.20.2.9:6446 cluster1), 报 "unexpected database port reported: 3306" 死掉。
+根因: instance 配置 host:port 跟 MySQL 实际 listen 端口不一致 (6446 是 SSH tunnel /
+端口转发, MySQL 真 listen 3306). gh-ost 1.1.10 严格检查 @@port == connection port,
+不一致 FATAL. 134 dev instance 全是 3306 端口演练没暴露, 110 prod 6 个 6446 instance
+中 3 个 (5/26/31 cluster1/bg-replica1/logisticsdbm) 配错.
+
+修法: gh-ost 启动前用 instance 配置的 host:port 查 @@port, 不一致就用真实端口
+启动 gh-ost (host 保留 archery 配置的, port 改). archery instance 配置不动
+(172.20.2.9:6446 保留 = cluster1 写入节点约定值).
 """
 
 import logging
@@ -34,7 +46,14 @@ def _get_creds(instance) -> Tuple[str, str, int]:
 
     优先级：
         1. ``CUSTOM_GH_OST_PRECHECK_HOST`` 显式设置 → 走 .env 兜底
-        2. ``instance.get_username_password()``
+        2. ``instance.get_username_password()`` + 探测真实 MySQL 端口
+
+    ## CUSTOM-MODIFIED: 探测真实端口 (8/31)
+    archery instance 配的 port 不一定是 MySQL 真实 listen 端口 (e.g. SSH tunnel/
+    端口转发), gh-ost 1.1.10 严格检查 @@port == connection port, 不一致 FATAL.
+    修法: 用 instance 配置的 host:port 短连接查 @@port, 不一致就用真实端口
+    启动 gh-ost (host 保留 archery 配置的, port 改). 探测失败时 fallback 用
+    instance 配置的 port (不破坏现有功能).
     """
     fallback_host = getattr(settings, "CUSTOM_GH_OST_PRECHECK_HOST", "")
     if fallback_host:
@@ -47,7 +66,53 @@ def _get_creds(instance) -> Tuple[str, str, int]:
         )
         return user, password, (fallback_host, port)
     user, password = instance.get_username_password()
-    return user, password, (instance.host, instance.port)
+    host, port = instance.host, instance.port
+
+    # CUSTOM-MODIFIED: 探测 MySQL 真实 listen 端口, 避免 gh-ost port check 报错
+    actual_port = _detect_actual_mysql_port(host, port, user, password)
+    if actual_port is not None and actual_port != port:
+        logger.info(
+            "instance %s (host=%s) 配置 port=%d 但 MySQL 实际 listen %d, "
+            "改用真实端口启动 gh-ost (host 保留)",
+            instance.instance_name, host, port, actual_port,
+        )
+        port = actual_port
+    elif actual_port is None:
+        logger.warning(
+            "instance %s (host=%s:%d) 探测 MySQL 真实端口失败, "
+            "fallback 用 instance 配置 port=%d",
+            instance.instance_name, host, port, port,
+        )
+
+    return user, password, (host, port)
+
+
+def _detect_actual_mysql_port(host: str, port: int, user: str, password: str) -> Optional[int]:
+    """探测 MySQL 真实 listen 端口（短连接 + SELECT @@port）。
+
+    Returns:
+        真实端口 (int) / 探测失败返回 None (fallback 用 instance 配置 port).
+    """
+    try:
+        conn = pymysql.connect(
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            connect_timeout=3,
+            autocommit=True,
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT @@port")
+                row = cur.fetchone()
+            if row:
+                return int(row[0])
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("探测 MySQL 真实端口失败 %s:%d: %s", host, port, exc)
+    return None
 
 
 def _connect_instance(instance, database: Optional[str] = None):
