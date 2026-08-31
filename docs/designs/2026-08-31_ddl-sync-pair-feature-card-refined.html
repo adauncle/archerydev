@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DDL 跨库同步 · 业务库 ↔ 历史库 · 功能图说</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+ :root {
+  --bg: #f7f5f0;
+  --card: #ffffff;
+  --border: #e9e3d6;
+  --line-soft: #efe9dc;
+  --ink: #14171e;
+  --ink-mid: #3a4256;
+  --ink-soft: #7c7a72;
+  --primary: #2f6f5e;
+  --primary-soft: rgba(47, 111, 94, 0.08);
+  --primary-strong: #1d4a3d;
+  --accent-warm: #c97b3f;
+  --success: #10b981;
+  --warn: #f59e0b;
+  --danger: #f43f5e;
+  --info: #3b82f6;
+  --neutral: #6366f1;
+ }
+
+ * { box-sizing: border-box; }
+ body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 14.5px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+ }
+ body::before {
+  content: "";
+  position: fixed;
+  top: -20%; right: -10%;
+  width: 60%; height: 60%;
+  background: radial-gradient(circle, rgba(47, 111, 94, 0.04), transparent 60%);
+  z-index: -1;
+ }
+ body::after {
+  content: "";
+  position: fixed;
+  bottom: -20%; left: -10%;
+  width: 50%; height: 50%;
+  background: radial-gradient(circle, rgba(201, 123, 63, 0.04), transparent 60%);
+  z-index: -1;
+ }
+
+ .container { max-width: 1100px; margin: 0 auto; padding: 56px 28px 80px; }
+
+ /* Hero */
+ .hero { margin-bottom: 56px; }
+ .hero-tag-row { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+ .hero-tag {
+  display: inline-block;
+  padding: 4px 12px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border-radius: 20px;
+ }
+ .hero-tag.warn { background: rgba(201, 123, 63, 0.12); color: var(--accent-warm); }
+ .hero-tag.new { background: rgba(16, 185, 129, 0.12); color: var(--success); }
+ .hero h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 42px;
+  font-weight: 400;
+  line-height: 1.15;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+ }
+ .hero h1 em { font-style: normal; color: var(--primary); }
+ .hero-sub { font-size: 16px; color: var(--ink-mid); max-width: 760px; margin: 0 0 20px; }
+ .hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  border-top: 1px dashed var(--border);
+  padding-top: 18px;
+  margin-top: 24px;
+ }
+ .hero-meta span { display: inline-flex; align-items: center; gap: 6px; }
+ .hero-meta svg { width: 14px; height: 14px; }
+
+ /* Section */
+ section { margin-bottom: 64px; }
+ .section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 20px; }
+ .section-num {
+  font-family: 'DM Serif Display', serif;
+  font-size: 22px;
+  color: var(--primary);
+  line-height: 1;
+ }
+ .section-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 26px;
+  font-weight: 400;
+  margin: 0;
+  letter-spacing: -0.005em;
+ }
+ .section-sub { color: var(--ink-soft); font-size: 13px; margin: 4px 0 0 36px; }
+ .section-sub b { color: var(--primary); }
+ .section-sub b.warn { color: var(--accent-warm); }
+
+ /* Cards */
+ .card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 24px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.025);
+ }
+ .card + .card { margin-top: 14px; }
+ .card h3 { font-size: 16px; font-weight: 600; margin: 0 0 8px; color: var(--ink); }
+ .card p { margin: 0 0 8px; color: var(--ink-mid); }
+ .card p:last-child { margin-bottom: 0; }
+
+ .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+ @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+
+ /* 修订对比表 */
+ .compare-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+ .compare-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid var(--border);
+  background: #fafaf7;
+ }
+ .compare-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-mid);
+  vertical-align: top;
+ }
+ .compare-table tr:last-child td { border-bottom: none; }
+ .compare-table .col-old { color: var(--ink-soft); text-decoration: line-through; }
+ .compare-table .col-new { color: var(--success); font-weight: 500; }
+ .compare-table .col-old b, .compare-table .col-new b { font-weight: 600; }
+
+ /* Mock UI */
+ .mock-ui {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px -2px rgba(0,0,0,0.06);
+ }
+ .mock-titlebar {
+  display: flex; align-items: center; gap: 6px;
+  background: #efebe2;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+ }
+ .mock-dot { width: 10px; height: 10px; border-radius: 50%; background: #d4cfc1; }
+ .mock-url {
+  margin-left: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+ }
+ .mock-body { padding: 18px 20px; }
+ .mock-h {
+  font-size: 15px; font-weight: 600;
+  margin: 0 0 12px;
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+ }
+ .mock-h .left { display: flex; align-items: center; gap: 10px; }
+ .mock-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+ }
+ .mock-table th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid var(--border);
+ }
+ .mock-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-mid);
+ }
+ .mock-table tr:last-child td { border-bottom: none; }
+ .mock-table tr:hover { background: #fafaf7; }
+ .mock-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+ }
+ .badge-success { background: rgba(16, 185, 129, 0.12); color: var(--success); }
+ .badge-warn { background: rgba(245, 158, 11, 0.12); color: var(--warn); }
+ .badge-danger { background: rgba(244, 63, 94, 0.12); color: var(--danger); }
+ .badge-info { background: rgba(59, 130, 246, 0.12); color: var(--info); }
+ .badge-neutral { background: rgba(99, 102, 241, 0.12); color: var(--neutral); }
+ .badge-gray { background: rgba(124, 122, 114, 0.12); color: var(--ink-soft); }
+ .badge-primary { background: var(--primary-soft); color: var(--primary); }
+
+ .mock-btn {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 1px solid rgba(47, 111, 94, 0.2);
+  cursor: pointer;
+ }
+ .mock-btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
+ .mock-btn.danger { background: rgba(244, 63, 94, 0.1); color: var(--danger); border-color: rgba(244, 63, 94, 0.2); }
+ .mock-btn.outline { background: white; color: var(--primary); }
+
+ .mock-action { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 5px; background: #f0ede5; color: var(--ink-soft); font-size: 11px; }
+ .mock-action.danger { background: rgba(244, 63, 94, 0.1); color: var(--danger); }
+ .mock-action.success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+ .mock-action.info { background: rgba(59, 130, 246, 0.1); color: var(--info); }
+
+ .mock-block {
+  background: #fafaf7;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--ink-mid);
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 10px;
+ }
+ .mock-block .label { color: var(--ink-soft); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; font-family: 'Outfit', sans-serif; }
+
+ .mock-tip {
+  background: rgba(47, 111, 94, 0.05);
+  border: 1px solid rgba(47, 111, 94, 0.18);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--ink-mid);
+  margin-top: 12px;
+ }
+ .mock-tip b { color: var(--primary); }
+ .mock-tip.warn { background: rgba(201, 123, 63, 0.05); border-color: rgba(201, 123, 63, 0.25); }
+ .mock-tip.warn b { color: var(--accent-warm); }
+
+ .modal-preview {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 6px 24px -4px rgba(0,0,0,0.08);
+ }
+ .modal-header-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: #fafaf7;
+ }
+ .modal-header-row h4 { font-size: 15px; margin: 0; font-weight: 600; }
+ .modal-close { color: var(--ink-soft); font-size: 18px; line-height: 1; }
+ .modal-body { padding: 18px 20px; }
+ .modal-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: #fafaf7;
+  display: flex; justify-content: flex-end; gap: 10px;
+ }
+
+ /* 工作量对比 */
+ .work-compare {
+  display: grid;
+  grid-template-columns: 1fr 60px 1fr;
+  gap: 20px;
+  align-items: stretch;
+ }
+ @media (max-width: 800px) { .work-compare { grid-template-columns: 1fr; } .work-arrow { display: none; } }
+ .work-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+ }
+ .work-card.bad { border-left: 3px solid var(--danger); }
+ .work-card.good { border-left: 3px solid var(--success); }
+ .work-card h3 { font-size: 14px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 14px; }
+ .work-card.bad h3 { color: var(--danger); }
+ .work-card.good h3 { color: var(--success); }
+ .work-arrow { display: flex; align-items: center; justify-content: center; font-size: 32px; color: var(--primary); }
+ .work-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--line-soft); font-size: 13px; }
+ .work-row:last-child { border-bottom: none; }
+ .work-row .label { color: var(--ink-mid); }
+ .work-row .val { font-weight: 600; font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+ .work-row .val.bad { color: var(--danger); }
+ .work-row .val.good { color: var(--success); }
+ .work-row .val .big { font-size: 18px; }
+
+ /* SVG */
+ .flow-wrap {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 32px 24px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.025);
+ }
+
+ /* Phase timeline */
+ .phase-list { list-style: none; padding: 0; margin: 0; position: relative; }
+ .phase-list::before {
+  content: "";
+  position: absolute;
+  left: 9px; top: 8px; bottom: 8px;
+  width: 2px;
+  background: linear-gradient(180deg, var(--primary), var(--accent-warm));
+  opacity: 0.4;
+  border-radius: 1px;
+ }
+ .phase-item { position: relative; padding: 0 0 28px 36px; }
+ .phase-item:last-child { padding-bottom: 0; }
+ .phase-item::before {
+  content: "";
+  position: absolute;
+  left: 2px; top: 6px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: white;
+  border: 3px solid var(--primary);
+  box-shadow: 0 0 0 4px var(--bg);
+ }
+ .phase-item.warm::before { border-color: var(--accent-warm); }
+ .phase-h { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+ .phase-h .tag {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 10.5px;
+  padding: 2px 8px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 10px;
+  font-weight: 500;
+ }
+ .phase-h .tag.warm { background: rgba(201, 123, 63, 0.12); color: var(--accent-warm); }
+ .phase-h .tag.new { background: rgba(16, 185, 129, 0.12); color: var(--success); }
+ .phase-p { color: var(--ink-mid); font-size: 13.5px; margin: 0; }
+ .phase-p + .phase-p { margin-top: 4px; }
+
+ .footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border); font-size: 12px; color: var(--ink-soft); text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+
+ <!-- ===== Hero ===== -->
+ <header class="hero">
+  <div class="hero-tag-row">
+   <span class="hero-tag">ARCHERY </span>
+   <span class="hero-tag new">R1 R2 R3 完整版</span>
+   <span class="hero-tag warn">解决"大表配 1589 次"问题</span>
+   <span class="hero-tag new">R2 一键配 6 min</span>
+   <span class="hero-tag new">R3 走当前配置流程</span>
+  </div>
+  <h1>DDL 跨库同步<br><em>业务库 ↔ 历史库</em> · </h1>
+  <p class="hero-sub">
+   R1 初版是"DBA 手动一张张点配置同步表" — 业务库 1589 张 = DBA 点 1589 次，<b>不现实</b>。<br>
+   R2 实战数据 业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 (DBA 查 <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code>)，<b>R1 批量导入 5-10 min 仍嫌慢</b>。<br>
+   <b>R2 一键配</b>：<b>"历史库有多少张表就拿多少张"</b> — 白名单 = 历史库 1289 张, 黑名单 = 业务库独有 300 张, 1-click 配完 <b>6 min</b>。<br>
+   <b>R3 走当前配置流程</b>：自动生成的历史库镜像工单, 按当前 Archery 配置走, 跟正常历史库工单一样 — <b>0 额外代码, DBA 改配置就生效</b>。
+  </p>
+  <div class="hero-meta">
+   <span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    R1 · Archery 二次开发设计稿
+   </span>
+   <span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    R 之前 → R1 → R2 → R3 完整版
+   </span>
+   <span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    R1 R2 R3 完整版
+   </span>
+   <span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    3 个核心改动 (批量导入 + 黑名单 + 增量)
+   </span>
+  </div>
+ </header>
+
+ <!-- ===== 00 背景 (4 部分) ===== -->
+ <section>
+  <div class="section-head">
+   <span class="section-num">00</span>
+   <h2 class="section-title">背景 · 为什么开发这个功能</h2>
+  </div>
+  <div class="section-sub"><b>当前两个流程 → 痛点 → 影响 → 新功能目标</b>, 4 部分讲清楚必要性。</div>
+
+  <div class="grid-2">
+   <div class="card">
+    <h3>① 当前数据同步到历史库 · 两个流程</h3>
+    <p><b>DML 数据同步</b>: 科大国创数据同步组件 · 按时间戳增量 · <b>T+1 增量同步</b> · 业务 RD 不参与</p>
+    <p><b>DDL Schema 同步</b>: <b style="color:var(--danger)">无工具, 纯人工</b> · DBA 凭经验判断 · 人工到历史库跑 SQL</p>
+    <p style="color:var(--ink-soft);font-size:12px;margin-top:8px">→ DML 走自动化组件没问题, <b>DDL 走人工是当前最大风险</b>。本设计稿解决的就是 DDL 人工同步的问题。</p>
+   </div>
+   <div class="card">
+    <h3>② 痛点 · DDL 人工同步 5 个具体问题</h3>
+    <p>1 · <b>DBA 漏同步</b> (每天 DDL 工单 5-20 条, 凭记忆判断) — <b style="color:var(--danger)">高</b></p>
+    <p>2 · <b>没有自动校验</b> (业务库 DDL 跑通 ≠ 历史库 DDL 跑了) — <b style="color:var(--danger)">高</b></p>
+    <p>3 · 同步不及时 (DBA 下班前集中处理, 延迟 4-8h) — 中</p>
+    <p>4 · 跨业务库多库容易配错 (hly_accesscard / hly_activity / hly_doc_model) — 中</p>
+    <p>5 · <b>DML 同步依赖 DDL 先同步</b> (历史库没 DDL → 科大国创整条挂) — <b style="color:var(--danger)">高</b></p>
+   </div>
+  </div>
+
+  <!-- ===== 流程图 1: 当前 (R 之前) DBA 视角 ===== -->
+  <div class="card" style="margin-top:14px;border-left:3px solid var(--danger)">
+   <h3>当前流程图 (R 之前 · DBA 视角) + 优缺点</h3>
+   <div style="background:#fafaf7;border:1px solid var(--line-soft);border-radius:8px;padding:14px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-mid);line-height:1.7;white-space:pre;overflow-x:auto">
+业务 RD ──①提 DDL 工单──▶ DBA ──②凭经验判断──▶ DBA ──③手工到历史库跑 SQL──▶ 历史库
+   </div>
+   <table class="compare-table" style="font-size:12px">
+    <thead><tr><th>维度</th><th>当前 (R 之前)</th></tr></thead>
+    <tbody>
+     <tr><td>❌ 缺点 1</td><td><b>DDL 走 DBA 人工, 凭经验判断, 容易漏</b> (每天 5-20 条)</td></tr>
+     <tr><td>❌ 缺点 2</td><td>没有"两边 schema 一致" 强制校验, 漏了没人发现</td></tr>
+     <tr><td>❌ 缺点 3</td><td>DBA 下班前集中处理, <b>同步延迟 4-8h</b></td></tr>
+     <tr><td>❌ 缺点 4</td><td>跨多库场景容易配错目标库 (hly_accesscard / hly_activity / hly_doc_model)</td></tr>
+     <tr><td>❌ 缺点 5</td><td>DML 同步依赖 DDL 先同步, <b>DDL 漏 → DML 整条挂</b></td></tr>
+    </tbody>
+   </table>
+  </div>
+
+  <div class="card" style="margin-top:14px;border-left:3px solid var(--danger)">
+   <h3>③ 影响 · DDL 漏同步的真实业务影响链路</h3>
+   <p><b>T+0 当天</b>: 业务库 DDL 跑通 · 业务 RD 不知道历史库没同步 (DML 在偷偷失败重试)</p>
+   <p><b>T+1 第二天</b>: 科大国创 DML 同步任务<b style="color:var(--danger)">整体失败</b> (e.g. 业务库加字段, 历史库没, INSERT 报错, 整条挂)</p>
+   <p><b>T+1 ~ T+3</b>: 下游大数据 (数据仓库 / 报表 / 风控 / 决策支持) 读历史库, "昨天数据没进来" / "缺字段" / "JOIN 失败"</p>
+   <p><b>T+3+</b>: 业务方反馈"报表数据延迟" / "数据缺漏" / "对账不平", 反查才发现是历史库 DDL 没同步</p>
+   <p><b>DBA 介入</b>: 手动补执行历史库 DDL + 手动重跑 DML 同步任务, 修复 1-4h · <b>下游数据延迟 1-3 天</b></p>
+  </div>
+
+  <!-- ===== 流程图 2: 优化后 (R 之后 R1) 自动化视角 ===== -->
+  <div class="card" style="margin-top:14px;border-left:3px solid var(--primary)">
+   <h3>优化后流程图 (R 之后 R1 · 自动化视角) + 优缺点</h3>
+   <div style="background:#fafaf7;border:1px solid var(--line-soft);border-radius:8px;padding:14px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-mid);line-height:1.7;white-space:pre;overflow-x:auto">
+  业务 RD            Archery             业务库            Archery 自动            历史库
+   │               │               │                │                │
+   │ ① 提 DDL 工单        │               │                │                │
+   ├─────────────────────────────▶│               │                │                │
+   │               │ ② 审批            │                │                │
+   ├──────────────────────────────┼─────────────────────────────▶│                │                │
+   │               │               │ ③ 业务库执行 ALTER       │                │
+   │               │               ├────────────────────────────────▶│                │
+   │               │               │                │ ④ 审过 (current_status=1)   │
+   │               │               │                │ ⑤ 自动生成历史库镜像工单    │
+   │               │               │                │ ⑥ 走当前 Archery 配置流程   │
+   │               │               │                ├────────────────────────────────▶│
+   │               │               │                │                │ ⑧ 历史库执行 ALTER
+   │               │               │                │                │
+   │  ✅ 优势: 步骤 ④⑤⑥⑧ 全    │               │                │                │
+   │   Archery 自动化, 0 漏同步 │               │                │                │
+   </div>
+   <table class="compare-table" style="font-size:12px">
+    <thead><tr><th>维度</th><th>R1 (R 之后)</th></tr></thead>
+    <tbody>
+     <tr><td>✅ 优点 1</td><td>DDL <b>T+0 实时</b> 同步, 不再等 DBA 下班前集中处理</td></tr>
+     <tr><td>✅ 优点 2</td><td><b>0 漏同步</b> — 业务库 DDL 必审过 (current_status=1) 才触发, 系统强制</td></tr>
+     <tr><td>✅ 优点 3</td><td><b>下游大数据 0 延迟</b> — 业务方无感知 DDL 同步过程</td></tr>
+     <tr><td>✅ 优点 4</td><td><b>DBA 配表 1-click</b> — 一键配机制 (R2 实战数据 业务库 1589 / 历史库 1289, 6 min 配完)</td></tr>
+     <tr><td>✅ 优点 5</td><td><b>DML 同步永久稳定</b> — DDL 0 漏 → 同步组件不再因 DDL 漏挂</td></tr>
+     <tr><td>✅ 优点 6</td><td><b>历史库工单跟正常工单一样</b> — 0 额外代码, DBA 改"历史库组" 流程就生效 (R3)</td></tr>
+     <tr><td>⚠️ 限制</td><td>R1 Phase 1 范围: 库对管理 + 一键配 + 触发镜像工单。schema 差集工具 + 增量同步走 Phase 2/3</td></tr>
+    </tbody>
+   </table>
+  </div>
+
+  <div class="card" style="margin-top:14px;border-left:3px solid var(--primary)">
+   <h3>④ 新功能 R1 DDL 跨库同步 · 解决什么痛点</h3>
+   <p><b>新功能一句话</b>: 业务库 DDL 审过 → Archery <b>自动</b>在历史库生成镜像 DDL 工单 → 走当前配置的流程 (跟正常历史库工单一样, R3 拍板)</p>
+   <p style="margin-top:8px"><b>解决的痛点 (对应 ② 4 个, 痛点 1+5 合并表达)</b>:</p>
+   <p>· 痛点 1+5 漏同步 → 同步组件挂 → 业务库 DDL 审过自动触发历史库镜像工单 · <b>0 漏同步</b> + 同步组件不再因 DDL 漏同步挂</p>
+   <p>· 痛点 2 没校验 → 业务库 DDL 必审过 (<code>current_status=1 PASSED</code>) 才触发 · 实时校验</p>
+   <p>· 痛点 3 不及时 → <b>T+0 实时触发</b>, 不再下班前集中处理</p>
+   <p>· 痛点 4 跨多库配错 → DBA 配库对时 <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code> 跨多库, 一次配多业务库多历史库</p>
+  </div>
+ </section>
+
+ <!-- ===== 01 核心改动对比 ===== -->
+ <section>
+  <div class="section-head">
+   <span class="section-num">01</span>
+   <h2 class="section-title">3 个核心改动</h2>
+  </div>
+  <div class="section-sub">从"DBA 手动 1589 次点" 降到"1 次批量 + 50 个排除规则"。</div>
+
+  <table class="compare-table">
+   <thead>
+    <tr>
+     <th>维度</th>
+     <th>R1 原版</th>
+     <th>R3 修订</th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td><b>同步模式默认</b></td>
+     <td class="col-old">whitelist — DBA 显式选要同步的（小表场景）</td>
+     <td class="col-new"><b>blacklist</b> — 业务库 80% 表都同步，DBA 显式排除 20%（大表场景）</td>
+    </tr>
+    <tr>
+     <td><b>批量配表</b></td>
+     <td class="col-old">只能逐张点 "添加同步表" 按钮</td>
+     <td class="col-new"><b>批量导入</b>：从历史库 INFORMATION_SCHEMA 扫表 + 模态框 + 全选/反选/搜索/过滤</td>
+    </tr>
+    <tr>
+     <td><b>增量同步</b></td>
+     <td class="col-old">未考虑（业务库加新表要 DBA 手动加配）</td>
+     <td class="col-new"><b>业务库新增表自动入"待确认"列表</b>，DBA 1-click 加白名单/黑名单</td>
+    </tr>
+    <tr>
+     <td><b>schema 差集工具</b></td>
+     <td class="col-old">仅手动巡检（库对详情加 "立即跑巡检" 按钮）</td>
+     <td class="col-new"><b>自动展示列/索引 diff</b>，DBA 一眼看到"漏同步了哪些"</td>
+    </tr>
+    <tr>
+     <td><b>Phase 1 范围</b></td>
+     <td class="col-old">库对管理 + 库对详情 + 联动逻辑</td>
+     <td class="col-new"><b>+ 批量导入 + 模态框 + sync_mode 默认 blacklist</b>（核心）</td>
+    </tr>
+    <tr>
+     <td><b>Phase 2 范围</b></td>
+     <td class="col-old">巡检 + 工单联动</td>
+     <td class="col-new"><b>+ 增量同步机制</b>（业务库新表自动检测）</td>
+    </tr>
+    <tr>
+     <td><b>Phase 3 范围</b></td>
+     <td class="col-old">transform_rule + 定时任务</td>
+     <td class="col-new"><b>+ schema 差集工具 + 钉钉通知</b></td>
+    </tr>
+   </tbody>
+  </table>
+ </section>
+
+ <!-- ===== 02 工作量对比 ===== -->
+ <section>
+  <div class="section-head">
+   <span class="section-num">02</span>
+   <h2 class="section-title">真实场景工作量对比</h2>
+  </div>
+  <div class="section-sub">业务库 <b>1589 张表</b>，其中 ~80% 要同步到历史库。看看 4 个核心操作的工作量。</div>
+
+  <div class="work-compare">
+   <div class="work-card bad">
+    <h3>R1 原版 · DBA 工作量</h3>
+    <div class="work-row">
+     <span class="label">配库对</span>
+     <span class="val">5 min</span>
+    </div>
+    <div class="work-row">
+     <span class="label">配同步表</span>
+     <span class="val bad"><span class="big">2-3 小时</span>（1589 次点）</span>
+    </div>
+    <div class="work-row">
+     <span class="label">业务库加新表</span>
+     <span class="val bad">DBA 漏掉</span>
+    </div>
+    <div class="work-row">
+     <span class="label">漏同步排查</span>
+     <span class="val bad">手动写 SQL 对比</span>
+    </div>
+   </div>
+   <div class="work-arrow">→</div>
+   <div class="work-card good">
+    <h3>R2 一键配</h3>
+    <div class="work-row">
+     <span class="label">配库对</span>
+     <span class="val">5 min</span>
+    </div>
+    <div class="work-row">
+     <span class="label">配白名单 (1289 张)</span>
+     <span class="val good"><span class="big">1 click</span>（自动）</span>
+    </div>
+    <div class="work-row">
+     <span class="label">配黑名单 (300 张)</span>
+     <span class="val good"><span class="big">1 click</span>（自动）</span>
+    </div>
+    <div class="work-row">
+     <span class="label">业务库加新表</span>
+     <span class="val good">自动检测 + 1-click</span>
+    </div>
+    <div class="work-row">
+     <span class="label">漏同步排查</span>
+     <span class="val good">巡检结果自动展示</span>
+    </div>
+   </div>
+  </div>
+
+  <p style="margin-top: 18px; padding: 12px 16px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 10px; font-size: 13px; color: var(--ink-mid);">
+   🎯 <b>结论</b>：DBA 工作量从 <b style="color: var(--danger);">2-3 小时</b> 降到 <b style="color: var(--success);">6 min</b>（1-click 配白 + 1-click 配黑），<b>降低 95%</b>。R1 批量导入 5-10 min + 50 个排除 → R2 1-click 接受即可。
+  </p>
+ </section>
+
+ <!-- ===== 03 批量导入核心流程图 ===== -->
+ <section>
+  <div class="section-head">
+   <span class="section-num">03</span>
+   <h2 class="section-title">批量导入 — R1 核心新增</h2>
+  </div>
+  <div class="section-sub">从历史库 <b>INFORMATION_SCHEMA.TABLES</b> 扫表 → 模态框显示 → 全选/反选/过滤 → 批量入库。</div>
+
+  <div class="flow-wrap">
+   <svg viewBox="0 0 1000 300" style="width:100%; height:auto; font-family: 'Outfit', sans-serif;">
+    <defs>
+     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f6f5e"/>
+     </marker>
+    </defs>
+
+    <!-- Step 1 -->
+    <rect x="20" y="110" width="160" height="80" rx="10" fill="#fff" stroke="#e9e3d6" stroke-width="1.5"/>
+    <text x="100" y="138" text-anchor="middle" font-size="13" font-weight="600" fill="#14171e">DBA 库对详情页</text>
+    <text x="100" y="158" text-anchor="middle" font-size="11" fill="#7c7a72">点 [📥 批量导入]</text>
+    <text x="100" y="174" text-anchor="middle" font-size="11" fill="#7c7a72">弹模态框</text>
+
+    <line x1="180" y1="150" x2="220" y2="150" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- Step 2: 扫历史库 -->
+    <rect x="220" y="80" width="220" height="140" rx="10" fill="rgba(47,111,94,0.05)" stroke="#2f6f5e" stroke-width="1.5"/>
+    <text x="330" y="105" text-anchor="middle" font-size="12" font-weight="600" fill="#2f6f5e">后端扫历史库</text>
+    <text x="330" y="125" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">SELECT TABLE_NAME,</text>
+    <text x="330" y="140" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace"> DATA_LENGTH,</text>
+    <text x="330" y="155" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace"> TABLE_ROWS</text>
+    <text x="330" y="170" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">FROM INFORMATION_SCHEMA</text>
+    <text x="330" y="185" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">.TABLES</text>
+    <text x="330" y="205" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">→ 1289 张表</text>
+
+    <line x1="440" y1="150" x2="480" y2="150" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- Step 3: 过滤规则 -->
+    <rect x="480" y="50" width="240" height="60" rx="8" fill="rgba(245, 158, 11, 0.06)" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="600" y="68" text-anchor="middle" font-size="11.5" font-weight="600" fill="#f59e0b">过滤规则 (客户端生效)</text>
+    <text x="600" y="84" text-anchor="middle" font-size="10" fill="#3a4256">排除前缀/后缀/ENGINE/空表</text>
+    <text x="600" y="98" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">→ 剩余 1100 张</text>
+
+    <line x1="600" y1="110" x2="600" y2="150" stroke="#2f6f5e" stroke-width="1.5"/>
+
+    <!-- Step 4: 模态框勾选 -->
+    <rect x="480" y="150" width="240" height="100" rx="10" fill="#fff" stroke="#2f6f5e" stroke-width="1.5"/>
+    <text x="600" y="172" text-anchor="middle" font-size="12" font-weight="600" fill="#14171e">模态框 + 复选框</text>
+    <text x="600" y="190" text-anchor="middle" font-size="10.5" fill="#3a4256">[全选] [反选] [搜索] 列表</text>
+    <text x="600" y="205" text-anchor="middle" font-size="10.5" fill="#3a4256">DBA 勾选 / 反选 / 搜索表名</text>
+    <text x="600" y="220" text-anchor="middle" font-size="10.5" fill="#3a4256">+ 大小 / 列数 / 排除状态</text>
+    <text x="600" y="235" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">已选 1100 / 1100</text>
+
+    <line x1="720" y1="200" x2="760" y2="200" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- Step 5: 批量入库 -->
+    <rect x="760" y="130" width="220" height="140" rx="10" fill="rgba(47,111,94,0.1)" stroke="#2f6f5e" stroke-width="1.5"/>
+    <text x="870" y="155" text-anchor="middle" font-size="12" font-weight="600" fill="#2f6f5e">DBA 点 [确认导入]</text>
+    <text x="870" y="178" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">DdlSyncTable</text>
+    <text x="870" y="193" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">.objects</text>
+    <text x="870" y="208" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace">.bulk_create(</text>
+    <text x="870" y="223" text-anchor="middle" font-size="10.5" fill="#3a4256" font-family="JetBrains Mono, monospace"> [1100 obj])</text>
+    <text x="870" y="240" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">→ 1100 张入库</text>
+    <text x="870" y="257" text-anchor="middle" font-size="10" fill="#7c7a72">（单 SQL, 性能高 100 倍）</text>
+   </svg>
+  </div>
+ </section>
+
+ <!-- ===== 04 批量导入模态框 mockup ===== -->
+ <section>
+  <div class="section-head">
+   <span class="section-num">04</span>
+   <h2 class="section-title">批量导入模态框 — 核心 UX</h2>
+  </div>
+  <div class="section-sub">库对详情页点 "批量导入" 按钮后的模态框 — DBA 80% 工作量在 5 分钟内完成。</div>
+
+  <div class="modal-preview">
+   <div class="modal-header-row">
+    <h4>📥 批量导入同步表</h4>
+    <span class="modal-close">×</span>
+   </div>
+   <div class="modal-body">
+    <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--ink-mid); margin-bottom: 14px;">
+     从历史库 <code style="background: rgba(59,130,246,0.15); padding: 1px 5px; border-radius: 3px;">hly_* 跨多库</code> 自动扫描, 找到 <b>1289</b> 张表 (跟业务库差 300 张, DBA 实战查 <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code>)
+    </div>
+
+    <div style="font-size: 11.5px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">⚙ 过滤规则 (可叠加)</div>
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px;">
+     <div>
+      <div style="font-size: 11px; color: var(--ink-soft); margin-bottom: 4px;">排除前缀 (逗号分隔)</div>
+      <div style="background: #fafaf7; border: 1px solid var(--line-soft); border-radius: 6px; padding: 6px 10px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-mid);">_log, _bak, _tmp, _test</div>
+     </div>
+     <div>
+      <div style="font-size: 11px; color: var(--ink-soft); margin-bottom: 4px;">排除后缀</div>
+      <div style="background: #fafaf7; border: 1px solid var(--line-soft); border-radius: 6px; padding: 6px 10px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-mid);">_history, _archive, _backup</div>
+     </div>
+     <div>
+      <div style="font-size: 11px; color: var(--ink-soft); margin-bottom: 4px;">排除 ENGINE</div>
+      <div style="background: #fafaf7; border: 1px solid var(--line-soft); border-radius: 6px; padding: 6px 10px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-mid);">MEMORY, BLACKHOLE, MRG_MYISAM</div>
+     </div>
+     <div>
+      <div style="font-size: 11px; color: var(--ink-soft); margin-bottom: 4px;">仅保留 size &gt; 0 的表</div>
+      <div style="background: var(--primary-soft); border: 1px solid rgba(47, 111, 94, 0.2); border-radius: 6px; padding: 6px 10px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--primary);">✓ 启用</div>
+     </div>
+    </div>
+    <div style="background: var(--primary-soft); border: 1px solid rgba(47, 111, 94, 0.2); border-radius: 6px; padding: 6px 10px; font-size: 12px; color: var(--primary); margin-bottom: 14px;">
+     ─ 过滤后剩余 <b>1100 张表</b>, 待选 ─
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+     <div style="display: flex; gap: 8px; align-items: center;">
+      <span class="mock-btn outline" style="cursor: pointer;">全选</span>
+      <span class="mock-btn outline" style="cursor: pointer;">反选</span>
+      <span style="background: #fafaf7; border: 1px solid var(--line-soft); border-radius: 6px; padding: 5px 10px; font-size: 11.5px; color: var(--ink-soft);">🔍 搜索表名</span>
+     </div>
+     <div style="font-size: 12px; color: var(--ink-soft);">
+      已选 <b style="color: var(--primary);">1100</b> / 1100
+     </div>
+    </div>
+
+    <div style="border: 1px solid var(--border); border-radius: 8px; max-height: 280px; overflow-y: auto;">
+     <table class="mock-table">
+      <thead style="position: sticky; top: 0; background: #fafaf7;">
+       <tr>
+        <th style="width: 32px;"><input type="checkbox" checked></th>
+        <th>表名</th>
+        <th>大小</th>
+        <th>列数</th>
+        <th>状态</th>
+       </tr>
+      </thead>
+      <tbody>
+       <tr>
+        <td><input type="checkbox" checked></td>
+        <td><code>accesscard_black_detail</code></td>
+        <td>243 MB</td>
+        <td>35</td>
+        <td><span class="mock-badge badge-success">已选</span></td>
+       </tr>
+       <tr>
+        <td><input type="checkbox" checked></td>
+        <td><code>accesscard_config</code></td>
+        <td>12 KB</td>
+        <td>8</td>
+        <td><span class="mock-badge badge-success">已选</span></td>
+       </tr>
+       <tr style="opacity: 0.5;">
+        <td><input type="checkbox" disabled></td>
+        <td><code>accesscard_log</code></td>
+        <td>1.2 GB</td>
+        <td>12</td>
+        <td><span class="mock-badge badge-gray">排除 (后缀 _log)</span></td>
+       </tr>
+       <tr>
+        <td><input type="checkbox" checked></td>
+        <td><code>accesscard_audit</code></td>
+        <td>8 KB</td>
+        <td>8</td>
+        <td><span class="mock-badge badge-success">已选</span></td>
+       </tr>
+       <tr>
+        <td><input type="checkbox" checked></td>
+        <td><code>accesscard_user</code></td>
+        <td>2.1 MB</td>
+        <td>14</td>
+        <td><span class="mock-badge badge-success">已选</span></td>
+       </tr>
+       <tr style="font-style: italic; color: var(--ink-soft);">
+        <td colspan="5" style="text-align: center; font-size: 11px;">... 还有 193 张表 (滚动加载)</td>
+       </tr>
+      </tbody>
+     </table>
+    </div>
+   </div>
+   <div class="modal-footer">
+    <span class="mock-btn outline" style="cursor: pointer;">取消</span>
+    <span class="mock-btn primary" style="cursor: pointer;">✓ 确认导入 (1100 张)</span>
+   </div>
+  </div>
+ </section>
+
+ <!-- ===== 05 一键配模态框 (R2 核心) ===== -->
+ <section>
+  <div class="section-head">
+   <span class="section-num">05</span>
+   <h2 class="section-title">🎯 一键配 (按历史库) — R2 核心</h2>
+  </div>
+  <div class="section-sub">实战数据 <b>业务库 1589 / 历史库 1289</b>，算差集自动建议白名单 1289 + 黑名单 300，DBA <b>1-click 接受</b> 配完，<b>6 min</b> 完成。</div>
+
+  <div class="modal-preview">
+   <div class="modal-header-row">
+    <h4>🎯 一键配 (按历史库)</h4>
+    <span class="modal-close">×</span>
+   </div>
+   <div class="modal-body">
+    <div style="background: rgba(47, 111, 94, 0.06); border: 1px solid rgba(47, 111, 94, 0.2); border-radius: 8px; padding: 12px 14px; font-size: 13px; color: var(--ink-mid); margin-bottom: 14px;">
+     <b>自动扫描</b>历史库 + 业务库, 计算差集:
+    </div>
+    <table class="mock-table" style="margin-bottom: 14px;">
+     <tbody>
+      <tr>
+       <td style="font-weight: 600; color: var(--ink);">业务库 (hly_* 跨多库)</td>
+       <td><b>1589</b> 张表</td>
+       <td>source_instance</td>
+      </tr>
+      <tr>
+       <td style="font-weight: 600; color: var(--ink);">历史库 (hly_* 跨多库)</td>
+       <td><b>1289</b> 张表</td>
+       <td>target_instance</td>
+      </tr>
+      <tr style="background: rgba(16, 185, 129, 0.04);">
+       <td style="font-weight: 600; color: var(--success);">业务库 ∩ 历史库</td>
+       <td><b>1289</b> 张 → 默认白名单 ✓</td>
+       <td>自动建议 (业务库 + 历史库都有, 同步)</td>
+      </tr>
+      <tr style="background: rgba(245, 158, 11, 0.04);">
+       <td style="font-weight: 600; color: var(--warn);">业务库 - 历史库</td>
+       <td><b>300</b> 张 → 默认黑名单 ✗</td>
+       <td>自动建议 (业务库独有, 不同步)</td>
+      </tr>
+      <tr>
+       <td style="font-weight: 600; color: var(--ink-soft);">历史库 - 业务库</td>
+       <td><b>0</b> 张</td>
+       <td>历史库独有 (业务库已删), 暂不处理</td>
+      </tr>
+     </tbody>
+    </table>
+
+    <div class="mock-tip" style="margin-bottom: 14px;">
+     提示: <b>白名单 1289 张</b> (从历史库 <code>LIKE 'hly%'</code> 跨多库扫, 全选) · <b>黑名单 300 张</b> (业务库独有, 通常字典/配置/日志, 全选) · DBA 可逐张调整, <b>1-click 接受</b> 即可
+    </div>
+
+    <div style="font-size: 11.5px; font-weight: 600; color: var(--success); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">✓ 白名单 (1289 张, 全选)</div>
+    <div style="border: 1px solid var(--line-soft); border-radius: 8px; margin-bottom: 14px; max-height: 200px; overflow-y: auto;">
+     <table class="mock-table">
+      <tbody>
+       <tr>
+        <td><input type="checkbox" checked></td>
+        <td><code>accesscard_black_detail</code></td>
+        <td><span class="mock-badge badge-success">✓ 存在</span></td>
+        <td>243 MB</td>
+        <td>35 列</td>
+       </tr>
+       <tr>
+        <td><input type="checkbox" checked></td>
+        <td><code>accesscard_config</code></td>
+        <td><span class="mock-badge badge-success">✓ 存在</span></td>
+        <td>12 KB</td>
+        <td>8 列</td>
+       </tr>
+       <tr>
+        <td><input type="checkbox" checked></td>
+        <td><code>accesscard_audit</code></td>
+        <td><span class="mock-badge badge-success">✓ 存在</span></td>
+        <td>8 KB</td>
+        <td>8 列</td>
+       </tr>
+       <tr style="font-style: italic; color: var(--ink-soft);">
+        <td colspan="5" style="text-align: center; font-size: 11px;">... 还有 1286 张 (分页 50/页, 滚动加载)</td>
+       </tr>
+      </tbody>
+     </table>
+    </div>
+
+    <div style="font-size: 11.5px; font-weight: 600; color: var(--warn); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">🚫 黑名单 (300 张, 全选)</div>
+    <div style="border: 1px solid var(--line-soft); border-radius: 8px; margin-bottom: 14px; max-height: 180px; overflow-y: auto;">
+     <table class="mock-table">
+      <tbody>
+       <tr>
+        <td><input type="checkbox" checked></td>
+        <td><code>dict_currency</code></td>
+        <td><span class="mock-badge badge-gray">✗ 历史库无</span></td>
+        <td>4 KB</td>
+        <td>6 列</td>
+       </tr>
+       <tr>
+        <td><input type="checkbox" checked></td>
+        <td><code>dict_country</code></td>
+        <td><span class="mock-badge badge-gray">✗ 历史库无</span></td>
+        <td>8 KB</td>
+        <td>10 列</td>
+       </tr>
+       <tr>
+        <td><input type="checkbox" checked></td>
+        <td><code>log_search</code></td>
+        <td><span class="mock-badge badge-gray">✗ 历史库无</span></td>
+        <td>1.2 GB</td>
+        <td>15 列</td>
+       </tr>
+       <tr style="font-style: italic; color: var(--ink-soft);">
+        <td colspan="5" style="text-align: center; font-size: 11px;">... 还有 297 张 (分页 50/页)</td>
+       </tr>
+      </tbody>
+     </table>
+    </div>
+
+    <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: var(--ink-mid); margin-bottom: 14px;">
+     ℹ️ 业务库加新表时, Archery 自动检测 + "待确认" 流程让 DBA 1-click 决定 (Phase 2)<br>
+     <b style="color: var(--primary);">🔗 联动</b>：库对配完后, 业务库 DDL 提交时 Archery 自动建历史库镜像工单, <b>走当前 Archery 配置的流程</b> (R3 决策, 跟正常历史库工单一样) — 见 §10
+    </div>
+   </div>
+   <div class="modal-footer">
+    <span class="mock-btn outline" style="cursor: pointer;">取消</span>
+    <span class="mock-btn primary" style="cursor: pointer;">✓ 1-click 接受 (1289 白 + 300 黑)</span>
+   </div>
+  </div>
+
+  <p style="margin-top: 18px; padding: 12px 16px; background: rgba(47, 111, 94, 0.06); border: 1px solid rgba(47, 111, 94, 0.2); border-radius: 10px; font-size: 13px; color: var(--ink-mid);">
+   🎯 <b>R2 核心洞察</b>: 业务库 ∩ 历史库 = 1289 张 (<b>历史库有多少张就拿多少张</b>, DBA 原话) — 业务库 - 历史库 = 300 张 (<b>业务库独有, 通常字典/配置/日志, 不归档</b>). 一键配 = 1-click 配完, <b>6 min</b> 完成, 比 R1 批量导入 (15-25 min) 再快 <b>2-4 倍</b>.
+  </p>
+ </section>
+
+ <!-- ===== 06 库对详情页 mockup (更新后) ===== -->
+ <section>
+  <div class="section-head">
+   <span class="section-num">06</span>
+   <h2 class="section-title">库对详情页 · 双按钮布局</h2>
+  </div>
+  <div class="section-sub">库对详情加 <b>5 个按钮 (3 核心 + 2 辅助)</b>: 🎯 一键配 (R2 核心) / 📥 批量导入 (R1 fallback) / + 添加同步表 + 🔍 schema 差集 / ⚙ 过滤规则。sync_mode 默认 blacklist。</div>
+
+  <div class="mock-ui">
+   <div class="mock-titlebar">
+    <span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+    <span class="mock-url">prodarchery.ahggwl.com:9123/ddl_sync/pair/1/detail/</span>
+   </div>
+   <div class="mock-body">
+    <div class="mock-h">
+     <div class="left">
+      <span>accesscard 库对</span>
+      <span class="mock-badge badge-neutral">🔘 blacklist</span>
+      <span class="mock-badge badge-success">✓ enabled</span>
+     </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+     <div class="mock-block">
+      <div class="label">业务库</div>
+      hly_accesscard (172.20.2.134:3306)
+     </div>
+     <div class="mock-block">
+      <div class="label">历史库</div>
+      hly_activity (172.20.2.108:6446)
+     </div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin: 14px 0 8px; flex-wrap: wrap; gap: 8px;">
+     <div style="font-size: 13px; font-weight: 600;">同步表清单 · 1100 / 1289</div>
+     <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+      <span class="mock-btn primary" style="cursor: pointer; background: linear-gradient(135deg, #2f6f5e, #1e5848); color: white;">🎯 一键配 (按历史库)</span>
+      <span class="mock-btn primary" style="cursor: pointer;">📥 批量导入</span>
+      <span class="mock-btn outline" style="cursor: pointer;">+ 添加同步表</span>
+      <span class="mock-btn outline" style="cursor: pointer;">🔍 schema 差集</span>
+      <span class="mock-btn outline" style="cursor: pointer;">⚙ 过滤规则</span>
+     </div>
+    </div>
+
+    <table class="mock-table">
+     <thead>
+      <tr>
+       <th>表名</th>
+       <th>同步状态</th>
+       <th>字段数</th>
+       <th>操作</th>
+      </tr>
+     </thead>
+     <tbody>
+      <tr>
+       <td><code>accesscard_black_detail</code></td>
+       <td><span class="mock-badge badge-success">同步</span></td>
+       <td>35</td>
+       <td>
+        <div class="mock-row-actions" style="display: flex; gap: 6px;">
+         <span class="mock-action success">✏</span>
+         <span class="mock-action danger">🗑</span>
+        </div>
+       </td>
+      </tr>
+      <tr>
+       <td><code>accesscard_config</code></td>
+       <td><span class="mock-badge badge-success">同步</span></td>
+       <td>8</td>
+       <td>
+        <div style="display: flex; gap: 6px;">
+         <span class="mock-action success">✏</span>
+         <span class="mock-action danger">🗑</span>
+        </div>
+       </td>
+      </tr>
+      <tr>
+       <td><code>accesscard_audit</code></td>
+       <td><span class="mock-badge badge-success">同步</span></td>
+       <td>8</td>
+       <td>
+        <div style="display: flex; gap: 6px;">
+         <span class="mock-action success">✏</span>
+         <span class="mock-action danger">🗑</span>
+        </div>
+       </td>
+      </tr>
+      <tr style="background: #fafaf7;">
+       <td colspan="4" style="text-align: center; color: var(--ink-soft); font-size: 12px;">... 还有 195 张表 (分页 50/页)</td>
+      </tr>
+     </tbody>
+    </table>
+
+    <div style="margin-top: 14px; font-size: 13px; font-weight: 600;">黑名单表 (默认不同步) · 0 个</div>
+    <div style="background: #fafaf7; border: 1px solid var(--line-soft); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: var(--ink-soft); margin-top: 4px;">
+     空。业务库 1289 张表都同步到历史库, 其他 300 张不在白名单 → 默认不同步 (blacklist 模式)
+    </div>
+
+    <div class="mock-tip" style="margin-top: 14px;">
+     <b>最近 5 次同步历史</b> · #12345 业务库工单 [实战时] [已完成] 历史库 #12346 执行成功<br>
+     <div style="display: flex; gap: 8px; margin-top: 8px;">
+      <span class="mock-btn primary" style="cursor: pointer;">🔍 立即跑巡检</span>
+      <span class="mock-btn outline" style="cursor: pointer;">📊 schema 差集报告</span>
+     </div>
+    </div>
+   </div>
+  </div>
+ </section>
+
+ <!-- ===== 07 增量同步机制 ===== -->
+ <section>
+  <div class="section-head">
+   <span class="section-num">07</span>
+   <h2 class="section-title">增量同步机制 — Phase 2</h2>
+  </div>
+  <div class="section-sub">业务库加新表，<b>DBA 容易漏配</b>。增量同步: 工单提交时 Archery 自动检测, 提示 DBA 决定。</div>
+
+  <div class="flow-wrap">
+   <svg viewBox="0 0 1000 220" style="width:100%; height:auto; font-family: 'Outfit', sans-serif;">
+    <defs>
+     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f6f5e"/>
+     </marker>
+     <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#f43f5e"/>
+     </marker>
+    </defs>
+
+    <rect x="20" y="80" width="170" height="70" rx="10" fill="#fff" stroke="#e9e3d6" stroke-width="1.5"/>
+    <text x="105" y="105" text-anchor="middle" font-size="12" font-weight="600" fill="#14171e">业务 RD 提 DDL 工单</text>
+    <text x="105" y="125" text-anchor="middle" font-size="10.5" fill="#7c7a72">业务库加新表 xxx</text>
+    <text x="105" y="140" text-anchor="middle" font-size="10.5" fill="#7c7a72">例如 ALTER TABLE xxx</text>
+
+    <line x1="190" y1="115" x2="230" y2="115" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="230" y="80" width="200" height="70" rx="10" fill="rgba(47,111,94,0.05)" stroke="#2f6f5e" stroke-width="1.5"/>
+    <text x="330" y="105" text-anchor="middle" font-size="12" font-weight="600" fill="#2f6f5e">Archery 自动检测</text>
+    <text x="330" y="125" text-anchor="middle" font-size="10.5" fill="#3a4256">扫表白/黑名单 + 历史库</text>
+    <text x="330" y="140" text-anchor="middle" font-size="10.5" fill="#3a4256">看是否需要联动</text>
+
+    <line x1="430" y1="115" x2="470" y2="115" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="470" y="30" width="220" height="60" rx="8" fill="rgba(16,185,129,0.08)" stroke="#10b981" stroke-width="1.5"/>
+    <text x="580" y="50" text-anchor="middle" font-size="11.5" font-weight="600" fill="#10b981">在白名单</text>
+    <text x="580" y="67" text-anchor="middle" font-size="10" fill="#3a4256">正常联动 (自动建历史库工单)</text>
+
+    <rect x="470" y="100" width="220" height="50" rx="8" fill="rgba(245,158,11,0.08)" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="580" y="118" text-anchor="middle" font-size="11.5" font-weight="600" fill="#f59e0b">不在白名单 + 历史库有</text>
+    <text x="580" y="135" text-anchor="middle" font-size="10" fill="#3a4256">工单页提示 DBA 决定</text>
+
+    <rect x="470" y="160" width="220" height="50" rx="8" fill="rgba(124,122,114,0.08)" stroke="#7c7a72" stroke-width="1.5"/>
+    <text x="580" y="178" text-anchor="middle" font-size="11.5" font-weight="600" fill="#7c7a72">不在白名单 + 历史库无</text>
+    <text x="580" y="195" text-anchor="middle" font-size="10" fill="#3a4256">不联动 (新表不用同步)</text>
+
+    <line x1="690" y1="60" x2="730" y2="60" stroke="#2f6f5e" stroke-width="2" marker-end="url(#arrow)"/>
+    <line x1="690" y1="125" x2="730" y2="125" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrow-red)"/>
+    <line x1="690" y1="185" x2="730" y2="185" stroke="#7c7a72" stroke-width="2"/>
+
+    <rect x="730" y="100" width="250" height="100" rx="10" fill="rgba(245,158,11,0.08)" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="855" y="125" text-anchor="middle" font-size="12" font-weight="600" fill="#f59e0b">DBA 工单详情页操作</text>
+    <text x="855" y="148" text-anchor="middle" font-size="10" fill="#3a4256">💡 检测到表 `xxx` 未配置同步</text>
+    <text x="855" y="163" text-anchor="middle" font-size="10" fill="#3a4256">历史库存在 (243MB)</text>
+    <text x="855" y="185" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2f6f5e">[+白名单] [+黑名单] [忽略]</text>
+   </svg>
+  </div>
+ </section>
+
+ <!-- ===== 08 R3 重大决策变更 ===== -->
+ <section>
+  <div class="section-head">
+   <span class="section-num">08</span>
+   <h2 class="section-title">🔄 R3 重大决策变更 — 走当前配置的流程</h2>
+  </div>
+  <div class="section-sub">
+   这是个<b>优雅的设计原则</b> — 自动生成的历史库镜像工单跟正常历史库工单走一样的审计流, DBA 改 Archery 配置就生效, <b>0 额外代码</b>。
+  </div>
+
+  <div class="card" style="background: rgba(47, 111, 94, 0.04); border-left: 3px solid var(--primary); margin-bottom: 18px;">
+   <h3>🎯 决策核心</h3>
+   <p>自动生成的历史库镜像工单走当前 Archery 配置的流程 (<code>workflow_audit_setting.audit_auth_groups</code>):</p>
+   <ul>
+    <li><b>0 额外代码</b>, 0 重复配置, 复用现有 <code>SqlWorkflow</code> + <code>audit_setting</code> 机制</li>
+    <li>DBA 改 "prod core for 历史库" 组的流程 (单级 / 双级 / 加 leader), 镜像工单自动跟进</li>
+    <li>R1 代码<b>不写</b>"由谁审" / "走几级", 完全用 Archery 现成配置</li>
+   </ul>
+  </div>
+
+  <h3 style="font-size: 16px; font-weight: 600; margin: 20px 0 10px;">📊 R1 vs R3 拍板对比</h3>
+  <table class="compare-table">
+   <thead>
+    <tr>
+     <th style="width: 30%;">维度</th>
+     <th style="width: 35%;">R1 拍板 (作废)</th>
+     <th>R3 拍板 (采用)</th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td><b>审批人</b></td>
+     <td>同业务库 DDL 审批人 (3 级)</td>
+     <td class="col-new"><b>按当前 Archery 配置 (DBA 配的) 走</b></td>
+    </tr>
+    <tr>
+     <td><b>业务库 DDL 没审过怎么办</b></td>
+     <td>没明确</td>
+     <td class="col-new">不联动 (业务库 DDL 必审过)</td>
+    </tr>
+    <tr>
+     <td><b>业务 RD 收到通知</b></td>
+     <td>RD + leader 都收 (重复)</td>
+     <td class="col-new">只通知 RD (不重复打扰 leader)</td>
+    </tr>
+    <tr>
+     <td><b>实施复杂度</b></td>
+     <td>需单独为"自动生成" 写代码</td>
+     <td class="col-new"><b>0 额外代码</b>, 复用现有 <code>audit_setting</code></td>
+    </tr>
+   </tbody>
+  </table>
+
+  <div class="grid-2" style="margin-top: 20px;">
+   <div class="card" style="border-left: 3px solid var(--success);">
+    <h3>✅ 3 实施原则</h3>
+    <p><b>1. 镜像工单跟正常工单一样</b> — R1 代码不写"由谁审" / "走几级"</p>
+    <p><b>2. 业务库 DDL 必审过</b> (<code>current_status=1 PASSED</code>) 才触发镜像工单 — trigger 加 <code>if source_workflow.current_status != 1: return None</code></p>
+    <p><b>3. 业务 RD 实时通知</b> (钉钉 OA) — 业务库 DDL 触发镜像工单时, 钉钉通知业务 RD: "你的 DDL <code>#12345</code> 触发了历史库工单 <code>#12346</code>"</p>
+   </div>
+   <div class="card" style="border-left: 3px solid var(--warn);">
+    <h3>🛡️ 3 安全护栏</h3>
+    <p><b>1. 业务库 DDL 必审过 trigger</b> — 跟实施原则 2 一致 (底线)</p>
+    <p><b>2. 历史库执行前预演 + 异常 rollback</b> — 跟 v0.4.5 智能回滚 联动 (R 之前拍板, 已落地)</p>
+    <p><b>3. 异常通知 DBA + 业务 RD</b> — 跟 v0.2.0 钉钉 OA 联动, 异常立刻钉钉通知</p>
+   </div>
+  </div>
+
+  <div class="card" style="background: rgba(59, 130, 246, 0.04); border-left: 3px solid var(--info); margin-top: 18px;">
+   <h3>⚙️ Archery 配置 (DBA 后台自己配, R1 不动)</h3>
+   <pre style="background: #fafaf7; padding: 10px 14px; border-radius: 6px; font-size: 12.5px; line-height: 1.6; font-family: 'JetBrains Mono', monospace; overflow-x: auto;">
+工单类型: SQL 上线申请
+组: prod core for 历史库    ← 跟现在一致
+变更审批流程: DBA       ← DBA 自己在 Archery 后台配, 想改就改
+   </pre>
+   <p style="font-size: 12.5px; color: var(--ink-soft); margin-top: 10px;">
+    110 prod 实际 <code>workflow_audit_setting.audit_setting_id=3</code> (group_id=5, audit_auth_groups='6,4,3,15,16') — 2024-01-16 创建, 细分为 'DBA审批' (id=3) / 'DBA执行' (id=16) / 'DBA组长' (id=14) / '副总' (id=15). 镜像工单自动走这个配置, DBA 改配置后镜像工单自动跟进。
+   </p>
+  </div>
+ </section>
+
+ <!-- ===== 09 当前状态 ===== -->
+ <section>
+  <div class="section-head">
+   <span class="section-num">09</span>
+   <h2 class="section-title">当前状态 & 下一步</h2>
+  </div>
+  <div class="section-sub">R3 决策落地 (R1 库对配 + R2 一键配 + R3 走当前配置流程), 实战数据 1589/1289/300/1100 已对齐, <b>未开工</b>。等用户拍板 Phase 1 启动。</div>
+
+  <div class="grid-2">
+   <div class="card" style="border-left: 3px solid var(--success);">
+    <h3>已完成</h3>
+    <p>R1 修订设计稿 · docs/designs/2026-08-28_ddl-sync-pair-design-v050-r1.md (24KB MD)</p>
+    <p>新功能图说 HTML · docs/designs/R 修订_ddl-sync-pair-feature-card.html (本页)</p>
+    <p>changelog · docs/changelogs/R 修订_ddl-sync-v050-revised-design.md</p>
+   </div>
+   <div class="card" style="border-left: 3px solid var(--accent-warm);">
+    <h3>待办（等拍板）</h3>
+    <p>① <b>Phase 1 启动</b>：库对管理 + 批量导入 + 模态框, 2-3 天出活</p>
+    <p>② 134 dev 演练：accesscard 库对 + 批量导入 + 1 条真实 DDL 联动</p>
+    <p>③ 推 110 prod (Phase 1 跑通后)</p>
+   </div>
+  </div>
+ </section>
+
+ <!-- ===== Footer ===== -->
+ <footer class="footer">
+  Archery · DDL 跨库同步功能图说<br>
+  实战数据：业务库 <b>1589</b> 张 / 历史库 <b>1289</b> 张 (DBA 110 prod 查询, <code>WHERE TABLE_SCHEMA LIKE 'hly%'</code>)<br>
+  配套：<a style="color: var(--primary);" href="2026-08-28_ddl-sync-pair-design-v050-r1.md">MD R1 R2 R3 详设 (§12 一键配 + §13 走当前配置流程)</a> · <a style="color: var(--ink-soft);" href="2026-08-21_ddl-sync-pair-design.md">R 之前原版 (对照)</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-revised-design.md">R1 changelog</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r2-one-click-setup.md">R2 changelog</a> · <a style="color: var(--ink-soft);" href="../changelogs/2026-08-28_ddl-sync-v050-r3-approval-flow.md">R3 changelog</a>
+ </footer>
+
+</div>
+</body>
+</html>
