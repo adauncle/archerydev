@@ -1,6 +1,14 @@
 """DDL 跨库同步 5 AJAX 端点
 
 ## CUSTOM-MODIFIED: v0.5.0-alpha 5 AJAX 端点 @ 2026-09-01 @ mavis
+## 关联 changelog: docs/changelogs/2026-09-01_ddl-sync-w2-d9-perm-guard.md
+
+## CUSTOM-MODIFIED: D9 阶段 2 — 8/13 教训应用 5 个 perm 守卫全改 @ 2026-09-01 @ mavis
+## 5 个 `@permission_required(..., raise_exception=True)` 全部改为 `@require_perm(perm_codename)`
+## 原因: 8/13 实战 ProgressError 中间件返 HTML 错误页, AJAX 端点前端 await r.text() 拿到整页 HTML
+## 修复: 自定义 require_perm 装饰器返 JsonResponse({"ok": False, "error": "权限不足..."}, status=403)
+## 验证: curl 测 403 返 JSON 不返 HTML
+
 设计参考: docs/designs/2026-09-01_ddl-sync-implementation-design.md §2.2
 
 5 AJAX 端点契约 (W1-D3 §2.2):
@@ -25,14 +33,13 @@
   响应: {"ok": true, "data": {"results": [...], "total": int, "page": int}}
 
 避坑 (W1-D3 §8 + W1-D4 §4 实战):
-- 8/13 AJAX 守卫: perm 守卫返 JsonResponse(403) 不 raise PermissionDenied
+- 8/13 AJAX 守卫: perm 守卫返 JsonResponse(403) 不 raise PermissionDenied (D9 阶段 2 必改)
 - 5 类异常: 用户输入错 (400) / 库对配置错 (400) / 库连接错 (500) / DDL 转换错 (400) / target_workflow 执行错 (500)
 """
 
 import json
 import logging
 
-from django.contrib.auth.decorators import permission_required
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import JsonResponse
@@ -45,6 +52,7 @@ from ..services.compute_diff import compute_diff, ComputeDiffError
 from ..services.one_click_setup import one_click_setup, OneClickSetupError
 from ..services.bulk_import import bulk_import_tables, BulkImportError
 from ..services.table_service import add_sync_table, TableServiceError
+from ..services.perm_guard import require_perm
 
 logger = logging.getLogger("default")
 
@@ -65,7 +73,7 @@ def _json_success(data: dict, message: str = ""):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@permission_required("ddl_sync.change_ddlsyncpair", raise_exception=True)
+@require_perm("change_ddlsyncpair")
 def compute_diff_view(request, pair_id):
     """R2 一键配差集计算"""
     pair = get_object_or_404(DdlSyncPair, pk=pair_id)
@@ -92,7 +100,7 @@ def compute_diff_view(request, pair_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@permission_required("ddl_sync.change_ddlsyncpair", raise_exception=True)
+@require_perm("change_ddlsyncpair")
 def one_click_setup_view(request, pair_id):
     """R2 一键配 bulk_create 事务"""
     pair = get_object_or_404(DdlSyncPair, pk=pair_id)
@@ -129,7 +137,7 @@ def one_click_setup_view(request, pair_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@permission_required("ddl_sync.change_ddlsyncpair", raise_exception=True)
+@require_perm("change_ddlsyncpair")
 def bulk_import_view(request, pair_id):
     """R1 批量导入 bulk_create 事务"""
     pair = get_object_or_404(DdlSyncPair, pk=pair_id)
@@ -165,7 +173,7 @@ def bulk_import_view(request, pair_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@permission_required("ddl_sync.add_ddlsynctable", raise_exception=True)
+@require_perm("add_ddlsynctable")
 def add_table_view(request, pair_id):
     """单张加同步表 (R1 兜底)"""
     pair = get_object_or_404(DdlSyncPair, pk=pair_id)
@@ -200,7 +208,7 @@ def add_table_view(request, pair_id):
 # ===== 端点 5: 同步历史列表 =====
 
 @require_http_methods(["GET"])
-@permission_required("ddl_sync.view_ddlsyncpair", raise_exception=True)
+@require_perm("view_ddlsyncpair")
 def history_list_view(request):
     """同步历史列表 (DBA 视角)"""
     pair_id = request.GET.get("pair", "").strip()
