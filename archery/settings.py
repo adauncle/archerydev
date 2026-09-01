@@ -417,6 +417,12 @@ CUSTOM_BIG_TABLE_SIZE_THRESHOLD_MB = env("CUSTOM_BIG_TABLE_SIZE_THRESHOLD_MB", d
 
 if CUSTOM_GH_OST_ENABLED:
     INSTALLED_APPS += ("sql.extensions.ddl_gh_ost.apps.DdlGhOstConfig",)
+
+## CUSTOM-MODIFIED: v0.5.0-alpha DDL 跨库同步 启用开关 @ 2026-09-01 @ mavis
+## 跟 v0.3.0 gh-ost 套路一致, 默认 True, 需要时通过 env 关
+## 设计参考: docs/designs/2026-09-01_ddl-sync-data-model.md
+if env("CUSTOM_DDL_SYNC_ENABLED", default=True):
+    INSTALLED_APPS += ("sql.extensions.ddl_sync.apps.DdlSyncConfig",)
     ## CUSTOM-MODIFIED: gh-ost dev-only 凭据 fallback @ 2026-08-06 @ mavis
     ## 134 dev 上 archery instance 的 user/password 字段是历史 mirage 加密密文，
     ## 当前 SECRET_KEY 解不出明文 → instance.get_username_password() 返回密文本身，
