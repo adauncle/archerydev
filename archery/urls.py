@@ -47,6 +47,14 @@ if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):  # pragma: no cover
         path("gh_ost/", include(("sql.extensions.ddl_gh_ost.urls", "ddl_gh_ost"), namespace="ddl_gh_ost")),
     ]
 
+## CUSTOM-MODIFIED: DDL 跨库同步 二次开发 —— 接入 URL 路由 @ 2026-09-01 @ mavis
+## 关联设计: docs/designs/2026-09-01_ddl-sync-implementation-design.md §2
+## 库对管理 + 5 AJAX 端点 (D7+D8), 5 端点 D8 阶段 2 启用
+if getattr(settings, "CUSTOM_DDL_SYNC_ENABLED", False):  # pragma: no cover
+    urlpatterns += [
+        path("ddl_sync/", include(("sql.extensions.ddl_sync.urls", "ddl_sync"), namespace="ddl_sync")),
+    ]
+
 handler400 = views.bad_request
 handler403 = views.permission_denied
 handler404 = views.page_not_found
