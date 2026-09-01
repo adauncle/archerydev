@@ -1,0 +1,80 @@
+{# R2 一键配 modal — partial template #}
+{# 通过 include 嵌入到 pair_detail.html, 接收 pair 上下文变量 #}
+<div class="modal fade" id="modal-one-click-setup" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document" style="max-width: 800px;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🎯 一键配 (按历史库)</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="one-click-loading" style="text-align: center; padding: 20px;">
+          <i class="fa fa-spinner fa-spin"></i> 扫源库 + 历史库算差集中 (1589 + 1289 张预计 6-12s)...
+        </div>
+        <div id="one-click-result" style="display: none;">
+          <p class="text-muted">
+            业务库 <strong>{{ pair.source_db }}</strong>: <span id="one-click-source-count">-</span> 张表<br>
+            历史库 <strong>{{ pair.target_db }}</strong>: <span id="one-click-target-count">-</span> 张表
+          </p>
+          <h6 style="margin-top: 16px;">差集计算结果 (W1-D4 §1.2):</h6>
+
+          <div class="form-group">
+            <label style="font-weight: 600;">
+              <input type="checkbox" id="one-click-whitelist-checkbox" checked>
+              <span class="ddlsync-badge ddlsync-badge-whitelist">白名单 (业务库 ∩ 历史库)</span>
+              <span id="one-click-whitelist-count">0</span> 张 ✅ 推荐全选
+            </label>
+            <div class="text-muted" style="margin-left: 24px;">这些表业务库有, 历史库有, 默认要同步</div>
+            <div style="margin-left: 24px; margin-top: 6px;">
+              <button type="button" id="one-click-whitelist-preview" class="btn btn-sm btn-outline-primary">预览前 20 张</button>
+              <button type="button" id="one-click-whitelist-select-all" class="btn btn-sm btn-outline-primary">全选</button>
+              <button type="button" id="one-click-whitelist-deselect-all" class="btn btn-sm btn-outline-secondary">反选</button>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px;">
+            <label style="font-weight: 600;">
+              <input type="checkbox" id="one-click-blacklist-checkbox" checked>
+              <span class="ddlsync-badge ddlsync-badge-blacklist">黑名单 (业务库 - 历史库)</span>
+              <span id="one-click-blacklist-count">0</span> 张 ✅ 推荐全选
+            </label>
+            <div class="text-muted" style="margin-left: 24px;">这些表业务库独有, 不需要同步</div>
+            <div style="margin-left: 24px; margin-top: 6px;">
+              <button type="button" id="one-click-blacklist-preview" class="btn btn-sm btn-outline-primary">预览前 20 张</button>
+              <button type="button" id="one-click-blacklist-select-all" class="btn btn-sm btn-outline-primary">全选</button>
+              <button type="button" id="one-click-blacklist-deselect-all" class="btn btn-sm btn-outline-secondary">反选</button>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px;">
+            <label style="font-weight: 600;">
+              <input type="checkbox" id="one-click-orphans-checkbox" disabled>
+              <span class="text-muted">孤儿 (历史库 - 业务库)</span>
+              <span id="one-click-orphans-count">0</span> 张
+            </label>
+            <div class="text-muted" style="margin-left: 24px;">这些表历史库独有, 业务库没有 (无源表, 无法同步)</div>
+          </div>
+
+          <h6 style="margin-top: 16px;">操作选项 (W1-D4 §1.2):</h6>
+          <div class="form-group">
+            <label style="margin-right: 16px;"><input type="radio" name="one-click-mode" value="overwrite" checked> 覆盖现有配置 (DELETE 现有 DdlSyncTable + bulk_create)</label>
+            <label><input type="radio" name="one-click-mode" value="incremental"> 增量添加 (保留现有, 只 add 新表)</label>
+          </div>
+
+          <p class="text-muted" style="margin-top: 12px;">
+            预览: 白名单 <strong id="one-click-preview-whitelist">0</strong> 张 + 黑名单 <strong id="one-click-preview-blacklist">0</strong> 张 = <strong id="one-click-preview-total">0</strong> 条记录
+            <br>预计耗时: 8.4s (1589 张 bulk_create 实测)
+          </p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+        <button type="button" id="one-click-confirm" class="btn btn-success" disabled>
+          🎯 一键配 (<span id="one-click-confirm-count">0</span> 张)
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

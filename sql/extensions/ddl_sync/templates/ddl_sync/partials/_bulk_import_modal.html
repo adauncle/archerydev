@@ -1,0 +1,67 @@
+{# R1 批量导入 modal — partial template #}
+{# 通过 include 嵌入到 pair_detail.html, 接收 pair 上下文变量 #}
+<div class="modal fade" id="modal-bulk-import" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document" style="max-width: 900px;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">📥 批量导入同步表</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="bulk-import-loading" style="text-align: center; padding: 20px; display: none;">
+          <i class="fa fa-spinner fa-spin"></i> 扫源库 + 过滤中 (1589 张表预计 3-5s)...
+        </div>
+        <div id="bulk-import-result" style="display: none;">
+          <p class="text-muted">
+            扫描源库 <strong>{{ pair.source_db }}</strong>: <span id="bulk-import-source-count">-</span> 张, 过滤后 <span id="bulk-import-filtered-count">-</span> 张
+          </p>
+          <h6 style="margin-top: 16px;">过滤规则 (W1-D4 §1.1):</h6>
+          <div class="form-group" style="display: flex; gap: 20px; flex-wrap: wrap;">
+            <label><input type="checkbox" id="bulk-import-exclude-prefix" checked> 排除前缀 _log _bak _tmp _test (300 张)</label>
+            <label><input type="checkbox" id="bulk-import-exclude-suffix" checked> 排除后缀 _history _archive (50 张)</label>
+            <label><input type="checkbox" id="bulk-import-exclude-engine" checked> 排除 ENGINE MEMORY BLACKHOLE (10 张)</label>
+            <label><input type="checkbox" id="bulk-import-exclude-empty" checked> 排除空表 (29 张)</label>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label>搜索:</label>
+            <input type="text" id="bulk-import-search" class="form-control" placeholder="模糊搜索表名" style="width: 300px; display: inline-block;">
+            <button type="button" id="bulk-import-select-all" class="btn btn-sm btn-outline-primary" style="margin-left: 8px;">全选</button>
+            <button type="button" id="bulk-import-deselect-all" class="btn btn-sm btn-outline-secondary">反选</button>
+            <span class="text-muted" style="margin-left: 12px;">选中: <strong id="bulk-import-selected-count">0</strong> / <span id="bulk-import-total-count">0</span></span>
+          </div>
+          <div class="form-group">
+            <label>同步类型:</label>
+            <label style="margin-right: 16px;"><input type="radio" name="bulk-import-sync-type" value="whitelist" checked> 白名单 (要同步)</label>
+            <label><input type="radio" name="bulk-import-sync-type" value="blacklist"> 黑名单 (不同步)</label>
+          </div>
+          <div style="max-height: 320px; overflow-y: auto; border: 1px solid #ebeef5; border-radius: 4px;">
+            <table class="table table-sm table-hover" style="margin: 0;">
+              <thead style="position: sticky; top: 0; background: #fafafa;">
+                <tr>
+                  <th style="width: 40px;"><input type="checkbox" id="bulk-import-table-all"></th>
+                  <th>表名</th>
+                  <th style="width: 100px;">已存在</th>
+                  <th style="width: 100px;">大小</th>
+                </tr>
+              </thead>
+              <tbody id="bulk-import-table-list">
+                <!-- JS 动态填充 -->
+              </tbody>
+            </table>
+          </div>
+          <p class="text-muted" style="margin-top: 12px;">
+            预览: 选中 <strong id="bulk-import-preview-count">0</strong> 张, bulk_create <strong id="bulk-import-preview-count-2">0</strong> 条 DdlSyncTable 记录
+          </p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+        <button type="button" id="bulk-import-confirm" class="btn btn-primary" disabled>
+          确认导入 (<span id="bulk-import-confirm-count">0</span> 张)
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

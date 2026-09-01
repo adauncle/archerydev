@@ -1,0 +1,242 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}库对详情 · {{ pair.name }} · Archery{% endblock %}
+
+{% block content %}
+<style>
+  /* DDL 跨库同步 · 库对详情页 (W1-D4 §2 业务库 DDL 工单详情 alert + W1-D3 §7 5 状态机) */
+  .ddlsync-detail-header { background: #fff; border-radius: 8px; padding: 20px 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 16px; }
+  .ddlsync-detail-name { font-size: 22px; font-weight: 700; color: #303133; }
+  .ddlsync-detail-meta { color: #909399; font-size: 13px; margin-top: 6px; }
+  .ddlsync-badge { display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 600; color: #fff; }
+  .ddlsync-badge-blacklist { background: #F56C6C; }
+  .ddlsync-badge-whitelist { background: #67C23A; }
+  .ddlsync-badge-enabled { background: #67C23A; }
+  .ddlsync-badge-disabled { background: #909399; }
+  .ddlsync-detail-actions { margin-top: 12px; }
+  .ddlsync-detail-actions .btn { margin-right: 8px; }
+
+  /* 4 tab 内容区 */
+  .ddlsync-tab-pane { background: #fff; border-radius: 8px; padding: 20px 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .ddlsync-tab-pane h5 { color: #303133; font-weight: 600; margin-bottom: 12px; }
+
+  /* 5 按钮组 (W1-D4 §1) */
+  .ddlsync-buttons { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .ddlsync-buttons .btn-act {
+    padding: 8px 18px; border: none; border-radius: 4px;
+    font-size: 13px; font-weight: 500; cursor: pointer; color: #fff;
+  }
+  .ddlsync-btn-bulk-import { background: #409EFF; }
+  .ddlsync-btn-one-click { background: #67C23A; }
+  .ddlsync-btn-add-table { background: #E6A23C; }
+
+  /* 同步表清单 tab */
+  .ddlsync-table-toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .ddlsync-table-toolbar select, .ddlsync-table-toolbar input {
+    padding: 5px 10px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 13px;
+  }
+  .ddlsync-table-list { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ddlsync-table-list th { background: #fafafa; color: #606266; font-weight: 600; text-align: left;
+    padding: 10px 12px; border-bottom: 1px solid #ebeef5; }
+  .ddlsync-table-list td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+  .ddlsync-table-list tr:hover td { background: #fafbfc; }
+
+  /* 同步历史 tab */
+  .ddlsync-history-status { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; }
+  .ddlsync-status-pending { background: #909399; }
+  .ddlsync-status-syncing { background: #409EFF; }
+  .ddlsync-status-synced { background: #67C23A; }
+  .ddlsync-status-skipped { background: #E6A23C; }
+  .ddlsync-status-failed { background: #F56C6C; }
+
+  .ddlsync-breadcrumb { margin-bottom: 16px; font-size: 13px; }
+  .ddlsync-breadcrumb a { color: #409EFF; text-decoration: none; }
+  .ddlsync-breadcrumb a:hover { text-decoration: underline; }
+  .ddlsync-empty { text-align: center; padding: 40px; color: #909399; }
+</style>
+
+<!-- 面包屑 -->
+<nav aria-label="breadcrumb" class="ddlsync-breadcrumb">
+  <a href="{% url 'ddl_sync:pair_list' %}">库对列表</a> /
+  {{ pair.name }}
+</nav>
+
+<!-- 库对头部 + 5 按钮 -->
+<div class="ddlsync-detail-header">
+  <div class="ddlsync-detail-name">
+    {{ pair.name }}
+    <span class="ddlsync-badge ddlsync-badge-{{ pair.sync_mode }}">
+      {% if pair.sync_mode == "blacklist" %}黑名单 (默认){% else %}白名单{% endif %}
+    </span>
+    {% if pair.enabled %}
+    <span class="ddlsync-badge ddlsync-badge-enabled">启用</span>
+    {% else %}
+    <span class="ddlsync-badge ddlsync-badge-disabled">禁用</span>
+    {% endif %}
+  </div>
+  <div class="ddlsync-detail-meta">
+    业务库 <strong>{{ pair.source_instance.instance_name }}</strong>.<code>{{ pair.source_db }}</code>
+    ↔ 历史库 <strong>{{ pair.target_instance.instance_name }}</strong>.<code>{{ pair.target_db }}</code>
+    · 同步表 <strong>{{ table_count }}</strong> 张 · 历史 <strong>{{ history_count }}</strong> 条
+    · 创建于 {{ pair.created_at|date:"Y-m-d H:i" }}
+  </div>
+  <div class="ddlsync-detail-actions">
+    {% if perms.ddl_sync.change_ddlsyncpair %}
+    <button type="button" id="btn-bulk-import" class="btn-act ddlsync-btn-bulk-import">📥 批量导入</button>
+    <button type="button" id="btn-one-click-setup" class="btn-act ddlsync-btn-one-click">🎯 一键配</button>
+    {% endif %}
+    {% if perms.ddl_sync.add_ddlsynctable %}
+    <button type="button" id="btn-add-table" class="btn-act ddlsync-btn-add-table">+ 添加同步表</button>
+    {% endif %}
+    {% if perms.ddl_sync.change_ddlsyncpair %}
+    <a href="{% url 'ddl_sync:pair_edit' pair.id %}" class="btn btn-outline-secondary btn-sm">✏️ 编辑库对</a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- 4 tab 内容区 (Bootstrap nav-tabs 复用) -->
+<ul class="nav nav-tabs" role="tablist" style="margin-bottom: 16px;">
+  <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#tab-basic">📋 基本信息</a></li>
+  <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#tab-tables">📊 同步表清单 ({{ table_count }})</a></li>
+  <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#tab-history">📜 同步历史 ({{ history_count }})</a></li>
+  <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#tab-logs">📝 操作日志</a></li>
+</ul>
+
+<div class="tab-content">
+  <!-- tab 1: 基本信息 -->
+  <div class="tab-pane fade show active" id="tab-basic">
+    <div class="ddlsync-tab-pane">
+      <h5>库对详情</h5>
+      <table class="table table-bordered" style="font-size: 13px;">
+        <tr><th style="width: 180px;">配对名</th><td>{{ pair.name }}</td></tr>
+        <tr><th>业务库实例</th><td>{{ pair.source_instance.instance_name }} ({{ pair.source_instance.host }}:{{ pair.source_instance.port }})</td></tr>
+        <tr><th>业务库名</th><td><code>{{ pair.source_db }}</code></td></tr>
+        <tr><th>历史库实例</th><td>{{ pair.target_instance.instance_name }} ({{ pair.target_instance.host }}:{{ pair.target_instance.port }})</td></tr>
+        <tr><th>历史库名</th><td><code>{{ pair.target_db }}</code></td></tr>
+        <tr><th>同步模式</th><td>
+          {% if pair.sync_mode == "blacklist" %}
+          <span class="ddlsync-badge ddlsync-badge-blacklist">黑名单 (默认)</span> - 业务库全同步, 显式排除
+          {% else %}
+          <span class="ddlsync-badge ddlsync-badge-whitelist">白名单</span> - DBA 显式选要同步的
+          {% endif %}
+        </td></tr>
+        <tr><th>启用状态</th><td>{% if pair.enabled %}<span class="ddlsync-badge ddlsync-badge-enabled">启用</span>{% else %}<span class="ddlsync-badge ddlsync-badge-disabled">禁用</span>{% endif %}</td></tr>
+        <tr><th>创建人</th><td>{{ pair.created_by.username|default:pair.created_by }}</td></tr>
+        <tr><th>创建时间</th><td>{{ pair.created_at|date:"Y-m-d H:i:s" }}</td></tr>
+        <tr><th>更新时间</th><td>{{ pair.updated_at|date:"Y-m-d H:i:s" }}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- tab 2: 同步表清单 -->
+  <div class="tab-pane fade" id="tab-tables">
+    <div class="ddlsync-tab-pane">
+      <h5>同步表清单 (前 {{ tables|length }} 张)</h5>
+      <div class="ddlsync-table-toolbar">
+        <input type="text" id="table-search" placeholder="搜索表名" style="width: 200px;">
+        <select id="table-filter-sync-type">
+          <option value="">全部类型</option>
+          <option value="whitelist">白名单</option>
+          <option value="blacklist">黑名单</option>
+        </select>
+      </div>
+      {% if tables %}
+      <table class="ddlsync-table-list">
+        <thead>
+          <tr>
+            <th>表名</th>
+            <th style="width: 100px;">类型</th>
+            <th style="width: 100px;">字段级规则</th>
+            <th style="width: 160px;">创建时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tables %}
+          <tr data-table-name="{{ t.table_name }}" data-sync-type="{{ t.sync_type }}">
+            <td><code>{{ t.table_name }}</code></td>
+            <td>
+              {% if t.sync_type == "whitelist" %}
+              <span class="ddlsync-badge ddlsync-badge-whitelist">白名单</span>
+              {% else %}
+              <span class="ddlsync-badge ddlsync-badge-blacklist">黑名单</span>
+              {% endif %}
+            </td>
+            <td>{% if t.transform_rule %}<span style="color: #67C23A;">✓ 已配置</span>{% else %}<span style="color: #909399;">—</span>{% endif %}</td>
+            <td>{{ t.created_at|date:"Y-m-d H:i" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if table_count > 200 %}
+      <p class="text-muted" style="margin-top: 12px;">仅显示前 200 张, 完整列表请用「🎯 一键配」刷新后查看</p>
+      {% endif %}
+      {% else %}
+      <div class="ddlsync-empty">
+        暂无同步表, {% if perms.ddl_sync.add_ddlsynctable %}<a href="javascript:void(0);" id="btn-add-table-empty">添加一个</a>{% else %}请联系 DBA 配置{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- tab 3: 同步历史 -->
+  <div class="tab-pane fade" id="tab-history">
+    <div class="ddlsync-tab-pane">
+      <h5>同步历史 (前 {{ history|length }} 条)</h5>
+      {% if history %}
+      <table class="ddlsync-table-list">
+        <thead>
+          <tr>
+            <th style="width: 60px;">ID</th>
+            <th>表名</th>
+            <th>业务库工单</th>
+            <th>历史库镜像工单</th>
+            <th style="width: 100px;">状态</th>
+            <th style="width: 160px;">创建时间</th>
+            <th style="width: 160px;">完成时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for h in history %}
+          <tr>
+            <td>{{ h.id }}</td>
+            <td><code>{{ h.table_name }}</code></td>
+            <td>{% if h.source_workflow_id %}<a href="/admin/sql/sqlworkflow/{{ h.source_workflow_id }}/change/">#{{ h.source_workflow_id }}</a>{% else %}-{% endif %}</td>
+            <td>{% if h.target_workflow_id %}<a href="/admin/sql/sqlworkflow/{{ h.target_workflow_id }}/change/">#{{ h.target_workflow_id }}</a>{% else %}<span class="text-muted">未生成</span>{% endif %}</td>
+            <td><span class="ddlsync-history-status ddlsync-status-{{ h.sync_status }}">{{ h.get_sync_status_display }}</span></td>
+            <td>{{ h.created_at|date:"Y-m-d H:i" }}</td>
+            <td>{% if h.finished_at %}{{ h.finished_at|date:"Y-m-d H:i" }}{% else %}-{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if history_count > 50 %}
+      <p class="text-muted" style="margin-top: 12px;">仅显示前 50 条, 完整列表请用 <a href="{% url 'ddl_sync:history_list' %}?pair={{ pair.id }}">同步历史 API</a> 分页查询</p>
+      {% endif %}
+      {% else %}
+      <div class="ddlsync-empty">暂无同步历史</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- tab 4: 操作日志 -->
+  <div class="tab-pane fade" id="tab-logs">
+    <div class="ddlsync-tab-pane">
+      <h5>操作日志</h5>
+      <div class="ddlsync-empty">D9 阶段 2 上线, 操作日志审计 (创建/编辑/启用/禁用/一键配/批量导入 6 类操作)</div>
+    </div>
+  </div>
+</div>
+
+<!-- 3 modal include (D8 阶段 2 阶段 1) -->
+{% include "ddl_sync/partials/_bulk_import_modal.html" %}
+{% include "ddl_sync/partials/_one_click_modal.html" %}
+{% include "ddl_sync/partials/_add_table_modal.html" %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'ddl_sync/pair_detail.js' %}"></script>
+{% endblock %}

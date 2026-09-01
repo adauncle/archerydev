@@ -1,0 +1,40 @@
+{# 单张加同步表 modal — partial template (R1 兜底) #}
+{# 通过 include 嵌入到 pair_detail.html, 接收 pair 上下文变量 #}
+<div class="modal fade" id="modal-add-table" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog" role="document" style="max-width: 600px;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">+ 添加同步表</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="add-table-form">
+          <div class="form-group">
+            <label for="add-table-name">表名 <span style="color: #F56C6C;">*</span></label>
+            <input type="text" class="form-control" id="add-table-name" placeholder="业务库下的表名" required>
+            <small class="form-text text-muted">业务库 <code>{{ pair.source_db }}</code> 下的表名</small>
+          </div>
+          <div class="form-group">
+            <label>同步类型:</label>
+            <div>
+              <label style="margin-right: 16px;"><input type="radio" name="add-table-sync-type" value="whitelist" checked> 白名单 (要同步)</label>
+              <label><input type="radio" name="add-table-sync-type" value="blacklist"> 黑名单 (不同步)</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="add-table-transform-rule">字段级调整规则 (可选, Phase 3 用):</label>
+            <textarea class="form-control" id="add-table-transform-rule" rows="4" placeholder='跳过列 (csv): create_time,update_time&#10;重命名列 (JSON): {"old": "new"}'></textarea>
+            <small class="form-text text-muted">JSON 格式: <code>{"skip_columns": [...], "rename_columns": {...}}</code></small>
+          </div>
+          <p class="text-muted" style="margin-top: 12px;">预览: 添加 1 张同步表 (bulk_create 1 条记录)</p>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+        <button type="button" id="add-table-confirm" class="btn btn-primary">确认添加</button>
+      </div>
+    </div>
+  </div>
+</div>
