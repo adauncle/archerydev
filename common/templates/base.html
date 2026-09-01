@@ -148,6 +148,24 @@
                             <!-- /.nav-second-level -->
                         </li>
                     {% endif %}
+                    {# CUSTOM-MODIFIED: DDL 跨库同步 菜单 @ 2026-09-01 @ mavis #}
+                    {# 守卫: superuser 或有 ddl_sync.view_ddlsyncpair 权限 #}
+                    {# 关联 changelog: docs/changelogs/2026-09-01_ddl-sync-w2-d7-admin-views.md #}
+                    {# 关联设计: docs/designs/2026-09-01_ddl-sync-implementation-design.md §2 #}
+                    {# 分配: DBA 在 admin 后台 /admin/auth/group/<id>/change/ 勾选 "Can view DDL sync pair list" #}
+                    {% if user.is_superuser or perms.ddl_sync.view_ddlsyncpair %}
+                        <li>
+                            <a href="#"><i class="fa fa-exchange fa-fw"></i> DDL 跨库同步<span class="fa arrow"></span></a>
+                            <ul class="nav nav-second-level collapse">
+                                <li>
+                                    <a href="{% url 'ddl_sync:pair_list' %}"><i class="fa fa-list fa-fw"></i> 库对列表</a>
+                                </li>
+                                {# D8 阶段 2 留 TODO 5 AJAX 端点菜单 (同步历史 / 批量导入 / 一键配 等) #}
+                                {# 关联: docs/designs/2026-09-01_ddl-sync-detail-ux-design.md §1.1-§1.5 #}
+                            </ul>
+                            <!-- /.nav-second-level -->
+                        </li>
+                    {% endif %}
                     {% if perms.sql.menu_query %}
                         <li>
                             <a href="#"><i class="fa fa-search fa-fw"></i> SQL查询<span class="fa arrow"></span></a>

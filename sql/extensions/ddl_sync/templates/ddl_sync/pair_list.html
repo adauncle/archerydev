@@ -1,0 +1,212 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}DDL 跨库同步 · 库对列表 · Archery{% endblock %}
+
+{% block content %}
+<style>
+  /* DDL 跨库同步 · 库对列表页 */
+  .ddlsync-stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .ddlsync-stat-card {
+    background: var(--card, #fff); border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    padding: 16px 20px; flex: 1 1 180px;
+  }
+  .ddlsync-stat-num { font-size: 24px; font-weight: 700; }
+  .ddlsync-stat-label { color: #909399; font-size: 12px; margin-top: 4px; }
+
+  /* 筛选器 */
+  .ddlsync-filters { background: #fff; border-radius: 8px; padding: 14px 18px; margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .ddlsync-filters label { color: #606266; font-size: 13px; margin-right: 4px; }
+  .ddlsync-filters select, .ddlsync-filters input {
+    padding: 5px 10px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 13px;
+  }
+  .ddlsync-filters .btn { margin-left: auto; }
+
+  /* 列表 */
+  .ddlsync-list-card { background: #fff; border-radius: 8px; padding: 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: hidden; }
+  table.ddlsync-pairs { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.ddlsync-pairs th {
+    background: #fafafa; color: #606266; font-weight: 600; text-align: left;
+    padding: 12px 14px; border-bottom: 1px solid #ebeef5; white-space: nowrap;
+  }
+  table.ddlsync-pairs td {
+    padding: 12px 14px; border-bottom: 1px solid #f0f0f0; vertical-align: middle;
+  }
+  table.ddlsync-pairs tr:hover td { background: #fafbfc; }
+
+  /* 徽章 */
+  .ddlsync-badge { display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 600; color: #fff; }
+  .ddlsync-badge.blacklist { background: #F56C6C; }
+  .ddlsync-badge.whitelist { background: #67C23A; }
+  .ddlsync-badge.enabled { background: #67C23A; }
+  .ddlsync-badge.disabled { background: #909399; }
+
+  /* 操作按钮 */
+  .ddlsync-actions { display: flex; gap: 6px; }
+  .ddlsync-act-btn { padding: 4px 10px; border: none; border-radius: 3px; font-size: 12px;
+    cursor: pointer; color: #fff; font-weight: 500; text-decoration: none; display: inline-block; }
+  .ddlsync-act-btn.view { background: #409EFF; }
+  .ddlsync-act-btn.edit { background: #E6A23C; }
+  .ddlsync-act-btn.create { background: #67C23A; }
+
+  .ddlsync-sub { color: #909399; font-size: 13px; margin-bottom: 20px; }
+  .ddlsync-link { color: #409EFF; text-decoration: none; }
+  .ddlsync-link:hover { text-decoration: underline; }
+  .ddlsync-instance { color: #606266; font-weight: 500; }
+  .ddlsync-db { color: #909399; font-size: 12px; }
+</style>
+
+<!-- 面包屑 -->
+<nav aria-label="breadcrumb" style="margin-bottom: 16px;">
+  <ol class="breadcrumb" style="background: transparent; padding: 0; margin: 0; font-size: 13px;">
+    <li class="breadcrumb-item"><a href="/" class="ddlsync-link">首页</a></li>
+    <li class="breadcrumb-item active" aria-current="page">DDL 跨库同步 · 库对列表</li>
+  </ol>
+</nav>
+
+<div class="ddlsync-sub">
+  业务库 DDL 审批通过后, 自动生成历史库镜像工单 (走当前 Archery audit_setting 配置). 5 个核心功能 (一键配 / 批量导入 / 单张加 / schema 差集 / 过滤规则) D8 阶段 2 上线.
+</div>
+
+<!-- 顶部统计卡 -->
+<div class="ddlsync-stats">
+  <div class="ddlsync-stat-card">
+    <div>
+      <div class="ddlsync-stat-num">{{ total_count }}</div>
+      <div class="ddlsync-stat-label">库对总数</div>
+    </div>
+  </div>
+  <div class="ddlsync-stat-card">
+    <div>
+      <div class="ddlsync-stat-num" style="color: #67C23A;">{{ total_count }}</div>
+      <div class="ddlsync-stat-label">当前显示</div>
+    </div>
+  </div>
+</div>
+
+<!-- 筛选器 -->
+<form method="get" action="{% url 'ddl_sync:pair_list' %}" class="ddlsync-filters">
+  <label>关键词:</label>
+  <input type="text" name="keyword" value="{{ keyword }}" placeholder="名称 / 业务库 / 历史库" style="width: 200px;">
+
+  <label>同步模式:</label>
+  <select name="sync_mode">
+    <option value="">全部</option>
+    <option value="blacklist" {% if sync_mode_filter == "blacklist" %}selected{% endif %}>黑名单 (默认)</option>
+    <option value="whitelist" {% if sync_mode_filter == "whitelist" %}selected{% endif %}>白名单</option>
+  </select>
+
+  <label>状态:</label>
+  <select name="enabled">
+    <option value="">全部</option>
+    <option value="true" {% if enabled_filter == "true" %}selected{% endif %}>启用</option>
+    <option value="false" {% if enabled_filter == "false" %}selected{% endif %}>禁用</option>
+  </select>
+
+  <button type="submit" class="btn btn-primary btn-sm" style="background: #409EFF; color: #fff; border: none; padding: 6px 14px; border-radius: 4px;">筛选</button>
+
+  {% if perms.ddl_sync.add_ddlsyncpair %}
+  <a href="{% url 'ddl_sync:pair_create' %}" class="ddlsync-act-btn create" style="margin-left: auto;">+ 新建库对</a>
+  {% endif %}
+</form>
+
+<!-- 库对列表 -->
+<div class="ddlsync-list-card">
+  <table class="ddlsync-pairs">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>名称</th>
+        <th>源 (业务库)</th>
+        <th>目标 (历史库)</th>
+        <th>同步模式</th>
+        <th>状态</th>
+        <th>同步表数</th>
+        <th>历史数</th>
+        <th>创建人</th>
+        <th>创建时间</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for pair in page_obj %}
+      <tr>
+        <td>{{ pair.id }}</td>
+        <td>
+          <a href="{% url 'ddl_sync:pair_detail' pair.id %}" class="ddlsync-link">{{ pair.name }}</a>
+        </td>
+        <td>
+          <div class="ddlsync-instance">{{ pair.source_instance.instance_name }}</div>
+          <div class="ddlsync-db">{{ pair.source_db }}</div>
+        </td>
+        <td>
+          <div class="ddlsync-instance">{{ pair.target_instance.instance_name }}</div>
+          <div class="ddlsync-db">{{ pair.target_db }}</div>
+        </td>
+        <td>
+          <span class="ddlsync-badge {{ pair.sync_mode }}">
+            {% if pair.sync_mode == "blacklist" %}黑名单 (默认){% else %}白名单{% endif %}
+          </span>
+        </td>
+        <td>
+          {% if pair.enabled %}
+          <span class="ddlsync-badge enabled">启用</span>
+          {% else %}
+          <span class="ddlsync-badge disabled">禁用</span>
+          {% endif %}
+        </td>
+        <td>{{ pair.table_count|default:0 }}</td>
+        <td>{{ pair.history_count|default:0 }}</td>
+        <td>{{ pair.created_by.username|default:pair.created_by }}</td>
+        <td>{{ pair.created_at|date:"Y-m-d H:i" }}</td>
+        <td>
+          <div class="ddlsync-actions">
+            <a href="{% url 'ddl_sync:pair_detail' pair.id %}" class="ddlsync-act-btn view">查看</a>
+            {% if perms.ddl_sync.change_ddlsyncpair %}
+            <a href="{% url 'ddl_sync:pair_edit' pair.id %}" class="ddlsync-act-btn edit">编辑</a>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="11" style="text-align: center; padding: 40px; color: #909399;">
+          {% if keyword or sync_mode_filter or enabled_filter %}
+            没有匹配的库对, <a href="{% url 'ddl_sync:pair_list' %}" class="ddlsync-link">清空筛选</a>
+          {% else %}
+            暂无库对配置, {% if perms.ddl_sync.add_ddlsyncpair %}<a href="{% url 'ddl_sync:pair_create' %}" class="ddlsync-link">新建一个</a>{% else %}请联系 DBA{% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- 分页 -->
+{% if page_obj.has_other_pages %}
+<nav aria-label="分页" style="margin-top: 20px; display: flex; justify-content: center;">
+  <ul class="pagination" style="display: flex; gap: 4px; list-style: none; padding: 0;">
+    {% if page_obj.has_previous %}
+    <li><a href="?page={{ page_obj.previous_page_number }}&keyword={{ keyword }}&sync_mode={{ sync_mode_filter }}&enabled={{ enabled_filter }}" class="ddlsync-link" style="padding: 6px 12px; border: 1px solid #dcdfe6; border-radius: 4px;">‹ 上一页</a></li>
+    {% endif %}
+
+    {% for num in page_obj.paginator.page_range %}
+    {% if page_obj.number == num %}
+    <li><span style="padding: 6px 12px; background: #409EFF; color: #fff; border-radius: 4px;">{{ num }}</span></li>
+    {% else %}
+    <li><a href="?page={{ num }}&keyword={{ keyword }}&sync_mode={{ sync_mode_filter }}&enabled={{ enabled_filter }}" class="ddlsync-link" style="padding: 6px 12px; border: 1px solid #dcdfe6; border-radius: 4px;">{{ num }}</a></li>
+    {% endif %}
+    {% endfor %}
+
+    {% if page_obj.has_next %}
+    <li><a href="?page={{ page_obj.next_page_number }}&keyword={{ keyword }}&sync_mode={{ sync_mode_filter }}&enabled={{ enabled_filter }}" class="ddlsync-link" style="padding: 6px 12px; border: 1px solid #dcdfe6; border-radius: 4px;">下一页 ›</a></li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{% if action == "create" %}新建库对{% else %}编辑库对 {{ pair.name }}{% endif %} · Archery{% endblock %}
+
+{% block content %}
+<style>
+  .ddlsync-form-card { background: #fff; border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); padding: 24px 32px; max-width: 720px; margin: 0 auto; }
+  .ddlsync-form-card h2 { font-size: 20px; font-weight: 600; margin-bottom: 24px;
+    color: #303133; padding-bottom: 12px; border-bottom: 1px solid #ebeef5; }
+  .ddlsync-form-group { margin-bottom: 18px; }
+  .ddlsync-form-group label { display: block; color: #606266; font-size: 13px;
+    font-weight: 600; margin-bottom: 6px; }
+  .ddlsync-form-group label .required { color: #F56C6C; margin-left: 4px; }
+  .ddlsync-form-group .help { color: #909399; font-size: 12px; margin-top: 4px; }
+  .ddlsync-form-group input[type="text"],
+  .ddlsync-form-group select,
+  .ddlsync-form-group textarea {
+    width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px;
+    font-size: 13px; box-sizing: border-box; background: #fff; color: #303133;
+  }
+  .ddlsync-form-group input[type="text"]:focus,
+  .ddlsync-form-group select:focus,
+  .ddlsync-form-group textarea:focus { border-color: #409EFF; outline: none; }
+  .ddlsync-form-group .errorlist { color: #F56C6C; font-size: 12px;
+    list-style: none; padding: 0; margin: 4px 0 0 0; }
+
+  /* 同步模式 RadioSelect */
+  .ddlsync-form-group ul { list-style: none; padding: 0; margin: 0; display: flex; gap: 16px; }
+  .ddlsync-form-group ul li { display: flex; align-items: center; }
+  .ddlsync-form-group ul li label { display: flex; align-items: center; gap: 6px;
+    font-weight: 400; margin: 0; cursor: pointer; }
+
+  .ddlsync-form-actions { margin-top: 24px; padding-top: 16px; border-top: 1px solid #ebeef5;
+    display: flex; gap: 12px; }
+  .ddlsync-form-actions .btn { padding: 8px 20px; border: none; border-radius: 4px;
+    font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: none; }
+  .ddlsync-form-actions .btn-primary { background: #409EFF; color: #fff; }
+  .ddlsync-form-actions .btn-secondary { background: #fff; color: #606266; border: 1px solid #dcdfe6; }
+
+  .ddlsync-breadcrumb { margin-bottom: 16px; font-size: 13px; }
+  .ddlsync-breadcrumb a { color: #409EFF; text-decoration: none; }
+  .ddlsync-breadcrumb a:hover { text-decoration: underline; }
+  .ddlsync-form-error { background: #fef0f0; color: #F56C6C; padding: 12px 16px;
+    border-radius: 4px; margin-bottom: 16px; font-size: 13px; }
+</style>
+
+<!-- 面包屑 -->
+<nav aria-label="breadcrumb" class="ddlsync-breadcrumb">
+  <a href="{% url 'ddl_sync:pair_list' %}">库对列表</a> /
+  {% if action == "create" %}新建库对{% else %}编辑库对 {{ pair.name }}{% endif %}
+</nav>
+
+<div class="ddlsync-form-card">
+  <h2>{% if action == "create" %}新建库对{% else %}编辑库对 {{ pair.name }}{% endif %}</h2>
+
+  {% if form.errors %}
+  <div class="ddlsync-form-error">
+    <strong>表单校验失败:</strong> 请检查下方标红字段.
+  </div>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+
+    <div class="ddlsync-form-group">
+      <label for="{{ form.name.id_for_label }}">
+        配对名<span class="required">*</span>
+      </label>
+      {{ form.name }}
+      {% if form.name.help_text %}<div class="help">{{ form.name.help_text }}</div>{% endif %}
+      {{ form.name.errors }}
+    </div>
+
+    <div class="ddlsync-form-group">
+      <label for="{{ form.source_instance.id_for_label }}">
+        业务库实例<span class="required">*</span>
+      </label>
+      {{ form.source_instance }}
+      {% if form.source_instance.help_text %}<div class="help">{{ form.source_instance.help_text }}</div>{% endif %}
+      {{ form.source_instance.errors }}
+    </div>
+
+    <div class="ddlsync-form-group">
+      <label for="{{ form.source_db.id_for_label }}">
+        业务库名<span class="required">*</span>
+      </label>
+      {{ form.source_db }}
+      {% if form.source_db.help_text %}<div class="help">{{ form.source_db.help_text }}</div>{% endif %}
+      {{ form.source_db.errors }}
+    </div>
+
+    <div class="ddlsync-form-group">
+      <label for="{{ form.target_instance.id_for_label }}">
+        历史库实例<span class="required">*</span>
+      </label>
+      {{ form.target_instance }}
+      {% if form.target_instance.help_text %}<div class="help">{{ form.target_instance.help_text }}</div>{% endif %}
+      {{ form.target_instance.errors }}
+    </div>
+
+    <div class="ddlsync-form-group">
+      <label for="{{ form.target_db.id_for_label }}">
+        历史库名<span class="required">*</span>
+      </label>
+      {{ form.target_db }}
+      {% if form.target_db.help_text %}<div class="help">{{ form.target_db.help_text }}</div>{% endif %}
+      {{ form.target_db.errors }}
+    </div>
+
+    <div class="ddlsync-form-group">
+      <label>
+        同步模式<span class="required">*</span>
+      </label>
+      {{ form.sync_mode }}
+      {% if form.sync_mode.help_text %}<div class="help">{{ form.sync_mode.help_text }}</div>{% endif %}
+      {{ form.sync_mode.errors }}
+    </div>
+
+    <div class="ddlsync-form-group">
+      <label for="{{ form.enabled.id_for_label }}">
+        启用
+      </label>
+      {{ form.enabled }}
+      {% if form.enabled.help_text %}<div class="help">{{ form.enabled.help_text }}</div>{% endif %}
+      {{ form.enabled.errors }}
+    </div>
+
+    {% if form.non_field_errors %}
+    <div class="ddlsync-form-error">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="ddlsync-form-actions">
+      <button type="submit" class="btn btn-primary">
+        {% if action == "create" %}创建库对{% else %}保存修改{% endif %}
+      </button>
+      <a href="{% if action == "create" %}{% url 'ddl_sync:pair_list' %}{% else %}{% url 'ddl_sync:pair_detail' pair.id %}{% endif %}" class="btn btn-secondary">取消</a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
