@@ -1,0 +1,52 @@
+fix(column_diff): W2 D13 多表 DDL 字段 diff bug (汪银和 7 张表演练 9/2 实战)
+
+9/2 17:35 业务 RD 汪银和 110 prod /detail/4771/ 实战反馈:
+工单有 7 张表 DDL (project_config / company_info / team / order_penalty /
+waybill_penalty 等), 但字段 diff 区域只显示 project_config 一张表的 diff,
+其他 6 张表完全忽略 → DBA 看不到其他 6 张表字段变更风险.
+
+根因 (9/2 17:35 排查):
+column_diff.py column_diff_full 内部 for stmt: ... break, 只取第一个
+ALTER TABLE 就 break, 实战 8/12 v0.3.x 设计只考虑单表, 8/24-8/28 实战演练
+都是单表 DDL, 一直没踩到多表 DDL bug.
+
+修法 (D13 重构 3 文件):
+1. column_diff.py 抽 _diff_single_table helper, column_diff_full 拆 SQL 收集
+   所有 ALTER, 每张表调一次 _diff_single_table, 顶层汇总 high/mid/low
+   (所有表加起来), 顶层新增 tables:[{...}] 字段 (多表实战用), 顶层字段
+   兼容老单表前端 (data.columns / data.table_name 用 tables[0] 兜底)
+2. detail.html renderColumnDiff 重构: 循环 data.tables 每张表一段
+   (表名 + 风险 badge + 字段表格), 修复建议收集所有表 modifyCols 带
+   表名.列名前缀, 顶层数据兼容 data.tables || 单表兜底
+3. sqlsubmit.html renderColumnDiff 同样重构 (跟 detail.html 行为一致)
+
+134 dev 实战演练 (9/2 18:25-18:30):
+- 5 张表演练表 + 1 张已有 (accesscard_test_diff) = 6 张表实战
+- dryrun column_diff_full: ok=True, 6 张全 diff, high=2 mid=2 low=8
+  summary="共 6 张表, 检测到 2 个高风险变更, 强烈建议补全 SQL"
+- 端点 /gh_ost/column_diff/ 实战: status=200 ok=True tables=6
+  high=2 mid=2 low=8 ✓
+- 实战汪银和 7 张表演练在 110 prod 应该全部 diff 出来
+
+SFTP 推 134 dev (D12 套路):
+- 3 文件 md5 一致: column_diff.py f9b5422f..., detail.html 12cb492d...,
+  sqlsubmit.html ba3737da...
+- systemd reset-failed + start 接管 gunicorn
+- 5 端点 verify 全过 /login/ / /admin/ /ddl_sync/ /static/
+
+实战 4 踩坑 (D13 新发现):
+1. column_diff.py 双重函数定义 (我 Python sed 替换时, new_block 末尾
+   又有 def column_diff_full, 实战 ast.parse OK 但实际跑后定义覆盖
+   前定义, 我用 Python 删 1003 之后的内容解决) → 教训: 写 Python AST
+   替换脚本时, 新内容要避免包含 marker
+2. systemd Restart=always 实战冲突: 134 dev gunicorn 是 systemd
+   archery-prod-gunicorn.service 拉, pkill -9 之后 systemd 5 秒拉起
+   跟我手动 nohup 拉的冲突 Connection in use → 修法: pkill -9 +
+   systemctl reset-failed + systemctl start 一次完整
+3. 演练表先在演练库造: 实战演练 column_diff 需要真实存在的演练表
+   (查 information_schema.columns 才能拿到 current_cols) → 教训: 演练
+   脚本开头必查 SHOW TABLES 确认
+4. SUGGESTED SQL 字符串引号: 实战 dryrun 输出 DEFAULT '0 (少一个引号)
+   是 PowerShell 截断, 实际 SQL DEFAULT '0' 没问题
+
+CHANGELOG: docs/changelogs/2026-09-02_ddl-sync-w2-d13-multi-table-column-diff.md
