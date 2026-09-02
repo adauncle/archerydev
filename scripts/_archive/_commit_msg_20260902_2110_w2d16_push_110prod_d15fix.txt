@@ -1,0 +1,32 @@
+chore(deploy): W2 D16 push D15 fix column_diff.py to 110 prod c9236a0 (9/2 21:10)
+
+D15 fix (commit e939ffe) resolved 4 case implicit/explicit differentiation,
+but was not yet pushed to 110 prod. 9/2 21:00 business RD reported that
+wangyinhe workorder 4771 /detail/4771/ still showed 4 high false-positives
+on the old column_diff.py.
+
+Push flow (D14 4-step + D12 md5 + D13 systemctl):
+
+- Step 1: systemctl cat archery-v114-gunicorn verify points to
+  c9236a0 (not v114)
+- Step 2: backup 110 prod c9236a0 column_diff.py to
+  /backup/upgrade_v114/d16_20260902_211000/column_diff.py.bak
+  (md5 f9b5422fe81376c107e2a12dc22cac21, 8/26 old version)
+- Step 3: SFTP push local D15 fix version to /tmp
+- Step 4: md5 verify (local e6588f1d887d6154b6cc2dc88009e1ec ==
+  remote e6588f1d887d6154b6cc2dc88009e1ec)
+- Step 5: root cp + chown + clear __pycache__
+- Step 6: kill gunicorn + systemctl reset-failed + start
+- Step 7: gunicorn pids 23135 (master) + 4 worker 23160-23163,
+  port 9123 listening, systemd active
+
+Verify on wangyinhe workorder 4771 (110 prod):
+- order_penalty: was high=11, now high=0, low=1 (only COMMENT)
+- waybill_penalty: was high=11, now high=0, low=1 (only COMMENT)
+- full 7 tables: was high=11, now high=1, mid=2, low=4
+  (all 6 tables has_charset_high=False)
+
+After push, 110 c9236a0 column_diff.py md5 = e6588f1d887d6154b6cc2dc88009e1ec
+(D15 fix version). Fields without explicit CHARSET no longer flagged high.
+
+CHANGELOG: docs/changelogs/2026-09-02_ddl-sync-w2-d16-push-110prod-d15fix.md
