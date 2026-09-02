@@ -20,6 +20,69 @@
     </div>
     <input type="hidden" id="sqlMaxRowNumber" value="{{ rows|length }}">
     <input type="hidden" id="editSqlContent" value="{{ workflow_detail.sqlworkflowcontent.sql_content }}"/>
+
+<input type="hidden" id="sqlInstanceId" value="{{ instance_id_for_diff }}"/>
+<input type="hidden" id="dbNameForDiff" value="{{ db_name_for_diff|safe }}"/>
+{% if ddl_sync_as_target %}
+<!-- CUSTOM-MODIFIED: 镜像工单 alert 块 (D9 阶段 1 sync_trigger.py 联动) @ 2026-09-02 @ mavis
+     业务: 业务 RD 拿到镜像工单时知道这是 v0.5.0 自动生成, 能跳回源工单 -->
+<div class="alert alert-info" style="margin-top: 10px;">
+    <strong>🤖 DDL 跨库同步 - 镜像工单</strong>
+    &nbsp; <span class="label label-default">v0.5.0 自动生成</span>
+    <p style="margin-top: 8px; margin-bottom: 4px;">
+        本工单由
+        <a href="/detail/{{ ddl_sync_as_target.source_workflow_id }}/" target="_blank">
+            wf#{{ ddl_sync_as_target.source_workflow_id }} ({{ ddl_sync_as_target.source_workflow.workflow_name }})
+        </a>
+        在源库 <code>{{ ddl_sync_as_target.source_workflow.instance.instance_name }} / {{ ddl_sync_as_target.source_workflow.db_name }}</code> 通过 DDL 同步触发。
+    </p>
+    <p style="margin-bottom: 4px;">
+        目标库: <strong><code>{{ ddl_sync_as_target.target_workflow.instance.instance_name }} / {{ ddl_sync_as_target.target_workflow.db_name }}</code></strong>
+        &nbsp;|&nbsp;
+        同步状态:
+        <span class="label label-{% if ddl_sync_as_target.sync_status == 'synced' %}success{% elif ddl_sync_as_target.sync_status == 'failed' or ddl_sync_as_target.sync_status == 'rolled_back' %}danger{% elif ddl_sync_as_target.sync_status == 'syncing' %}info{% elif ddl_sync_as_target.sync_status == 'skipped' %}warning{% else %}default{% endif %}">
+            {{ ddl_sync_as_target.get_sync_status_display }}
+        </span>
+        &nbsp;|&nbsp;
+        库对: {{ ddl_sync_as_target.pair.name }}
+        &nbsp;|&nbsp;
+        表: <code>{{ ddl_sync_as_target.table_name }}</code>
+    </p>
+    {% if ddl_sync_as_target.error_message %}
+    <p style="margin-bottom: 0; color: #a94442;">
+        <strong>错误信息:</strong> {{ ddl_sync_as_target.error_message }}
+    </p>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if ddl_sync_as_source %}
+<!-- CUSTOM-MODIFIED: 源工单已配置跨库同步 alert 块 (W1-D4 §2.2 设计) @ 2026-09-02 @ mavis -->
+<div class="alert alert-warning" style="margin-top: 10px;">
+    <strong>📡 DDL 跨库同步 - 已配置</strong>
+    &nbsp; <span class="label label-default">v0.5.0 联动中</span>
+    <p style="margin-top: 8px; margin-bottom: 4px;">
+        本工单已配置跨库同步, 共触发 <strong>{{ ddl_sync_as_source|length }}</strong> 个镜像工单:
+    </p>
+    <ul style="margin-bottom: 0;">
+        {% for h in ddl_sync_as_source %}
+        <li>
+            镜像工单
+            <a href="/detail/{{ h.target_workflow_id }}/" target="_blank">
+                wf#{{ h.target_workflow_id }} ({{ h.target_workflow.workflow_name }})
+            </a>
+            → <code>{{ h.target_workflow.instance.instance_name }} / {{ h.target_workflow.db_name }}</code>
+            · 状态
+            <span class="label label-{% if h.sync_status == 'synced' %}success{% elif h.sync_status == 'failed' or h.sync_status == 'rolled_back' %}danger{% elif h.sync_status == 'syncing' %}info{% elif h.sync_status == 'skipped' %}warning{% else %}default{% endif %}">
+                {{ h.get_sync_status_display }}
+            </span>
+            · 表 <code>{{ h.table_name }}</code>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
     <hr>
     <h4>
         审批流

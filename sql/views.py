@@ -486,6 +486,36 @@ def detail(request, workflow_id):
     # 获取是否开启手工执行确认
     manual = SysConfig().get("manual")
 
+    ## CUSTOM-MODIFIED: v0.5.0 D9 阶段 1 DDL 跨库同步 镜像/源工单 alert 标识
+    ## 业务: 业务 RD 拿到镜像工单时知道这是 v0.5.0 自动生成的, 能跳回源工单; 源工单页能看所有镜像工单
+    ## 实战: D18 9/2 验证 /detail/119/ 发现镜像工单页没有 "🤖 镜像工单" 标识, 没有源工单 link, 用户看不出工单从哪来
+    ## try/except 兜底: ddl_sync app 不可用 / 任何异常都不让 detail 500 (跟 W1-D3 §9.3 实战 1 信号 handler 兜底同套路)
+    ## @ 2026-09-02 @ mavis
+    ddl_sync_as_target = None
+    ddl_sync_as_source = []
+    try:
+        from sql.extensions.ddl_sync.models import DdlSyncHistory
+        ddl_sync_as_target = (
+            DdlSyncHistory.objects
+            .filter(target_workflow_id=workflow_id)
+            .select_related(
+                "pair", "source_workflow", "source_workflow__instance",
+                "target_workflow", "target_workflow__instance",
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        ddl_sync_as_source = list(
+            DdlSyncHistory.objects
+            .filter(source_workflow_id=workflow_id)
+            .select_related(
+                "pair", "target_workflow", "target_workflow__instance",
+            )
+            .order_by("-created_at")[:50]
+        )
+    except Exception:
+        logger.exception("ddl_sync history lookup failed (likely ddl_sync app 不可用)")
+
     context = {
         "workflow_detail": workflow_detail,
         "current_reviewers": current_reviewers,
@@ -515,6 +545,9 @@ def detail(request, workflow_id):
         "sql_content_for_diff": json.dumps(_workflow_sql_text(workflow_detail)),
         "instance_id_for_diff": workflow_detail.instance_id or 0,
         "db_name_for_diff": json.dumps(workflow_detail.db_name or ""),
+        # CUSTOM: v0.5.0 DDL 跨库同步 alert 标识 (D9 阶段 1 联动)
+        "ddl_sync_as_target": ddl_sync_as_target,
+        "ddl_sync_as_source": ddl_sync_as_source,
     }
     return render(request, "detail.html", context)
 
