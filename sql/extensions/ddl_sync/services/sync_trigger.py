@@ -74,10 +74,12 @@ def _should_sync(pair: DdlSyncPair, table_name: str) -> bool:
       → DdlSyncTable(sync_type='whitelist', table_name=t) 存在 = 同步 (返 True)
       → 其他 = 不同步 (返 False)
     """
+    # CUSTOM-MODIFIED: 修 D10 演练发现 UnboundLocalError @ 2026-09-02 @ mavis
+    # 关联: docs/changelogs/2026-09-02_ddl-sync-w2-d10-drill.md
+    # 修法: 函数顶部直接 import, 不要放在 if 之前避免 local var 屏蔽
+    from ..models import DdlSyncTable
     if not table_name:
         return False
-    existing = DdlSyncTable  # 避免循环 import
-    from ..models import DdlSyncTable
     if pair.sync_mode == "blacklist":
         # 黑名单模式: 在黑名单 = 排除, 不在 = 同步
         in_blacklist = DdlSyncTable.objects.filter(
