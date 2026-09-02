@@ -1,0 +1,30 @@
+chore(deploy): SFTP 推 134 dev detail.html 修复 detail/119 JS ReferenceError (9/2 17:30)
+
+9/2 16:10 业务 RD 反馈 detail/119 报 hly_accesscard_history is not defined
+9/2 17:00 实战排查: 134 dev detail.html 是 0a04775 (8/26 21:34) 版本, 2a04a12 (8/26 21:57) 修复没推过去
+
+修法 (沿用 DBA 6 步):
+- 备份 134 dev 现场 (detail.html.bak_20260902_171202 + views.py.bak_20260902_171202)
+- SFTP 推本地 detail.html + views.py 到 134 dev
+- chown -R archery:archery + 清 __pycache__
+- kill 老 gunicorn + nohup ... & disown 拉新 (D12 实战新发现: disown 脱钩避免 paramiko timeout)
+- 14 端点 verify + Django check ddl_sync + 重新 render detail/119 验证
+
+实战 5 踩坑 (D12 新发现):
+1. SFTP 推 /tmp 后 sudo -u archery mv 失败 (root owner 限制), 改用 root 直接 cp + chown
+2. gunicorn 拉新用 setsid nohup 失败 (9003 端口被占), 改用 nohup ... & disown 脱钩
+3. Django settings LOGGING 相对路径 (logs/archery.log) 必 cd /opt/archery/prod, 不然报 PermissionError: '/root/logs/archery.log'
+4. 8/26 推 110 prod 范围瘦身后 detail.html 没推, 110 prod detail.html 一直是 7/19 上游 v1.14.0 老版本
+5. 9/1+9/2 W2 推 ddl_sync 也没补推 detail.html (ddl_sync 目录独立)
+
+实战 14 端点 verify 全过 + Django check ddl_sync: no issues 0 silenced
+实战 detail/119 实际渲染 (9/2 17:30 验证):
+- var sqlContent = "ALTER TABLE accesscard_black_detail add COLUMN test1 VARCHAR(256)  not null  DEFAULT 'test1' COMMENT 'test1';" (带引号 ✓)
+- var instanceId = 2;
+- var dbName = "hly_accesscard_history"; (带引号 ✓, JS ReferenceError 解决!)
+
+新 gunicorn pids: 12280 12282 (master) + 12376-12381 (4 worker)
+
+110 prod 状态: detail.html 7/19 上游版 (没 inline 区域, 没 bug, 也没新功能), 等用户拍板要不要推
+
+CHANGELOG: docs/changelogs/2026-09-02_ddl-sync-w2-d12-detail119-jsfix.md
