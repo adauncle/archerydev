@@ -21,7 +21,15 @@
 
   // 1. 全局上下文
   const pairId = parseInt(window.location.pathname.split('/').filter(s => s).pop(), 10);
-  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  // CUSTOM-MODIFIED: 修 D11 实战发现 CSRF 拿不到 @ 2026-09-02 @ mavis
+  // 关联: docs/changelogs/2026-09-02_ddl-sync-w2-d11-csrf-fix.md
+  // 修法: input[name=csrfmiddlewaretoken] 在没 form 页面找不到, fallback 从 csrftoken cookie 拿
+  // 实战: Archery base.html 顶部没 form 包裹, 直接 querySelector 必 null
+  const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+  const csrfCookie = document.cookie.match(/csrftoken=([^;]+)/);
+  const csrfToken = (csrfInput && csrfInput.value)
+                 || (csrfCookie && csrfCookie[1])
+                 || '';
   const jsonHeaders = { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken };
 
   // 2. 统一错误处理 (W1-D4 §4.3)

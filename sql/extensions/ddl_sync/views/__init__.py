@@ -76,7 +76,7 @@ def pair_list(request):
         "enabled_filter": enabled_filter,
         "total_count": paginator.count,
     }
-    return render(request, "pair_list.html", context)
+    return render(request, "ddl_sync/pair_list.html", context)
 
 
 @permission_required("ddl_sync.view_ddlsyncpair", raise_exception=True)
@@ -102,7 +102,7 @@ def pair_detail(request, pair_id):
         "history": history,
         "history_count": history_count,
     }
-    return render(request, "pair_detail.html", context)
+    return render(request, "ddl_sync/pair_detail.html", context)
 
 
 @permission_required("ddl_sync.add_ddlsyncpair", raise_exception=True)
@@ -128,7 +128,7 @@ def pair_create(request):
         "form": form,
         "action": "create",
     }
-    return render(request, "pair_form.html", context)
+    return render(request, "ddl_sync/pair_form.html", context)
 
 
 @permission_required("ddl_sync.change_ddlsyncpair", raise_exception=True)
@@ -155,4 +155,4 @@ def pair_edit(request, pair_id):
         "pair": pair,
         "action": "edit",
     }
-    return render(request, "pair_form.html", context)
+    return render(request, "ddl_sync/pair_form.html", context)

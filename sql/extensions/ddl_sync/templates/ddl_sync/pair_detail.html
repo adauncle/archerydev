@@ -237,6 +237,12 @@
 
 {% endblock %}
 
-{% block extra_js %}
+{# CUSTOM-MODIFIED: 修 D11 实战发现 block name 错 @ 2026-09-02 @ mavis #}
+{# 关联: docs/changelogs/2026-09-02_ddl-sync-w2-d11-block-name-fix.md #}
+{# 修法: base.html line 810 是 block js 不是 extra_js block, 改 block name #}
+{# 之前 extra_js 是 Django 静默忽略的未知 block, pair_detail.js 没加载 #}
+{# 导致 3 按钮 (批量导入/一键配/添加表) 点击没反应 #}
+{# 避坑: Django 模板会把注释里的 double-curly-brace 当成真标签解析, 注释必用 double-hash 包 #}
+{% block js %}
 <script src="{% static 'ddl_sync/pair_detail.js' %}"></script>
 {% endblock %}

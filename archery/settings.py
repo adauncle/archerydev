@@ -421,7 +421,13 @@ if CUSTOM_GH_OST_ENABLED:
 ## CUSTOM-MODIFIED: v0.5.0-alpha DDL 跨库同步 启用开关 @ 2026-09-01 @ mavis
 ## 跟 v0.3.0 gh-ost 套路一致, 默认 True, 需要时通过 env 关
 ## 设计参考: docs/designs/2026-09-01_ddl-sync-data-model.md
-if env("CUSTOM_DDL_SYNC_ENABLED", default=True):
+## CUSTOM-MODIFIED: 修 D11 实战发现 namespace bug @ 2026-09-02 @ mavis
+## 关联: docs/changelogs/2026-09-02_ddl-sync-w2-d11-namespace-fix.md
+## 修法: 必把 env() 值写到 settings.CUSTOM_DDL_SYNC_ENABLED 属性, archery/urls.py:53 用 getattr 读
+##       不写的话 getattr 返 False, 路由不 include, namespace 不注册
+##       base.html {% url 'ddl_sync:pair_list' %} 找不到 namespace 报 NoReverseMatch 500
+CUSTOM_DDL_SYNC_ENABLED = env("CUSTOM_DDL_SYNC_ENABLED", default=True)
+if CUSTOM_DDL_SYNC_ENABLED:
     INSTALLED_APPS += ("sql.extensions.ddl_sync.apps.DdlSyncConfig",)
     ## CUSTOM-MODIFIED: gh-ost dev-only 凭据 fallback @ 2026-08-06 @ mavis
     ## 134 dev 上 archery instance 的 user/password 字段是历史 mirage 加密密文，
