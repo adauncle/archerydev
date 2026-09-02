@@ -1,0 +1,36 @@
+fix(column_diff): W2 D15 字符集/排序规则 implicit vs explicit 区分 (9/2 20:30)
+
+9/2 20:26 业务 RD 看 110 prod /detail/4771/ 实战效果 反馈 bug:
+汪银和工单 4771 实战 order_penalty / waybill_penalty 2 张表演练, 字段
+diff 把所有 MODIFY 不指定 charset/collation 的列都标红 高风险, 但实际
+原表字段定义 没显式 带 CHARSET (继承表默认 utf8mb4), 变更不指定也
+是合理的, 根本不应该标红。
+
+根因: _assess_charset_risk / _assess_collation_risk 没法区分 原字段
+是显式 CHARSET 还是 原字段继承表默认。information_schema.columns
+.CHARACTER_SET_NAME 总是返回字段实际 charset (即使是继承表默认),
+没法直接区分。
+
+修法 (1 文件 4 处改动):
+1. 新增 _fetch_table_create_sql helper 走 SHOW CREATE TABLE 拿原始 DDL
+2. 新增 _parse_column_create_attrs parser 解析每列 charset_explicit /
+   collation_explicit 标记 (字段段字面有没有 CHARACTER SET / COLLATE)
+3. _fetch_current_columns 整合, 把 explicit 标记挂到 ColumnDef
+4. _assess_charset_risk / _assess_collation_risk 4 种组合判定:
+   - 旧 implicit + 新 implicit: none (合理继承, 不标红)
+   - 旧 explicit + 新 implicit: high (显式声明丢了, 标红警告)
+   - 旧 implicit + 新 explicit: low (加显式声明, 更明确)
+   - 旧 explicit + 新 explicit: high (按值变化)
+5. suggested_sql 同步: 旧 explicit 才补全, 旧 implicit 不补
+6. _diff_single_table 传 explicit flag 给 risk 评估
+
+134 dev 实战演练 4 case 全过:
+- Case A: 旧 implicit + 新不指定 -> diff 列表不出现 charset/collation
+- Case B: 旧 explicit + 新不指定 -> high 标红 (old_explicit=True)
+- Case C: 旧 explicit + 新显式同值 -> 不出现 (值没变)
+- Case D: 旧 explicit + 新显式不同值 -> high (值变了)
+
+实战 134 dev gunicorn 拉新 (9793 master + 4 worker 9805-9808),
+md5 一致 (e6588f1d887d6154b6cc2dc88009e1ec), 演练表已清理。
+
+CHANGELOG: docs/changelogs/2026-09-02_ddl-sync-w2-d15-charset-implicit-explicit.md

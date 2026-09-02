@@ -26,6 +26,91 @@ logger = logging.getLogger("default")
 # ============================================================
 # 1. 查 information_schema.columns 拿当前列定义
 # ============================================================
+def _fetch_table_create_sql(instance, db_name: str, table_name: str) -> str:
+    """CUSTOM: 查 instance 库的某表原始 CREATE TABLE DDL (走 SHOW CREATE TABLE).
+
+    返回: CREATE TABLE 完整 SQL 字符串, 失败返 "".
+    用途: information_schema.columns 不直接提供"列定义里是否显式 CHARACTER SET",
+          必须从 SHOW CREATE TABLE 拿原始 DDL, 自己 parse 字段段才能区分
+          "显式指定" vs "继承表默认".
+    9/2 D15 新增: 9/2 20:30 实战反馈 order_penalty / waybill_penalty 字段
+          信息不显示带 CHARSET, 跟 information_schema 看到的不一致.
+    """
+    if not (instance and db_name and table_name):
+        return ""
+    try:
+        user, password = (
+            instance.get_username_password()
+            if hasattr(instance, "get_username_password")
+            else (instance.user, instance.password)
+        )
+        import pymysql
+        conn = pymysql.connect(
+            host=instance.host, port=instance.port, user=user, password=password,
+            database=db_name, connect_timeout=5, autocommit=True,
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(f"SHOW CREATE TABLE `{db_name}`.`{table_name}`")
+                row = cur.fetchone()
+                if not row or not row[1]:
+                    return ""
+                return row[1]
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        logger.exception("_fetch_table_create_sql failed: %s.%s", db_name, table_name)
+        return ""
+
+
+def _parse_column_explicit_attrs(create_sql: str) -> dict:
+    """CUSTOM: 从 SHOW CREATE TABLE DDL 解析每列是否显式指定 CHARSET/COLLATE.
+
+    返回: {col_name_lc: {"charset_explicit": bool, "collation_explicit": bool}}
+          解析失败返 {}.
+
+    业务: information_schema.columns.CHARACTER_SET_NAME 总是显示表默认 CHARSET (即使列定义里没显式),
+          无法区分"原列显式 utf8mb4"和"原列继承表默认".
+          必须看 DDL 字段段字面有没有 `CHARACTER SET xxx` / `COLLATE xxx`.
+    9/2 D15 新增: 9/2 20:30 实战反馈 order_penalty (字段定义没显式 CHARSET) 被误标 high.
+    """
+    if not create_sql:
+        return {}
+
+    # 1. 提取 CREATE TABLE 括号内的字段段
+    m = re.search(r"^\s*CREATE\s+TABLE\s+`?[^`\s(]+`?\s*\((.*)\)\s*ENGINE\s*=", create_sql, re.IGNORECASE | re.DOTALL)
+    if not m:
+        # 没有 ENGINE= 段 (MySQL 5.7 老格式, 一些简化场景) — fallback 找最后一个 )
+        m = re.search(r"^\s*CREATE\s+TABLE\s+`?[^`\s(]+`?\s*\((.*)\)\s*$", create_sql, re.IGNORECASE | re.DOTALL)
+    if not m:
+        return {}
+    body = m.group(1)
+
+    # 2. 顶层逗号拆分 (字段段 + KEY 段 + CONSTRAINT 段)
+    parts = _split_top_level_commas(body)
+
+    result = {}
+    for part in parts:
+        part_strip = part.strip()
+        # 跳过 KEY / INDEX / CONSTRAINT / PRIMARY 段
+        if re.match(r"^\s*(?:PRIMARY\s+KEY|UNIQUE\s+KEY|KEY|INDEX|FULLTEXT|SPATIAL|CONSTRAINT|FOREIGN\s+KEY)\b",
+                     part_strip, re.IGNORECASE):
+            continue
+        # 字段定义: `name` type ... 或者 name type ...
+        m_col = re.match(r"^\s*`?(?P<name>[^`\s(]+)`?\s+", part_strip)
+        if not m_col:
+            continue
+        col_name_lc = m_col.group("name").strip("`").lower()
+        # 3. 看这段里字面有没有 CHARACTER SET / COLLATE
+        has_charset = bool(re.search(r"\bCHARACTER\s+SET\s+\S+", part_strip, re.IGNORECASE))
+        has_collate = bool(re.search(r"\bCOLLATE\s+\S+", part_strip, re.IGNORECASE))
+        result[col_name_lc] = {
+            "charset_explicit": has_charset,
+            "collation_explicit": has_collate,
+        }
+    return result
+
+
 def _fetch_current_columns(instance, db_name: str, table_name: str) -> dict:
     """CUSTOM: 查 instance 库的某表所有列定义.
 
@@ -36,6 +121,8 @@ def _fetch_current_columns(instance, db_name: str, table_name: str) -> dict:
         "max_length": int,
         "charset": str (e.g. "utf8mb4" or "" for non-string),
         "collation": str (e.g. "utf8mb4_general_ci" or ""),
+        "charset_explicit": bool,   # 9/2 D15 新增: 字段定义是否显式 CHARACTER SET
+        "collation_explicit": bool,  # 9/2 D15 新增: 字段定义是否显式 COLLATE
         "nullable": bool,
         "default": str (e.g. "0" or None or "CURRENT_TIMESTAMP"),
         "comment": str,
@@ -59,6 +146,12 @@ def _fetch_current_columns(instance, db_name: str, table_name: str) -> dict:
         )
         try:
             with conn.cursor() as cur:
+                # 9/2 D15: 同步拿 SHOW CREATE TABLE, 解析 charset_explicit 标记
+                cur.execute(f"SHOW CREATE TABLE `{db_name}`.`{table_name}`")
+                create_row = cur.fetchone()
+                create_sql = create_row[1] if create_row and create_row[1] else ""
+                explicit_attrs = _parse_column_explicit_attrs(create_sql)
+
                 cur.execute(
                     """SELECT COLUMN_NAME, COLUMN_TYPE, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH,
                               CHARACTER_SET_NAME, COLLATION_NAME, IS_NULLABLE, COLUMN_DEFAULT,
@@ -71,13 +164,17 @@ def _fetch_current_columns(instance, db_name: str, table_name: str) -> dict:
                 cols = {}
                 for row in cur.fetchall():
                     name = row[0]
-                    cols[name.lower()] = {
+                    name_lc = name.lower()
+                    explicit = explicit_attrs.get(name_lc, {})
+                    cols[name_lc] = {
                         "name": name,
                         "type": row[1] or "",
                         "data_type": (row[2] or "").lower(),
                         "max_length": row[3],
                         "charset": row[4] or "",
                         "collation": row[5] or "",
+                        "charset_explicit": bool(explicit.get("charset_explicit", False)),
+                        "collation_explicit": bool(explicit.get("collation_explicit", False)),
                         "nullable": (row[6] or "").upper() == "YES",
                         "default": row[7],  # None 表示 IS NULL
                         "comment": row[8] or "",
@@ -426,10 +523,35 @@ def _assess_type_risk(old_type: str, new_type: str) -> tuple:
     return ("low", f"类型变更: {old_type} → {new_type}")
 
 
-def _assess_charset_risk(old: str, new: str) -> tuple:
-    """字符集变更风险."""
+def _assess_charset_risk(old: str, new: str, old_explicit: bool = False, new_explicit: bool = False) -> tuple:
+    """字符集变更风险.
+
+    9/2 D15 新增 explicit flag:
+      - 旧 implicit (原字段没显式 CHARSET, 继承表默认) + 新 implicit (SQL 没指定) → none
+        合理继承表默认, 不标红.
+      - 旧 explicit (原字段显式 utf8mb4) + 新 implicit (SQL 没指定) → high
+        你丢了显式声明, 虽然 MySQL 会兜底回表默认, 但语义上是降级, 标红警告.
+      - 旧 explicit + 新 explicit → high (按值变化)
+      - 旧 implicit + 新 explicit → low (加显式声明, 更明确)
+    """
     if old == new:
         return ("none", "字符集未变")
+    if not old_explicit and not new_explicit:
+        # 9/2 D15: 旧/新都没显式, 不管值怎么显示都算"继承表默认", 不标红
+        return ("none", "字符集均继承表默认 (字段定义未显式指定), 无风险")
+    if old_explicit and not new_explicit:
+        # 9/2 D15: 旧显式 + 新没显式 → 显式声明丢了, 标红
+        return (
+            "high",
+            f"原字段显式指定字符集 {old!r}, 变更语句没显式指定, 显式声明将丢失 (会回退到表默认, 语义降级)",
+        )
+    if not old_explicit and new_explicit:
+        # 9/2 D15: 旧没显式 + 新显式 → 加显式声明, 更明确
+        return (
+            "low",
+            f"原字段继承表默认, 变更语句显式指定 {new!r}, 显式声明更明确 (兼容)",
+        )
+    # 两边都显式 + 值不同
     if not old or not new or "(table default)" in (old, new):
         return (
             "high",
@@ -438,10 +560,29 @@ def _assess_charset_risk(old: str, new: str) -> tuple:
     return ("high", f"字符集变化: {old} → {new}, 跨表 JOIN 索引可能失效")
 
 
-def _assess_collation_risk(old: str, new: str) -> tuple:
-    """排序规则变更风险."""
+def _assess_collation_risk(old: str, new: str, old_explicit: bool = False, new_explicit: bool = False) -> tuple:
+    """排序规则变更风险.
+
+    9/2 D15 新增 explicit flag (语义同 _assess_charset_risk):
+      - 旧/新都没显式 → none (合理继承表默认)
+      - 旧 explicit + 新 implicit → high (显式声明丢了, 排序/大小写敏感行为会变)
+      - 旧 implicit + 新 explicit → low (加显式声明, 更明确)
+      - 两边都 explicit → high (按值变化)
+    """
     if old == new:
         return ("none", "排序规则未变")
+    if not old_explicit and not new_explicit:
+        return ("none", "排序规则均继承表默认 (字段定义未显式指定), 无风险")
+    if old_explicit and not new_explicit:
+        return (
+            "high",
+            f"原字段显式指定排序规则 {old!r}, 变更语句没显式指定, 显式声明将丢失 (排序/大小写敏感行为会变)",
+        )
+    if not old_explicit and new_explicit:
+        return (
+            "low",
+            f"原字段继承表默认, 变更语句显式指定 {new!r}, 显式声明更明确 (兼容)",
+        )
     if not old or not new or "(table default)" in (old, new):
         return (
             "high",
@@ -673,16 +814,26 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
                     low_risk += 1
 
         # Charset (只对字符类型有意义)
+        # 9/2 D15: 传 charset_explicit / new_def 显式标记给 risk 评估
         if current.get("charset") or new_def.get("charset"):
             old_charset = current.get("charset") or "(未指定)"
             new_charset = new_def.get("charset") or "(table default)"
-            if old_charset != new_charset:
-                risk, reason = _assess_charset_risk(old_charset, new_charset)
+            old_charset_explicit = bool(current.get("charset_explicit", False))
+            # 9/2 D15: new_def["charset"] 非空 = 显式; 空字符串 = 隐式 (继承表默认)
+            new_charset_explicit = bool(new_def.get("charset"))
+            if old_charset != new_charset or old_charset_explicit != new_charset_explicit:
+                risk, reason = _assess_charset_risk(
+                    old_charset, new_charset,
+                    old_explicit=old_charset_explicit,
+                    new_explicit=new_charset_explicit,
+                )
                 if risk != "none":
                     diffs.append({
                         "field": "charset",
                         "old": old_charset,
                         "new": new_charset,
+                        "old_explicit": old_charset_explicit,
+                        "new_explicit": new_charset_explicit,
                         "risk": risk,
                         "reason": reason,
                     })
@@ -694,16 +845,25 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
                         low_risk += 1
 
         # Collation
+        # 9/2 D15: 传 collation_explicit 给 risk 评估
         if current.get("collation") or new_def.get("collation"):
             old_coll = current.get("collation") or "(未指定)"
             new_coll = new_def.get("collation") or "(table default)"
-            if old_coll != new_coll:
-                risk, reason = _assess_collation_risk(old_coll, new_coll)
+            old_coll_explicit = bool(current.get("collation_explicit", False))
+            new_coll_explicit = bool(new_def.get("collation"))
+            if old_coll != new_coll or old_coll_explicit != new_coll_explicit:
+                risk, reason = _assess_collation_risk(
+                    old_coll, new_coll,
+                    old_explicit=old_coll_explicit,
+                    new_explicit=new_coll_explicit,
+                )
                 if risk != "none":
                     diffs.append({
                         "field": "collation",
                         "old": old_coll,
                         "new": new_coll,
+                        "old_explicit": old_coll_explicit,
+                        "new_explicit": new_coll_explicit,
                         "risk": risk,
                         "reason": reason,
                     })
@@ -795,11 +955,15 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
 
         # 生成补全 SQL (CUSTOM: 2026-08-12 mavis) — 修复建议要可复制粘贴
         # 思路: 用 user 提供的 type/nullable/default/comment, 但强制补全原 charset/collation
+        # 9/2 D15: 只有原字段显式指定 charset/collation 才补全, 旧 implicit 不补 (继承表默认是合理的)
         suggested_sql = None
         if any(d.get("risk") == "high" for d in diffs):
             fixed_type = new_def.get("type") or current.get("type", "")
-            fixed_charset = current.get("charset", "")
-            fixed_collation = current.get("collation", "")
+            # 9/2 D15: 显式标记决定补全策略
+            old_charset_explicit = bool(current.get("charset_explicit", False))
+            old_collation_explicit = bool(current.get("collation_explicit", False))
+            fixed_charset = current.get("charset", "") if old_charset_explicit else ""
+            fixed_collation = current.get("collation", "") if old_collation_explicit else ""
             new_nullable = new_def.get("nullable", True)
             new_default = new_def.get("default")
             new_comment = new_def.get("comment", "")
