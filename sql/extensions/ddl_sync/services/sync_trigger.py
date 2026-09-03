@@ -457,9 +457,13 @@ def target_workflow_status_handler(sender, instance, created, **kwargs):
 
                 h.sync_status = new_sync_status
                 h.finished_at = timezone.now()
-                h.error_message = (
-                    (h.error_message + '\n') if h.error_message else ''
-                ) + f'镜像工单 #{instance.id} status={instance.status} → DdlSyncHistory 联动切 {new_sync_status}'
+                # D25 修 error_message 字段语义: 只在 failed/skipped 时写原因,
+                # synced 成功联动不污染 error_message 字段 (业务方会误以为出错了)
+                # 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d25-error-message-semantics.md
+                if new_sync_status != 'synced':
+                    h.error_message = (
+                        (h.error_message + '\n') if h.error_message else ''
+                    ) + f'镜像工单 #{instance.id} status={instance.status} → DdlSyncHistory 联动切 {new_sync_status}'
 
                 h.save()
 

@@ -51,9 +51,17 @@
 
 
     {% if ddl_sync_as_target.error_message %}
-    <p style="margin-bottom: 0; color: #a94442;">
-        <strong>错误信息:</strong> {{ ddl_sync_as_target.error_message }}
-    </p>
+      {% if ddl_sync_as_target.sync_status == 'failed' or ddl_sync_as_target.sync_status == 'skipped' or ddl_sync_as_target.sync_status == 'rolled_back' %}
+        {# CUSTOM-MODIFIED: D25 error_message 字段语义 @ 2026-09-03 @ mavis #}
+        {# 业务: 业务方看到 "错误信息: 镜像工单 #132 status=workflow_finish → DdlSyncHistory 联动切 synced" 误以为出错 #}
+        {# 根因: D23 signal 联动成功时也写 error_message 字段, 字段语义是"错误信息" #}
+        {# 修法: 视图层防御, 只在 sync_status=failed/skipped/rolled_back 时显示 #}
+        {# 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d25-error-message-semantics.md #}
+        {# D25 v2: Django 模板不支持 in (a, b, c) 元组语法 (TemplateSyntaxError: Could not parse), 改成嵌套 if + 多个 or #}
+        <p style="margin-bottom: 0; color: #a94442;">
+            <strong>错误信息:</strong> {{ ddl_sync_as_target.error_message }}
+        </p>
+      {% endif %}
     {% endif %}
 </div>
 {% endif %}
