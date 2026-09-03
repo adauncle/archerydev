@@ -305,6 +305,26 @@ _RE_DROP = re.compile(
 )
 
 
+# 模式 5: ALTER [COLUMN] <name> SET DEFAULT <value>
+# 模式 6: ALTER [COLUMN] <name> DROP DEFAULT
+# CUSTOM-MODIFIED: D27 ALTER COLUMN SET/DROP DEFAULT 字段 diff @ 2026-09-03 @ mavis
+# 业务: 110 prod 业务方演练 wf#4776, `alter table order_pay alter column oil_money set default null`
+#       v0.3.x 字段 diff 检测不到 (只支持 MODIFY/ADD/DROP COLUMN)
+# 根因: 8/12 v0.3.x 设计只考虑 MODIFY/ADD/DROP COLUMN, 没考虑 ALTER COLUMN SET/DROP DEFAULT
+# 修法: 加 _RE_ALTER_COLUMN 模式, 解析 "set default <value>" / "drop default",
+#       字段 diff 时跟现有 default 比对, 单独展示 default 变更 (不报大表告警,
+#       因为 DEFAULT 变更不影响存量数据, 只影响新插入行)
+# 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d27-alter-column-default.md
+_RE_ALTER_COLUMN = re.compile(
+    r"^\s*ALTER\s+(?:COLUMN\s+)?"
+    r"`?(?P<name>[^`\s(]+)`?"
+    r"\s+(?P<action>SET\s+DEFAULT|DROP\s+DEFAULT)"
+    r"(?:\s+(?P<value>'(?:[^']|'')*'|\([^)]*\)|\S+))?"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+
 def _strip_quotes(s: str) -> str:
     """去反引号 + 标准化空白."""
     return s.strip().strip("`").strip()
@@ -369,7 +389,7 @@ def _parse_alter_column_changes(sql_content: str) -> list:
     """CUSTOM: 解析 ALTER TABLE 的列定义变更.
 
     返回: [{
-        "operation": "modify" | "add" | "drop",
+        "operation": "modify" | "add" | "drop" | "alter_default",
         "name": str,
         "definition": dict  (modify/add 才有)
     }]
@@ -419,6 +439,38 @@ def _parse_alter_column_changes(sql_content: str) -> list:
         if m_drop:
             name = _strip_quotes(m_drop.group("name"))
             changes.append({"operation": "drop", "name": name, "definition": None})
+            continue
+
+        # ALTER COLUMN (D27 新加): SET DEFAULT <value> / DROP DEFAULT
+        m_alter = _RE_ALTER_COLUMN.match(op_text)
+        if m_alter:
+            name = _strip_quotes(m_alter.group("name"))
+            action = m_alter.group("action").upper().replace(" ", "_")
+            # action = "SET_DEFAULT" 或 "DROP_DEFAULT"
+            if action == "SET_DEFAULT":
+                value_raw = m_alter.group("value")
+                # 解析 default value (跟 _parse_definition 的 DEFAULT 段一样)
+                if not value_raw or value_raw.upper() == "NULL":
+                    new_default = None  # 显式 SET DEFAULT NULL
+                elif value_raw.startswith("(") and value_raw.endswith(")"):
+                    new_default = value_raw  # 函数式 DEFAULT, 完整保留
+                elif value_raw.startswith("'") and value_raw.endswith("'"):
+                    new_default = value_raw.strip("'").replace("''", "'")
+                else:
+                    new_default = value_raw  # 数字 / CURRENT_TIMESTAMP 等
+                changes.append({
+                    "operation": "alter_default",
+                    "name": name,
+                    "default_action": "set",
+                    "new_default": new_default,
+                })
+            elif action == "DROP_DEFAULT":
+                changes.append({
+                    "operation": "alter_default",
+                    "name": name,
+                    "default_action": "drop",
+                    "new_default": None,
+                })
             continue
 
     return changes
@@ -744,6 +796,77 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
                 }],
             })
             mid_risk += 1
+            continue
+
+        if op == "alter_default":
+            # CUSTOM-MODIFIED: D27 ALTER COLUMN SET/DROP DEFAULT 字段 diff @ 2026-09-03 @ mavis
+            # 业务: 110 prod 业务方演练 ALTER COLUMN SET DEFAULT, 字段 diff 检测不到
+            # 根因: 8/12 v0.3.x 设计只考虑 MODIFY/ADD/DROP COLUMN, 没考虑 ALTER COLUMN SET/DROP DEFAULT
+            # 修法: 跟现有 default 比对, 单独展示 default 变更 (不报大表告警, 因为
+            #       DEFAULT 变更不影响存量数据, 只影响新插入行)
+            # 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d27-alter-column-default.md
+            if not current:
+                # 列不存在, ALTER COLUMN 会失败
+                columns_diff.append({
+                    "name": change["name"],
+                    "operation": "ALTER_DEFAULT",
+                    "current": None,
+                    "new": {
+                        "default_action": change["default_action"],
+                        "new_default": change["new_default"],
+                    },
+                    "diffs": [{
+                        "field": "_op",
+                        "old": "missing",
+                        "new": "alter_default",
+                        "risk": "high",
+                        "reason": f"列名 {change['name']} 不存在, ALTER COLUMN 会失败",
+                    }],
+                })
+                high_risk += 1
+                continue
+
+            current_default = current.get("default")
+            new_default = change["new_default"]
+            action = change["default_action"]
+
+            if action == "set":
+                if str(current_default) == str(new_default):
+                    # DEFAULT 没变 (但比对了类型: '0' == '0', None == None)
+                    diffs = []
+                else:
+                    diffs = [{
+                        "field": "default",
+                        "old": current_default,
+                        "new": new_default,
+                        "risk": "low",  # DEFAULT 变更不影响存量数据
+                        "reason": f"DEFAULT 从 {current_default!r} 改为 {new_default!r}, 不影响存量数据, 只影响新插入行",
+                    }]
+                    low_risk += 1
+            elif action == "drop":
+                if current_default is None:
+                    # 已经是 NULL, 没变
+                    diffs = []
+                else:
+                    diffs = [{
+                        "field": "default",
+                        "old": current_default,
+                        "new": None,
+                        "risk": "low",
+                        "reason": f"删除 DEFAULT {current_default!r}, 不影响存量数据, 只影响新插入行 (新插入行将依赖列的隐式默认值)",
+                    }]
+                    low_risk += 1
+
+            columns_diff.append({
+                "name": change["name"],
+                "operation": "ALTER_DEFAULT",
+                "current": current,
+                "new": {
+                    "default_action": action,
+                    "new_default": new_default,
+                },
+                "diffs": diffs,
+            })
             continue
 
         if op == "add":
