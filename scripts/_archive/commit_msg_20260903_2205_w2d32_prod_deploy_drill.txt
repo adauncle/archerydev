@@ -1,0 +1,8 @@
+docs(ddl-sync): W2 D32 134 dev 演练"完整 copy + 改 settings/urls/base.html"流程 (9/3 22:05)
+
+- 演练 1 干净状态: 用 if False 替换 settings.py / urls.py 的 if 守卫, base.html 整段注释, 验证 showmigrations 报 "No installed app with label 'ddl_sync'"
+- 演练 2 恢复状态: cp .bak 还原 3 文件 + migrate ddl_sync + kill + 拉新 gunicorn/qcluster, 验证 reverse('ddl_sync:pair_list') 返回 '/ddl_sync/pair/list/' + 16 个 ddl_sync 路由全在 + showmigrations 2 [X]
+- 演练结束清理 6 个 .bak_d32* 备份
+- 134 dev 最终状态完全恢复演练前
+
+CHANGELOG: docs/changelogs/2026-09-03_ddl-sync-w2-d32-prod-deploy-drill.md
