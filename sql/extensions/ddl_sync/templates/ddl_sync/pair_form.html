@@ -108,6 +108,17 @@
       {{ form.target_db.errors }}
     </div>
 
+    {# CUSTOM-MODIFIED: D22 镜像工单审批组 @ 2026-09-03 @ mavis #}
+    {# 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d22-mirror-target-group.md #}
+    <div class="ddlsync-form-group">
+      <label for="{{ form.target_group.id_for_label }}">
+        镜像工单审批组<span class="required">*</span>
+      </label>
+      {{ form.target_group }}
+      {% if form.target_group.help_text %}<div class="help">{{ form.target_group.help_text }}</div>{% endif %}
+      {{ form.target_group.errors }}
+    </div>
+
     <div class="ddlsync-form-group">
       <label>
         同步模式<span class="required">*</span>

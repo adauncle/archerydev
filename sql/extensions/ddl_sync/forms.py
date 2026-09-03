@@ -5,7 +5,7 @@
 """
 
 from django import forms
-from sql.models import Instance, Users
+from sql.models import Instance, ResourceGroup, Users
 
 from .models import DdlSyncPair
 
@@ -25,11 +25,20 @@ class DdlSyncPairForm(forms.ModelForm):
         help_text="历史库所在 MySQL instance (archery 配的 instance)",
     )
 
+    ## CUSTOM-MODIFIED: D22 target_group 镜像工单审批组 @ 2026-09-03 @ mavis
+    ## 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d22-mirror-target-group.md
+    target_group = forms.ModelChoiceField(
+        queryset=ResourceGroup.objects.all().order_by("group_id"),
+        label="镜像工单审批组",
+        help_text="DBA 显式选 (Instance 是 M2M ResourceGroup, 不能自动猜); 走当前 group_id 的 WorkflowAuditSetting (SQL_REVIEW) 拿审流, 如 'prod core for 历史库' (DBA 单一审批)",
+    )
+
     class Meta:
         model = DdlSyncPair
         fields = [
             "name", "source_instance", "source_db",
             "target_instance", "target_db",
+            "target_group",
             "sync_mode", "enabled",
         ]
         labels = {
@@ -56,6 +65,7 @@ class DdlSyncPairForm(forms.ModelForm):
         source_db = cleaned_data.get("source_db")
         target_instance = cleaned_data.get("target_instance")
         target_db = cleaned_data.get("target_db")
+        target_group = cleaned_data.get("target_group")
 
         # 业务库跟历史库不能是同一个 instance + 同一个 db
         if source_instance and target_instance and source_db and target_db:
@@ -64,4 +74,22 @@ class DdlSyncPairForm(forms.ModelForm):
                     "业务库跟历史库不能是同一个 instance + 同一个 db"
                 )
 
+        # D22: 镜像工单审批组必填 (没填会导致 sync_trigger fallback 走 source_workflow.group_id,
+        # 走业务组审批, 违反"镜像工单走历史库审批流"设计)
+        if not target_group:
+            raise forms.ValidationError(
+                "镜像工单审批组必填 (DBA 显式选, 走历史库组审批流, "
+                "不能 fallback 走业务组, 否则 wf#121 那种 bug 会重现)"
+            )
+
         return cleaned_data
+
+    def save(self, commit=True):
+        # D22: 同步 target_group_name (跟 group_id 配对, 给 SqlWorkflow.group_name 用)
+        instance = super().save(commit=False)
+        if instance.target_group:
+            instance.target_group_name = instance.target_group.group_name
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance

@@ -40,6 +40,18 @@ from ..models import DdlSyncPair, DdlSyncHistory
 logger = logging.getLogger("default")
 
 
+# ===== 异常 (D22 新增) =====
+
+class TargetGroupNotConfiguredError(Exception):
+    """D22: DdlSyncPair 没配 target_group (镜像工单审批组), 镜像工单创建失败.
+
+    业务: 镜像工单必须走历史库组审批流, 不允许 fallback 走业务组.
+    修法: DBA 配库对时必填 target_group (DdlSyncPairForm.clean 校验).
+    关联: docs/changelogs/2026-09-03_ddl-sync-w2-d22-mirror-target-group.md
+    """
+    pass
+
+
 # ===== SQL 解析辅助 (跟 sql/views.py §_parse_first_alter 套路一致) =====
 
 _ALTER_PATTERN = re.compile(
@@ -113,17 +125,35 @@ def _apply_transform_rule(sql_content: str, pair: DdlSyncPair, table_name: str) 
 def create_target_workflow(source_workflow: SqlWorkflow, pair: DdlSyncPair, transformed_ddl_text: str) -> SqlWorkflow:
     """R3 镜像工单 - 业务库 DDL PASSED → 创建历史库镜像工单 + 走 audit_setting 自动配置.
 
+    ## CUSTOM-MODIFIED: D22 镜像工单 group_id 改走 pair.target_group (历史库组) @ 2026-09-03 @ mavis
+    ## 业务: 镜像工单审批流必须走历史库组, 不是业务组
+    ## 根因: D9 实战 group_id=source_workflow.group_id, Instance 是 M2M ResourceGroup 没 group_id 字段,
+    ##       fallback 用业务组 → wf#121 走 group 25 "测试组" audit_auth_groups='14,3',
+    ##       不是用户期望的 group 22 "prod core for 历史库" '3'
+    ## 修法: pair.target_group 必填 (DBA 配库对时显式选), create_target_workflow 走 pair.target_group.group_id
+    ## 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d22-mirror-target-group.md
+
     ## CUSTOM-MODIFIED: R3 create_target_workflow @ 2026-09-01 @ mavis
     实战要点 (W1-D3 §5.1 拍板 + 8/27 实战):
-    - group_id/group_name 跟 source_workflow 同 (同一组, 业务组审完镜像工单在同组继续走)
+    - group_id/group_name 走 pair.target_group (历史库组, D22 改)
     - audit_auth_groups="" 占位, create_audit() 会从 WorkflowAuditSetting 自动配
     - status="workflow_manreviewing" 默认走人工审核 (W1-D3 §5.2 8/27 避坑: 镜像工单不自动跑)
     - SqlWorkflowContent 跟 SqlWorkflow 是 OneToOne, 必建 (W1-D3 §5.1 实战补)
+    - D22: pair.target_group 必填, 没配 reject 抛 TargetGroupNotConfiguredError
     """
+    # D22: pair.target_group 必填, 没配直接抛错 (DBA 拍板 A 方案: 强制配, 不 fallback 走业务组)
+    if not pair.target_group:
+        raise TargetGroupNotConfiguredError(
+            f"DdlSyncPair id={pair.id} ({pair.name}) 没配 target_group, "
+            f"镜像工单不能走业务组 (违反 D22 设计), "
+            f"请 DBA 在配库对页 pair_form.html 显式选镜像工单审批组 (如 'prod core for 历史库')"
+        )
+    target_group = pair.target_group  # ResourceGroup object
+
     target_workflow = SqlWorkflow.objects.create(
         workflow_name=f"[镜像] {source_workflow.workflow_name}",
-        group_id=source_workflow.group_id,
-        group_name=source_workflow.group_name,
+        group_id=target_group.group_id,           # D22: 改走历史库组
+        group_name=target_group.group_name,       # D22: 改走历史库组
         engineer=source_workflow.engineer,
         engineer_display=source_workflow.engineer_display or "",
         audit_auth_groups="",  # 占位, create_audit() 会从 WorkflowAuditSetting 自动配

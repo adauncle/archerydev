@@ -116,6 +116,20 @@
         <tr><th>业务库名</th><td><code>{{ pair.source_db }}</code></td></tr>
         <tr><th>历史库实例</th><td>{{ pair.target_instance.instance_name }} ({{ pair.target_instance.host }}:{{ pair.target_instance.port }})</td></tr>
         <tr><th>历史库名</th><td><code>{{ pair.target_db }}</code></td></tr>
+        {# CUSTOM-MODIFIED: D22 镜像工单审批组 @ 2026-09-03 @ mavis #}
+        {# 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d22-mirror-target-group.md #}
+        <tr>
+          <th>镜像工单审批组</th>
+          <td>
+            {% if pair.target_group %}
+              <strong>{{ pair.target_group.group_name }}</strong>
+              <span class="text-muted">(group_id={{ pair.target_group.group_id }})</span>
+            {% else %}
+              <span class="ddlsync-badge ddlsync-badge-warning">未配</span>
+              <span class="text-danger">⚠ D22 升级前的老库对, 镜像工单当前走 source_workflow.group_id (业务组), 违反设计, 需手动配</span>
+            {% endif %}
+          </td>
+        </tr>
         <tr><th>同步模式</th><td>
           {% if pair.sync_mode == "blacklist" %}
           <span class="ddlsync-badge ddlsync-badge-blacklist">黑名单 (默认)</span> - 业务库全同步, 显式排除

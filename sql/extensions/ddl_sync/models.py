@@ -63,6 +63,22 @@ class DdlSyncPair(models.Model):
     )
     target_db = models.CharField(_("历史库名"), max_length=64)
 
+    ## CUSTOM-MODIFIED: D22 target_group 镜像工单走历史库审批流 @ 2026-09-03 @ mavis
+    ## 业务: 镜像工单审批流必须走历史库组 (不是业务组, 不是 instance 默认 resource_group)
+    ## 根因: D9 实战 group_id=source_workflow.group_id (业务组), Instance 是 M2M ResourceGroup 没 group_id 字段, fallback 用业务组
+    ##       → wf#121 走 group 25 "测试组" audit_auth_groups='14,3', 不是用户期望的 group 22 "prod core for 历史库" '3'
+    ## 修法: DdlSyncPair 加 target_group (FK ResourceGroup) + target_group_name, DBA 配库对时显式选
+    ##      sync_trigger.py create_target_workflow 改用 pair.target_group.group_id (历史库组)
+    ## 关联 changelog: docs/changelogs/2026-09-03_ddl-sync-w2-d22-mirror-target-group.md
+    target_group = models.ForeignKey(
+        "sql.ResourceGroup", on_delete=models.PROTECT,
+        related_name="sync_pair_target_group",
+        null=True, blank=True,
+        verbose_name=_("镜像工单审批组"),
+        help_text="DBA 配库对时显式选 (Instance 是 M2M ResourceGroup, 不能自动猜); 走当前 group_id 的 WorkflowAuditSetting (SQL_REVIEW) 拿审流",
+    )
+    target_group_name = models.CharField(_("镜像工单审批组名"), max_length=100, blank=True, default="")
+
     ## CUSTOM-MODIFIED: R1 默认 blacklist @ 2026-09-01 @ mavis
     sync_mode = models.CharField(
         _("同步模式"), max_length=16, choices=SYNC_MODE_CHOICES, default="blacklist",
