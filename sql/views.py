@@ -22,6 +22,7 @@ from sql.utils.resource_group import user_groups, user_instances
 from .models import (
     Users,
     SqlWorkflow,
+    SqlWorkflowContent,
     QueryPrivileges,
     ResourceGroup,
     QueryPrivilegesApply,
@@ -491,8 +492,14 @@ def detail(request, workflow_id):
     ## 实战: D18 9/2 验证 /detail/119/ 发现镜像工单页没有 "🤖 镜像工单" 标识, 没有源工单 link, 用户看不出工单从哪来
     ## try/except 兜底: ddl_sync app 不可用 / 任何异常都不让 detail 500 (跟 W1-D3 §9.3 实战 1 信号 handler 兜底同套路)
     ## @ 2026-09-02 @ mavis
+    ## CUSTOM-MODIFIED: D19 9/3 镜像工单直接显示 SQL (用户报"看不到提交的 SQL"反馈)
+    ## 实战: wf#121 等审批状态, Archery detail.html 主表是 workflow_log (审核日志), 没审核日志行
+    ## → 主表空, 完整 SQL 藏在 detailFormatter 子表展开里点不动
+    ## 修法: 镜像工单 alert 块内直接展示 SQL 内容, 业务 RD 不用展开也能看到自动生成的 SQL
+    ## @ 2026-09-03 @ mavis
     ddl_sync_as_target = None
     ddl_sync_as_source = []
+    mirror_sql_content = None
     try:
         from sql.extensions.ddl_sync.models import DdlSyncHistory
         ddl_sync_as_target = (
@@ -513,6 +520,13 @@ def detail(request, workflow_id):
             )
             .order_by("-created_at")[:50]
         )
+        # 镜像工单直接展示 SQL (避开 Archery detail.html workflow_log 子表展开设计)
+        if ddl_sync_as_target and ddl_sync_as_target.target_workflow_id:
+            sql_content_obj = SqlWorkflowContent.objects.filter(
+                workflow_id=ddl_sync_as_target.target_workflow_id
+            ).first()
+            if sql_content_obj:
+                mirror_sql_content = sql_content_obj.sql_content
     except Exception:
         logger.exception("ddl_sync history lookup failed (likely ddl_sync app 不可用)")
 
@@ -548,6 +562,8 @@ def detail(request, workflow_id):
         # CUSTOM: v0.5.0 DDL 跨库同步 alert 标识 (D9 阶段 1 联动)
         "ddl_sync_as_target": ddl_sync_as_target,
         "ddl_sync_as_source": ddl_sync_as_source,
+        # CUSTOM: 镜像工单 SQL 直接展示 (D19 实战: 避开 Archery workflow_log 子表展开)
+        "mirror_sql_content": mirror_sql_content,
     }
     return render(request, "detail.html", context)
 

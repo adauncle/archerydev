@@ -48,6 +48,14 @@
         &nbsp;|&nbsp;
         表: <code>{{ ddl_sync_as_target.table_name }}</code>
     </p>
+
+    {% if mirror_sql_content %}
+    <div style="margin-top: 8px; margin-bottom: 0;">
+        <strong>📝 自动生成的 SQL (镜像工单实际内容):</strong>
+        <pre style="background: #f5f5f5; padding: 10px 12px; border-radius: 4px; margin-top: 4px; margin-bottom: 0; font-family: 'Courier New', monospace; font-size: 13px; white-space: pre-wrap; word-wrap: break-word; max-height: 240px; overflow-y: auto;">{{ mirror_sql_content }}</pre>
+    </div>
+    {% endif %}
+
     {% if ddl_sync_as_target.error_message %}
     <p style="margin-bottom: 0; color: #a94442;">
         <strong>错误信息:</strong> {{ ddl_sync_as_target.error_message }}
