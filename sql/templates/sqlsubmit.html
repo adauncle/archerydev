@@ -149,10 +149,35 @@
                         <table id="inception-result" data-toggle="table" class="table table-striped table-hover"
                                style="table-layout:inherit;overflow:hidden;white-space:nowrap;word-break:break-word;text-overflow:ellipsis;display: none"></table>
                     </div>
-                    {# CUSTOM-MODIFIED: v0.3.x 字段 diff 联动 @ 2026-08-12 @ mavis #}
-                    {# SQL 检测成功后, ALTER TABLE 自动 fetch 字段 diff 端点 #}
-                    {# 关联 changelog: docs/changelogs/2026-08-12_gh-ost-column-diff.md #}
-                    <div id="column-diff-result" style="display:none; margin-top:14px;"></div>
+                    {# CUSTOM-MODIFIED: D28 字段 diff 弹窗化 @ 2026-09-03 @ mavis #}
+                    {# 业务: 业务方反馈 /editsql/ 页字段 diff 在底部 inline 展示, 不直观, 想弹窗化 #}
+                    {# 修法: SQL 检测成功自动弹 modal, inline 区域保留做"已检测, 点此查看"链接兜底 #}
+                    {# 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d28-column-diff-modal.md #}
+                    <div id="column-diff-inline" style="display:none; margin-top:10px;">
+                        <a href="javascript:void(0);" id="btn-show-column-diff-modal" class="text-info">
+                            <i class="fa fa-columns"></i> 字段变更检测已运行, 点击查看
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# CUSTOM-MODIFIED: D28 字段 diff 弹窗 @ 2026-09-03 @ mavis #}
+    {# 业务: SQL 检测成功后自动弹出字段 diff 模态框, 业务方点 SQL 检测按钮后立即看到 #}
+    {# 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d28-column-diff-modal.md #}
+    <div class="modal fade" id="columnDiffModal" tabindex="-1" role="dialog" aria-labelledby="columnDiffModalLabel">
+        <div class="modal-dialog modal-lg" role="document" style="width: 92%; max-width: 1200px;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+                    <h4 class="modal-title"><i class="fa fa-columns"></i> 字段变更检测</h4>
+                </div>
+                <div class="modal-body" id="column-diff-modal-body">
+                    <div class="text-muted"><i class="fa fa-spinner fa-spin"></i> 检测中...</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">关闭</button>
                 </div>
             </div>
         </div>
@@ -677,14 +702,20 @@
         {# CUSTOM-MODIFIED: v0.3.x 字段 diff 联动函数 @ 2026-08-12 @ mavis #}
         {# ALTER TABLE 自动触发; 其他类型静默; 失败 fallback 不显示 #}
         function fetchColumnDiff(sqlContent, instanceId, dbName) {
+            // CUSTOM-MODIFIED: D28 字段 diff 弹窗化 @ 2026-09-03 @ mavis
+            // 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d28-column-diff-modal.md
             var $box = $("#column-diff-result");
             // 只对 ALTER TABLE 触发 (避免 SELECT/INSERT/UPDATE 等不必要检测)
             if (!/\bALTER\s+TABLE\b/i.test(sqlContent || "")) {
                 $box.hide().empty();
+                $("#column-diff-inline").hide();
+                $("#column-diff-modal-body").empty();
                 return;
             }
             if (!instanceId || !dbName) {
                 $box.hide().empty();
+                $("#column-diff-inline").hide();
+                $("#column-diff-modal-body").empty();
                 return;
             }
             $.ajax({
@@ -695,20 +726,26 @@
                 success: function (data) {
                     if (!data.ok) {
                         // 表不存在 / SQL 不含 MODIFY 等, 静默不显示
-                        $box.hide().empty();
+                        $("#column-diff-modal-body").empty();
+                        $("#column-diff-inline").hide();
                         return;
                     }
                     renderColumnDiff(data);
+                    // SQL 检测成功后自动弹字段 diff 模态框 (D28)
+                    $('#columnDiffModal').modal('show');
                 },
                 error: function () {
                     // 失败 fallback: 静默, 不影响 SQL 检测主体
-                    $box.hide().empty();
+                    $("#column-diff-modal-body").empty();
+                    $("#column-diff-inline").hide();
                 }
             });
         }
 
         function renderColumnDiff(data) {
-            var $box = $("#column-diff-result");
+            // CUSTOM-MODIFIED: D28 字段 diff 渲染到 modal body @ 2026-09-03 @ mavis
+            // 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d28-column-diff-modal.md
+            var $box = $("#column-diff-modal-body");
             var high = data.high_risk_count || 0;
             var mid = data.mid_risk_count || 0;
             var low = data.low_risk_count || 0;
@@ -868,7 +905,10 @@
                        allTablesHtml + fixHtml +
                        '</div>';
 
-            $box.html(html).show();
+            $box.html(html);
+            // CUSTOM-MODIFIED: D28 inline 区域显示"已检测 - 点击查看"链接 @ 2026-09-03 @ mavis
+            // 业务: inline 区域给业务方兜底入口 (modal 关掉后也能点开) - 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d28-column-diff-modal.md
+            $("#column-diff-inline").show();
         }
 
         function escapeHtml(s) {
@@ -1023,6 +1063,13 @@
     <!--init -->
     <script>
         $(document).ready(function () {
+            // CUSTOM-MODIFIED: D28 inline 链接点击打开 modal @ 2026-09-03 @ mavis
+            // 业务: 业务方关掉 modal 后能通过 inline 链接重新打开
+            // 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d28-column-diff-modal.md
+            $("#btn-show-column-diff-modal").click(function () {
+                $('#columnDiffModal').modal('show');
+            });
+
             // 初始化上传控件
             init_upload();
             // 清空id, 只允许新增不允许修改
