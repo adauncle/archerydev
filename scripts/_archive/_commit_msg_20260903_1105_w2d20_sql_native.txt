@@ -1,0 +1,86 @@
+refactor(detail.html): W2 D20 镜像工单 SQL 块挪到 8/26 inline 区域旁边 (9/3 11:05)
+
+业务背景:
+- D19 9/3 10:15 推了镜像工单 alert 块 SQL 显示 (commit a4abf01), 业务 RD 验证能看到了
+- 9/3 11:04 业务 RD 反馈: "sql不应该用原本的位置展示吗"
+- 用户意思: SQL 块不应该在 alert 块里 (二次开发加的), 应该跟 Archery 原本设计挨着
+
+实战根因:
+- D19 把 SQL 块放在镜像工单 alert 块内 (蓝色块里), 体验突兀
+- Archery 原本设计: SQL 藏在 "工单详情-展开全部" 主表子表 (line 1116 detailView) 里
+- 等审批时主表空 → 子表展不开 → 用户看不到 SQL
+- D19 修法绕过了 Archery 主表设计, 抢了 alert 块的位置, 跟 Archery 原本设计冲突
+
+修法 (单文件):
+- sql/templates/detail.html:
+  1. 删除 alert 块里的 SQL 块 (D19 加的, 449 字节)
+  2. 在 8/26 21:34 字段变更检测 inline 区域 (line 688 <div id="column-diff-result">)
+     之后, {% endblock content %} 之前 插新 SQL 块
+  3. 块样式: 灰底 + 蓝色左边框 (#5bc0de) 跟 inline 区域视觉关联
+     <pre> 渲染 + Courier New + max-height 240 + overflow-y auto
+  4. 标题: "📝 镜像工单 SQL 内容 (自动生成, 走当前配置审批流)"
+
+view 端不动 (D19 加的 mirror_sql_content 还在 context dict 里, 复用)
+
+134 dev 演练 (Django test client + force_login archery):
+- /detail/123/ (新镜像工单 wf#123, status=workflow_manreviewing)
+  - Status: 200
+  - Content length: 95659
+  - 🤖 镜像工单 alert (D18 标识): 1 次
+  - D19 alert 块 SQL 标题: 0 次 ✓ (D19 撤回干净)
+  - D20 镜像工单 SQL 块 (新位置): 1 次 ✓
+  - 📝 emoji 块标题: 1 次
+  - 完整 SQL pre 块: 1 次
+  - test3 SQL 关键字: 9 次
+  - 源工单 wf#122 link: 1 次
+  - 8/26 inline 区域: 3 次
+  - 目标库 hly_accesscard_history: 5 次
+- SQL 块位置验证:
+  - ✓ SQL 块在 column-diff-result 之后, 挨着 8/26 inline 区域
+  - ✓ alert 块里没 SQL 块 (D19 已撤回)
+
+实战新发现 (D20 实战总结):
+- 二次开发加 UX 时, 必先看 Archery 原本设计, 不要直接加新块抢位置
+- D19 实战为了快速解决"看不到 SQL"问题, 把 SQL 块塞进 alert 块, 体验突兀
+- D20 实战撤回 D19 SQL 块, 挪到 8/26 inline 区域旁边, 跟 Archery 原本设计挨着
+- 教训: 任何二次开发 UX 改动, 必先看 Archery 原本设计 (字段 diff 区域、
+  审批流区域、其他信息区域), 二次开发新功能应该融入而不是抢戏
+- 用户反馈 "不应该用原本的位置展示吗" 是关键信号: 二次开发块应该跟
+  原本设计挨着, 不要塞进 alert 块
+
+134 dev 部署:
+- 备份 /backup/d20_20260903_1105/ (detail.html.bak 原始 D19 版本)
+- SFTP 推 detail.html (md5 16a34b54... = local)
+- gunicorn pids: 32184 (master) + 32187-32190 (4 worker, 11:08 拉新)
+- 9003 端口 LISTEN ✓
+
+同源 entry:
+- D19 9/3 10:15 alert 块 SQL 块 (commit a4abf01) - D20 撤回
+- D18 9/2 22:30 镜像/源工单 alert 块 (commit 55ec7fa) - 保留, 跟 D20 配合
+- 8/26 21:34 字段变更检测 inline 区域 (commit 0a04775) - D20 SQL 块紧挨着
+- 8/26 21:57 JS ReferenceError 修复 (commit 2a04a12) - escapejs 教训复用
+- 9/1 18:00 D9 sync_trigger.py (commit 5420c81) - SqlWorkflowContent OneToOne
+
+W2 D20 实战后 W2 状态:
+D6 数据模型 → D7 库对管理 → D8 AJAX + 前端 → D9 R3 + signal
+→ D10 134 dev 5 Case → D11 134 dev 6 hotfix → D12 134 dev JS ReferenceError
+→ D13 多表 diff bug → D14 推 110 prod 修汪银和工单 (commit ed1c20c)
+→ D15 字符集 implicit/explicit 区分 (commit e939ffe)
+→ D16 推 D15 修复 110 prod (commit 289adc7) → D17 验证 110 prod D15 修复
+→ D18 镜像/源工单 alert 块 (commit 55ec7fa)
+→ D19 alert 块 SQL 显示 (commit a4abf01)
+→ **D20 撤回 D19, 挪到 8/26 inline 区域旁边 (本次)**
+
+下次推 prod checklist 必加 1 条 (D20 实战新发现):
+- **二次开发 UX 必先看 Archery 原本设计再改**: 不要在 alert 块里塞新功能,
+  必看 Archery 原本的字段 diff / 审批流 / 其他信息 / 工单详情-展开全部
+  区域, 二次开发新功能应该融入而不是抢戏
+- **二次开发 UX 必问用户拍板位置**: alert 块 (顶部显眼但突兀) vs inline 区域
+  (挨着原本设计) vs modal (折叠) vs 新建独立区域. 实战前必 3 选项拍板,
+  不要默认塞 alert 块 (D19 实战踩坑)
+- **撤回 + 挪位置实战套路**: 不要在新功能上加新功能 (D19 → D20), 实战
+  前看 Archery 原本设计, 直接在新位置加, 不要先加 alert 块再撤回
+
+110 prod 状态: 仍 7/19 上游版 detail.html, 等用户拍板推 110 时机
+(跟 D18 D19 一致, 推 110 必带 detail.html + views.py 2 文件含 8/26 inline +
+9/2 D15 fix + 9/2 D18 alert + 9/3 D20 SQL 块)

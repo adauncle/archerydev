@@ -49,12 +49,6 @@
         表: <code>{{ ddl_sync_as_target.table_name }}</code>
     </p>
 
-    {% if mirror_sql_content %}
-    <div style="margin-top: 8px; margin-bottom: 0;">
-        <strong>📝 自动生成的 SQL (镜像工单实际内容):</strong>
-        <pre style="background: #f5f5f5; padding: 10px 12px; border-radius: 4px; margin-top: 4px; margin-bottom: 0; font-family: 'Courier New', monospace; font-size: 13px; white-space: pre-wrap; word-wrap: break-word; max-height: 240px; overflow-y: auto;">{{ mirror_sql_content }}</pre>
-    </div>
-    {% endif %}
 
     {% if ddl_sync_as_target.error_message %}
     <p style="margin-bottom: 0; color: #a94442;">
@@ -692,6 +686,17 @@
     {# 不删 modal + 按钮, 保留 DBA 兜底; inline 区域给业务 RD 审核/执行时看. #}
     {# 关联 changelog: docs/changelogs/2026-08-26_detail-page-column-diff.md #}
     <div id="column-diff-result" style="display:none; margin-top:14px;"></div>
+
+    {# CUSTOM-MODIFIED: D20 镜像工单 SQL 内容直接显示 (9/3 11:05 实战) @ 2026-09-03 @ mavis #}
+    {# 业务: 业务 RD 拿到镜像工单想知道"这工单到底要执行什么 SQL", Archery detail.html 把 SQL 藏在 workflow_log 子表展开, 等审批时主表空, 用户看不到 #}
+    {# 修法: SQL 块挪到 8/26 inline 字段变更检测区域旁边 (跟原本设计挨着, 不破坏 Archery 主表 workflow_log 设计) #}
+    {# D19 9/3 10:15 alert 块 SQL 块用户反馈"不应该用原本位置展示吗", 撤回挪到此处 #}
+    {% if mirror_sql_content %}
+    <div style="margin-top: 14px; padding: 14px; background: #f5f5f5; border-radius: 4px; border-left: 4px solid #5bc0de;">
+        <strong>📝 镜像工单 SQL 内容 (自动生成, 走当前配置审批流):</strong>
+        <pre style="background: white; padding: 10px 12px; border-radius: 4px; margin-top: 8px; margin-bottom: 0; font-family: 'Courier New', monospace; font-size: 13px; white-space: pre-wrap; word-wrap: break-word; max-height: 240px; overflow-y: auto;">{{ mirror_sql_content }}</pre>
+    </div>
+    {% endif %}
 
 {% endblock content %}
 
