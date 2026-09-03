@@ -392,3 +392,90 @@ def workflow_terminal_handler(sender, instance, created, **kwargs):
             "ddl_sync.workflow_terminal_handler: 兜底异常 (不能阻塞主流程) instance=%s err=%s",
             getattr(instance, "id", "?"), e,
         )
+
+
+# ===== 镜像工单状态联动 DdlSyncHistory (D23 新加) =====
+# CUSTOM-MODIFIED: 9/3 D23 镜像工单 status 变终态/完成 → 联动 DdlSyncHistory 切 synced/failed/skipped @ 2026-09-03 @ mavis
+# 业务: 业务方期望业务库执行结束后, 镜像工单 status 联动到 DdlSyncHistory,
+#       alert 块显示"已同步"而不是"同步中 (镜像工单已生成, 还没执行)"
+# 根因: D11 hotfix 只修"源工单终止→联动镜像工单终止 + DdlSyncHistory 切终态",
+#       缺"镜像工单自己执行完→联动 DdlSyncHistory"
+#       实战: 9/3 14:42 用户演练 wf#128 alert 块显示"同步中", 
+#             排查发现 wf#125 镜像工单 status=workflow_finish (DBA 已手动执行完),
+#             DdlSyncHistory id=11 sync_status='syncing' 没人联动
+# 实战: 跟 D11 workflow_terminal_handler 互补 — D11 管"源工单终止→镜像工单",
+#       D23 管"镜像工单自己终态→DdlSyncHistory"
+# 实战: 整个 try/except 兜底, 异常不能阻塞镜像工单状态变更主流程
+
+@receiver(post_save, sender=SqlWorkflow)
+def target_workflow_status_handler(sender, instance, created, **kwargs):
+    """镜像工单 status 变化 → 联动 DdlSyncHistory 切终态.
+
+    ## CUSTOM-MODIFIED: 9/3 D23 镜像工单 status 联动 DdlSyncHistory @ 2026-09-03 @ mavis
+    关联: docs/changelogs/2026-09-03_ddl-sync-w2-d23-mirror-target-workflow-sync-status.md
+
+    监听 status:
+      - workflow_finish → DdlSyncHistory.sync_status = 'synced' (DBA 手动审+执行成功)
+      - workflow_reject / workflow_abort → 'skipped' (DBA 拒绝/中止)
+      - workflow_exception → 'failed' (执行异常)
+
+    跟 D11 workflow_terminal_handler 互补 (不冲突):
+      - D11: instance 是 source_workflow, 找 DdlSyncHistory(source_workflow=instance)
+      - D23: instance 是 target_workflow, 找 DdlSyncHistory(target_workflow=instance)
+      - D11 触发的 target_workflow.save() 会触发 D23, 但 D11 已经切过 DdlSyncHistory.sync_status
+        (不再是 'syncing'), D23 filter sync_status='syncing' 查不到, 不会重复切
+    """
+    try:
+        # 1. created 不触发 (D11 套路)
+        if created:
+            return
+
+        # 2. 只在终态/完成态触发
+        final_statuses = (
+            'workflow_finish', 'workflow_reject', 'workflow_abort', 'workflow_exception',
+        )
+        if instance.status not in final_statuses:
+            return
+
+        # 3. 找 DdlSyncHistory(sync_status=syncing, target_workflow=instance) 联动
+        histories = DdlSyncHistory.objects.filter(
+            target_workflow=instance,
+            sync_status='syncing',
+        )
+        if not histories.exists():
+            return
+
+        # 4. 联动切终态
+        for h in histories:
+            try:
+                if instance.status == 'workflow_finish':
+                    new_sync_status = 'synced'
+                elif instance.status == 'workflow_exception':
+                    new_sync_status = 'failed'
+                else:  # workflow_reject / workflow_abort
+                    new_sync_status = 'skipped'
+
+                h.sync_status = new_sync_status
+                h.finished_at = timezone.now()
+                h.error_message = (
+                    (h.error_message + '\n') if h.error_message else ''
+                ) + f'镜像工单 #{instance.id} status={instance.status} → DdlSyncHistory 联动切 {new_sync_status}'
+
+                h.save()
+
+                logger.info(
+                    "ddl_sync.target_workflow_status_handler: 联动 history=%s target_wf=%s status=%s → sync_status=%s",
+                    h.id, instance.id, instance.status, new_sync_status,
+                )
+            except Exception as e:
+                # 单条 history 处理失败, 不影响其他 history
+                logger.exception(
+                    "ddl_sync.target_workflow_status_handler: 联动失败 history=%s err=%s",
+                    h.id, e,
+                )
+    except Exception as e:
+        # 9/1 W1-D3 §9.3 实战 1 兜底: 异常不能阻塞镜像工单状态变更主流程
+        logger.exception(
+            "ddl_sync.target_workflow_status_handler: 兜底异常 (不能阻塞主流程) target_wf=%s err=%s",
+            getattr(instance, "id", "?"), e,
+        )
