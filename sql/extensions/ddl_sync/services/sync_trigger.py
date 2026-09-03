@@ -134,10 +134,35 @@ def create_target_workflow(source_workflow: SqlWorkflow, pair: DdlSyncPair, tran
         db_name=pair.target_db,
     )
     # OneToOne 关联 sql_content (W1-D3 §5.1 实战补, 不建会报 DoesNotExist)
+    ## CUSTOM-MODIFIED: D21 镜像工单 review_content 填 placeholder (9/3 11:25 实战) @ 2026-09-03 @ mavis
+    ## 业务: 业务 RD 拿到镜像工单想知道 SQL, Archery detail.html "工单详情" tab 主表依赖 review_content
+    ## 根因: D9 阶段 1 review_content="[]" (空 list) → detail_content 端点 json.loads 后 loaded_rows=[] → 主表空, 子表展不开
+    ## 修法: 镜像工单创建时填 1 行 placeholder (ReviewSet json 格式 [dict]), 走 Archery 原本设计
+    ##       老的镜像工单 (D9-D20 期间) review_content="[]" 走 D20 8/26 inline 区域 SQL 块兜底
+    ## 关联 changelog: docs/changelogs/2026-09-03_ddl-sync-w2-d21-mirror-review-content-placeholder.md
+    placeholder_review_content = json.dumps([{
+        "id": 0,
+        "stage": "自动同步",
+        "errlevel": 0,
+        "stagestatus": "镜像工单已生成, 等待人工审核",
+        "errormessage": (
+            f"DDL 跨库同步自动生成的镜像工单 (源工单 #{source_workflow.id})"
+            " · 走当前配置审批流 · "
+            "DBA 审过+执行, 历史库自动同步"
+        ),
+        "sql": transformed_ddl_text,
+        "affected_rows": 0,
+        "sequence": "0",
+        "backup_dbname": "",
+        "execute_time": "",
+        "sqlsha1": "",
+        "backup_time": "",
+        "actual_affected_rows": "",
+    }], ensure_ascii=False)
     SqlWorkflowContent.objects.create(
         workflow=target_workflow,
         sql_content=transformed_ddl_text,
-        review_content="[]",  # 占位, 走人工审核不预审
+        review_content=placeholder_review_content,
         execute_result="",
     )
     # 走 audit_setting 自动配置 (从 WorkflowAuditSetting 拿当前 group_id + workflow_type=SQL_REVIEW 的 audit_auth_groups)
