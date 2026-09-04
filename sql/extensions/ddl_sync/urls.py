@@ -16,6 +16,9 @@
 - /pair/<int:pair_id>/bulk_import/ — R1 批量导入
 - /pair/<int:pair_id>/add_table/ — 单张加兜底
 - /history/ — 同步历史列表
+
+1 导出端点 (D33):
+- /pair/<int:pair_id>/history_export/ — 同步历史 Excel 导出
 """
 
 from django.urls import path
@@ -38,4 +41,7 @@ urlpatterns = [
     path("pair/<int:pair_id>/bulk_import/", api_views.bulk_import_view, name="bulk_import"),
     path("pair/<int:pair_id>/add_table/", api_views.add_table_view, name="add_table"),
     path("history/", api_views.history_list_view, name="history_list"),
+
+    # D33 同步历史 Excel 导出
+    path("pair/<int:pair_id>/history_export/", views.pair_history_export, name="pair_history_export"),
 ]

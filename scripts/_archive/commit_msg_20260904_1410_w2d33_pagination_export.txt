@@ -1,0 +1,9 @@
+feat(ddl-sync): W2 D33 同步历史加分页 + Excel 导出 (9/4 14:10)
+
+- pair_detail view 加分页 (每页 20 条), URL 加 ?history_page=N
+- 新增 pair_history_export view (openpyxl 写 .xlsx, 含 8 列 + 表头加粗)
+- urls.py 加 path(pair/<id>/history_export/)
+- pair_detail.html 同步历史 tab 改 h5 + 加导出按钮 + 加分页栏
+- 新增 CSS: .ddlsync-btn-export + .ddlsync-page-link + .ddlsync-page-current
+
+CHANGELOG: docs/changelogs/2026-09-04_ddl-sync-w2-d33-history-pagination-export.md

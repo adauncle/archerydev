@@ -5,8 +5,8 @@
 {% block content %}
 <style>
   /* DDL 跨库同步 · 库对详情页 (W1-D4 §2 业务库 DDL 工单详情 alert + W1-D3 §7 5 状态机) */
-  .ddlsync-detail-header { background: #fff; border-radius: 8px; padding: 20px 24px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 16px; }
+  .ddlsync-detail-header { background: #fff; border-radius: 8px; padding: 16px 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 12px; }
   .ddlsync-detail-name { font-size: 22px; font-weight: 700; color: #303133; }
   .ddlsync-detail-meta { color: #909399; font-size: 13px; margin-top: 6px; }
   .ddlsync-badge { display: inline-block; padding: 3px 10px; border-radius: 12px;
@@ -15,13 +15,16 @@
   .ddlsync-badge-whitelist { background: #67C23A; }
   .ddlsync-badge-enabled { background: #67C23A; }
   .ddlsync-badge-disabled { background: #909399; }
+  .ddlsync-badge-warning { background: #E6A23C; }
   .ddlsync-detail-actions { margin-top: 12px; }
   .ddlsync-detail-actions .btn { margin-right: 8px; }
 
-  /* 4 tab 内容区 */
-  .ddlsync-tab-pane { background: #fff; border-radius: 8px; padding: 20px 24px;
+  /* 4 tab 内容区 - 紧凑 padding + 保险只显示 active tab (Bootstrap JS 没加载时 4 tab 不堆叠) */
+  .nav-tabs { margin-bottom: 8px !important; }
+  .tab-content > .tab-pane:not(.active) { display: none !important; }
+  .ddlsync-tab-pane { background: #fff; border-radius: 8px; padding: 14px 18px;
     box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-  .ddlsync-tab-pane h5 { color: #303133; font-weight: 600; margin-bottom: 12px; }
+  .ddlsync-tab-pane h5 { color: #303133; font-weight: 600; margin-bottom: 10px; font-size: 14px; }
 
   /* 5 按钮组 (W1-D4 §1) */
   .ddlsync-buttons { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -34,14 +37,14 @@
   .ddlsync-btn-add-table { background: #E6A23C; }
 
   /* 同步表清单 tab */
-  .ddlsync-table-toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .ddlsync-table-toolbar { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
   .ddlsync-table-toolbar select, .ddlsync-table-toolbar input {
-    padding: 5px 10px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 13px;
+    padding: 4px 10px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 12px;
   }
-  .ddlsync-table-list { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ddlsync-table-list { width: 100%; border-collapse: collapse; font-size: 12px; }
   .ddlsync-table-list th { background: #fafafa; color: #606266; font-weight: 600; text-align: left;
-    padding: 10px 12px; border-bottom: 1px solid #ebeef5; }
-  .ddlsync-table-list td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+    padding: 6px 10px; border-bottom: 1px solid #ebeef5; }
+  .ddlsync-table-list td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; }
   .ddlsync-table-list tr:hover td { background: #fafbfc; }
 
   /* 同步历史 tab */
@@ -52,7 +55,32 @@
   .ddlsync-status-skipped { background: #E6A23C; }
   .ddlsync-status-failed { background: #F56C6C; }
 
-  .ddlsync-breadcrumb { margin-bottom: 16px; font-size: 13px; }
+  /* 基本信息 - 紧凑网格 (D33 改: 11 行 table → 6 行 dl-grid) */
+  .ddlsync-basic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; font-size: 13px; }
+  .ddlsync-basic-grid > div { display: flex; align-items: baseline; padding: 4px 0; }
+  .ddlsync-basic-grid > div.full { grid-column: 1 / -1; }
+  .ddlsync-basic-grid label { color: #909399; width: 110px; flex-shrink: 0; }
+  .ddlsync-basic-grid span { color: #303133; }
+
+  /* 导出 Excel 按钮 (D33 改) */
+  .ddlsync-btn-export {
+    display: inline-block; padding: 5px 14px; border-radius: 4px;
+    background: #67C23A; color: #fff !important; font-size: 12px;
+    text-decoration: none; font-weight: 500;
+  }
+  .ddlsync-btn-export:hover { background: #5daf34; }
+
+  /* 分页栏 (D33 改) */
+  .ddlsync-page-link {
+    display: inline-block; padding: 4px 10px; min-width: 28px; text-align: center;
+    border: 1px solid #dcdfe6; border-radius: 4px; color: #409EFF;
+    text-decoration: none; font-size: 12px;
+  }
+  .ddlsync-page-link:hover { background: #ecf5ff; }
+  .ddlsync-page-current { background: #409EFF; color: #fff !important; border-color: #409EFF; }
+  .ddlsync-page-current:hover { background: #409EFF; }
+
+  .ddlsync-breadcrumb { margin-bottom: 12px; font-size: 13px; }
   .ddlsync-breadcrumb a { color: #409EFF; text-decoration: none; }
   .ddlsync-breadcrumb a:hover { text-decoration: underline; }
   .ddlsync-empty { text-align: center; padding: 40px; color: #909399; }
@@ -106,42 +134,31 @@
 </ul>
 
 <div class="tab-content">
-  <!-- tab 1: 基本信息 -->
+  <!-- tab 1: 基本信息 - D33 改 11 行 table → 6 行紧凑网格 -->
   <div class="tab-pane fade show active" id="tab-basic">
     <div class="ddlsync-tab-pane">
       <h5>库对详情</h5>
-      <table class="table table-bordered" style="font-size: 13px;">
-        <tr><th style="width: 180px;">配对名</th><td>{{ pair.name }}</td></tr>
-        <tr><th>业务库实例</th><td>{{ pair.source_instance.instance_name }} ({{ pair.source_instance.host }}:{{ pair.source_instance.port }})</td></tr>
-        <tr><th>业务库名</th><td><code>{{ pair.source_db }}</code></td></tr>
-        <tr><th>历史库实例</th><td>{{ pair.target_instance.instance_name }} ({{ pair.target_instance.host }}:{{ pair.target_instance.port }})</td></tr>
-        <tr><th>历史库名</th><td><code>{{ pair.target_db }}</code></td></tr>
+      <div class="ddlsync-basic-grid">
+        <div><label>配对名</label><span>{{ pair.name }}</span></div>
+        <div><label>启用状态</label><span>{% if pair.enabled %}<span class="ddlsync-badge ddlsync-badge-enabled">启用</span>{% else %}<span class="ddlsync-badge ddlsync-badge-disabled">禁用</span>{% endif %}</span></div>
+        <div><label>同步模式</label><span>{% if pair.sync_mode == "blacklist" %}<span class="ddlsync-badge ddlsync-badge-blacklist">黑名单 (默认)</span> - 业务库全同步, 显式排除{% else %}<span class="ddlsync-badge ddlsync-badge-whitelist">白名单</span> - DBA 显式选要同步的{% endif %}</span></div>
+        <div><label>创建人</label><span>{{ pair.created_by.username|default:pair.created_by }}</span></div>
+        <div><label>创建时间</label><span>{{ pair.created_at|date:"Y-m-d H:i" }}</span></div>
+        <div><label>更新时间</label><span>{{ pair.updated_at|date:"Y-m-d H:i" }}</span></div>
+        <div class="full"><label>业务库</label><span><strong>{{ pair.source_instance.instance_name }}</strong> ({{ pair.source_instance.host }}:{{ pair.source_instance.port }}) <code>{{ pair.source_db }}</code></span></div>
+        <div class="full"><label>历史库</label><span><strong>{{ pair.target_instance.instance_name }}</strong> ({{ pair.target_instance.host }}:{{ pair.target_instance.port }}) <code>{{ pair.target_db }}</code></span></div>
         {# CUSTOM-MODIFIED: D22 镜像工单审批组 @ 2026-09-03 @ mavis #}
         {# 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d22-mirror-target-group.md #}
-        <tr>
-          <th>镜像工单审批组</th>
-          <td>
-            {% if pair.target_group %}
-              <strong>{{ pair.target_group.group_name }}</strong>
-              <span class="text-muted">(group_id={{ pair.target_group.group_id }})</span>
-            {% else %}
-              <span class="ddlsync-badge ddlsync-badge-warning">未配</span>
-              <span class="text-danger">⚠ D22 升级前的老库对, 镜像工单当前走 source_workflow.group_id (业务组), 违反设计, 需手动配</span>
-            {% endif %}
-          </td>
-        </tr>
-        <tr><th>同步模式</th><td>
-          {% if pair.sync_mode == "blacklist" %}
-          <span class="ddlsync-badge ddlsync-badge-blacklist">黑名单 (默认)</span> - 业务库全同步, 显式排除
+        <div class="full"><label>镜像工单审批组</label><span>
+          {% if pair.target_group %}
+            <strong>{{ pair.target_group.group_name }}</strong>
+            <span class="text-muted">(group_id={{ pair.target_group.group_id }})</span>
           {% else %}
-          <span class="ddlsync-badge ddlsync-badge-whitelist">白名单</span> - DBA 显式选要同步的
+            <span class="ddlsync-badge ddlsync-badge-warning">未配</span>
+            <span class="text-danger">⚠ D22 升级前的老库对, 镜像工单当前走 source_workflow.group_id (业务组), 违反设计, 需手动配</span>
           {% endif %}
-        </td></tr>
-        <tr><th>启用状态</th><td>{% if pair.enabled %}<span class="ddlsync-badge ddlsync-badge-enabled">启用</span>{% else %}<span class="ddlsync-badge ddlsync-badge-disabled">禁用</span>{% endif %}</td></tr>
-        <tr><th>创建人</th><td>{{ pair.created_by.username|default:pair.created_by }}</td></tr>
-        <tr><th>创建时间</th><td>{{ pair.created_at|date:"Y-m-d H:i:s" }}</td></tr>
-        <tr><th>更新时间</th><td>{{ pair.updated_at|date:"Y-m-d H:i:s" }}</td></tr>
-      </table>
+        </span></div>
+      </div>
     </div>
   </div>
 
@@ -195,10 +212,15 @@
     </div>
   </div>
 
-  <!-- tab 3: 同步历史 -->
+  <!-- tab 3: 同步历史 - D33 改: 加分页 (每页 20 条) + 导出 Excel 按钮 -->
   <div class="tab-pane fade" id="tab-history">
     <div class="ddlsync-tab-pane">
-      <h5>同步历史 (前 {{ history|length }} 条)</h5>
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+        <h5 style="margin: 0;">同步历史 (共 {{ history_count }} 条{% if history_paginator.num_pages > 1 %}, 第 {{ history_page_obj.number }}/{{ history_paginator.num_pages }} 页{% endif %})</h5>
+        <div>
+          <a href="{% url 'ddl_sync:pair_history_export' pair.id %}" class="ddlsync-btn-export" title="导出全部 {{ history_count }} 条为 Excel">📥 导出 Excel</a>
+        </div>
+      </div>
       {% if history %}
       <table class="ddlsync-table-list">
         <thead>
@@ -226,8 +248,23 @@
           {% endfor %}
         </tbody>
       </table>
-      {% if history_count > 50 %}
-      <p class="text-muted" style="margin-top: 12px;">仅显示前 50 条, 完整列表请用 <a href="{% url 'ddl_sync:history_list' %}?pair={{ pair.id }}">同步历史 API</a> 分页查询</p>
+      {# 分页栏 - D33 #}
+      {% if history_paginator.num_pages > 1 %}
+      <nav class="ddlsync-pagination" style="margin-top: 12px; display: flex; justify-content: center; gap: 4px; flex-wrap: wrap;">
+        {% if history_page_obj.has_previous %}
+          <a class="ddlsync-page-link" href="?history_page={{ history_page_obj.previous_page_number }}#tab-history">‹ 上一页</a>
+        {% endif %}
+        {% for p in history_paginator.page_range %}
+          {% if p == history_page_obj.number %}
+            <span class="ddlsync-page-link ddlsync-page-current">{{ p }}</span>
+          {% else %}
+            <a class="ddlsync-page-link" href="?history_page={{ p }}#tab-history">{{ p }}</a>
+          {% endif %}
+        {% endfor %}
+        {% if history_page_obj.has_next %}
+          <a class="ddlsync-page-link" href="?history_page={{ history_page_obj.next_page_number }}#tab-history">下一页 ›</a>
+        {% endif %}
+      </nav>
       {% endif %}
       {% else %}
       <div class="ddlsync-empty">暂无同步历史</div>

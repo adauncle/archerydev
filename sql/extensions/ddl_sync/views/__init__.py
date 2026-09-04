@@ -81,7 +81,13 @@ def pair_list(request):
 
 @permission_required("ddl_sync.view_ddlsyncpair", raise_exception=True)
 def pair_detail(request, pair_id):
-    """库对详情页 - 4 tab + 5 按钮 (D7 阶段 1 只占位, D8 写模板 + JS)"""
+    """库对详情页 - 4 tab + 5 按钮 (D7 阶段 1 只占位, D8 写模板 + JS)
+
+    ## CUSTOM-MODIFIED: D33 同步历史加分页 + 导出 Excel 入口 @ 2026-09-04 @ mavis
+    - history 分页: 每页 20 条, URL 加 ?history_page=N
+    - 导出按钮: tab 内右上角, 跳 /ddl_sync/pair/<id>/history_export/
+    - 实战背景: 业务方长期使用后, 库对历史可能积累到 100+ 条, 单页 50 行太多
+    """
     pair = get_object_or_404(
         DdlSyncPair.objects.select_related("source_instance", "target_instance", "created_by"),
         pk=pair_id,
@@ -91,9 +97,17 @@ def pair_detail(request, pair_id):
     tables = pair.tables.all().order_by("sync_type", "table_name")[:200]
     table_count = pair.tables.count()
 
-    # 同步历史 tab (前 50 条)
-    history = pair.history.select_related("source_workflow", "target_workflow").order_by("-created_at")[:50]
-    history_count = pair.history.count()
+    # 同步历史 tab - D33 改: 加分页 (每页 HISTORY_PER_PAGE 条)
+    HISTORY_PER_PAGE = 20
+    history_qs = pair.history.select_related("source_workflow", "target_workflow").order_by("-created_at")
+    history_count = history_qs.count()
+    history_paginator = Paginator(history_qs, HISTORY_PER_PAGE)
+    history_page_num = request.GET.get("history_page", 1)
+    try:
+        history_page_obj = history_paginator.get_page(history_page_num)
+    except Exception:
+        history_page_obj = history_paginator.get_page(1)
+    history = history_page_obj.object_list
 
     context = {
         "pair": pair,
@@ -101,8 +115,73 @@ def pair_detail(request, pair_id):
         "table_count": table_count,
         "history": history,
         "history_count": history_count,
+        "history_page_obj": history_page_obj,
+        "history_paginator": history_paginator,
     }
     return render(request, "ddl_sync/pair_detail.html", context)
+
+
+@permission_required("ddl_sync.view_ddlsynctable", raise_exception=True)
+@require_http_methods(["GET"])
+def pair_history_export(request, pair_id):
+    """导出库对同步历史为 Excel (.xlsx)
+
+    ## CUSTOM-MODIFIED: D33 同步历史导出 Excel @ 2026-09-04 @ mavis
+    - 用 openpyxl 写 .xlsx (项目 requirements.txt 已依赖 openpyxl==3.1.5)
+    - 字段: ID / 表名 / 业务库工单 / 历史库镜像工单 / 状态 / 创建时间 / 完成时间 / 错误信息
+    - 文件名: ddl_sync_history_<pair_id>_<timestamp>.xlsx (ASCII safe, 防 GBK 编码)
+    - 业务方需求: 同步历史多了, 需要 Excel 导出做业务汇报 + 离线分析
+    """
+    from openpyxl import Workbook
+    from django.utils import timezone
+
+    pair = get_object_or_404(
+        DdlSyncPair.objects.select_related("source_instance", "target_instance"),
+        pk=pair_id,
+    )
+    histories = pair.history.select_related("source_workflow", "target_workflow").order_by("-created_at")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "sync_history"
+    headers = ["ID", "表名", "业务库工单", "历史库镜像工单", "状态", "创建时间", "完成时间", "错误信息"]
+    ws.append(headers)
+    # 表头加粗
+    from openpyxl.styles import Font, Alignment
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    # 列宽
+    ws.column_dimensions["A"].width = 8
+    ws.column_dimensions["B"].width = 28
+    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["D"].width = 18
+    ws.column_dimensions["E"].width = 16
+    ws.column_dimensions["F"].width = 20
+    ws.column_dimensions["G"].width = 20
+    ws.column_dimensions["H"].width = 50
+
+    for h in histories:
+        ws.append([
+            h.id,
+            h.table_name,
+            h.source_workflow_id or "",
+            h.target_workflow_id or "",
+            h.get_sync_status_display(),
+            h.created_at.strftime("%Y-%m-%d %H:%M:%S") if h.created_at else "",
+            h.finished_at.strftime("%Y-%m-%d %H:%M:%S") if h.finished_at else "",
+            (h.error_message or "")[:1000],  # 截 1000 字避免撑爆
+        ])
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"ddl_sync_history_pair{pair_id}_{timestamp}.xlsx"
+    # ASCII 文件名 (中文 filename 在 PowerShell GBK 终端会有编码问题)
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
 
 
 @permission_required("ddl_sync.add_ddlsyncpair", raise_exception=True)
