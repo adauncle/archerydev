@@ -1,0 +1,7 @@
+docs(ddl-sync): W2 D34 134 dev 演练推 110 prod 9 步 runbook (9/4 15:10)
+
+- 演练 8 步: 4 大步 + D33 改动基线 / dry-run migrate / kill + 拉新 / reverse() 验证 D33 view / curl + openpyxl 解析 / 造 5 条验证分页 + 清理 / 业务不中断验证
+- 9 步 runbook 升级: D31 8 步 + D33 视图改动 (Paginator + pair_history_export + 分页 + 导出 Excel)
+- 134 dev dry-run 完整 PASS: 4 大步全在 + D33 view callable + 29 ddl_sync 路由 + showmigrations 2 [X] + 分页栏 1/2 文字 + xlsx 22 行解析 OK
+
+CHANGELOG: docs/changelogs/2026-09-04_ddl-sync-w2-d34-prod-push-drill.md
