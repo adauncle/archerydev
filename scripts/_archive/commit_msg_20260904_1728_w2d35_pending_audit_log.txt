@@ -1,0 +1,8 @@
+docs(plans): W2 D35-Pending 操作日志规划记录 (待 D35 推 110 prod + D36 实战)
+
+- pair_detail.html 操作日志 tab 是 W1 D8 阶段 2 留的占位符, 从来没真实现
+- 3 方案: A 完整 DdlSyncAuditLog 模型 (推荐) / B 复用 LogEntry (轻量) / C MVP 4 类
+- 用户拍板: 等 D35 推 110 prod 完成后, 做 D36 实战 (倾向方案 A)
+- 理由: 操作日志是加分项不是主功能, 不影响 110 prod 上线效果
+
+PLANNING: docs/plans/2026-09-04_ddl-sync-w2-d35-pending-audit-log.md
