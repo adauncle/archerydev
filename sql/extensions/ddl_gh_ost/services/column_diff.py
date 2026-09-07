@@ -398,9 +398,10 @@ def _parse_alter_column_changes(sql_content: str) -> list:
         return []
 
     # 先识别 ALTER TABLE <table> 段
+    # CUSTOM: D35 修复 backticks schema 解析 (业务方 MySQL 客户端默认带 `schema`.`table`)
     m = re.match(
         r"^\s*ALTER\s+TABLE\s+"
-        r"(?:(?P<schema>[^`\s.()]+)\.)?`?(?P<table>[^`\s(]+)`?",
+        r"(?:(?P<schema>`?[^`\s.()]+`?)\.)?`?(?P<table>[^`\s(]+)`?",
         sql_content.strip(),
         re.IGNORECASE,
     )
@@ -751,9 +752,10 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
     # 2. 拿表名 (从 SQL 解析 或 显式)
     table_name = force_table_name
     if not table_name:
+        # CUSTOM: D35 修复 backticks schema 解析 (与 _parse_alter_column_changes 保持一致)
         m = re.match(
             r"^\s*ALTER\s+TABLE\s+"
-            r"(?:(?P<schema>[^`\s.()]+)\.)?`?(?P<table>[^`\s(]+)`?",
+            r"(?:(?P<schema>`?[^`\s.()]+`?)\.)?`?(?P<table>[^`\s(]+)`?",
             alter_sql.strip(),
             re.IGNORECASE,
         )
