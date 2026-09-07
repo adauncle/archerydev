@@ -27,10 +27,11 @@ class DdlGhostTask(models.Model):
                 唯一性改由 unique_together 保障。
     """
 
-    ## CUSTOM-MODIFIED: v0.4.5-alpha 加 task_type 二选一 @ 2026-08-06 @ mavis
+    ## CUSTOM-MODIFIED: 2026-08-06 加 task_type 二选一 @ mavis
+    ## CUSTOM-MODIFIED: 2026-09-07 去掉选项文案里的版本号, 业务方视角不关心改造版本 @ mavis
     TASK_TYPE_CHOICES = (
-        ("ghost", "gh-ost DDL（v0.3.0 改造，SQL 工单触发）"),
-        ("rebuild", "碎片回收（v0.4.5 改造，DBA 手动选表触发）"),
+        ("ghost", "gh-ost DDL（SQL 工单触发）"),
+        ("rebuild", "碎片回收（DBA 手动选表触发）"),
     )
 
     STATUS_CHOICES = (

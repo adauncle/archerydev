@@ -38,8 +38,8 @@ class Migration(migrations.Migration):
             name="task_type",
             field=models.CharField(
                 choices=[
-                    ("ghost", "gh-ost DDL（v0.3.0 改造，SQL 工单触发）"),
-                    ("rebuild", "碎片回收（v0.4.5 改造，DBA 手动选表触发）"),
+                    ("ghost", "gh-ost DDL（SQL 工单触发）"),
+                    ("rebuild", "碎片回收（DBA 手动选表触发）"),
                 ],
                 db_index=True,
                 default="ghost",

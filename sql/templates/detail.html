@@ -25,10 +25,11 @@
 <input type="hidden" id="dbNameForDiff" value="{{ db_name_for_diff|safe }}"/>
 {% if ddl_sync_as_target %}
 <!-- CUSTOM-MODIFIED: 镜像工单 alert 块 (D9 阶段 1 sync_trigger.py 联动) @ 2026-09-02 @ mavis
-     业务: 业务 RD 拿到镜像工单时知道这是 v0.5.0 自动生成, 能跳回源工单 -->
+     业务: 业务 RD 拿到镜像工单时知道这是自动生成的, 能跳回源工单
+     2026-09-07 @ mavis 去掉 v0.5.0 版本号文案, 业务方不关心改造版本 -->
 <div class="alert alert-info" style="margin-top: 10px;">
     <strong>🤖 DDL 跨库同步 - 镜像工单</strong>
-    &nbsp; <span class="label label-default">v0.5.0 自动生成</span>
+    &nbsp; <span class="label label-default">自动生成</span>
     <p style="margin-top: 8px; margin-bottom: 4px;">
         本工单由
         <a href="/detail/{{ ddl_sync_as_target.source_workflow_id }}/" target="_blank">
@@ -68,9 +69,10 @@
 
 {% if ddl_sync_as_source %}
 <!-- CUSTOM-MODIFIED: 源工单已配置跨库同步 alert 块 (W1-D4 §2.2 设计) @ 2026-09-02 @ mavis -->
+<!-- 2026-09-07 @ mavis 去掉 v0.5.0 版本号文案 -->
 <div class="alert alert-warning" style="margin-top: 10px;">
     <strong>📡 DDL 跨库同步 - 已配置</strong>
-    &nbsp; <span class="label label-default">v0.5.0 联动中</span>
+    &nbsp; <span class="label label-default">联动中</span>
     <p style="margin-top: 8px; margin-bottom: 4px;">
         本工单已配置跨库同步, 共触发 <strong>{{ ddl_sync_as_source|length }}</strong> 个镜像工单:
     </p>

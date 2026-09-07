@@ -91,7 +91,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>碎片回收进度 <span class="badge" style="background:#67C23A;vertical-align:middle;">v0.4.5</span></h1>
+    <h1>碎片回收进度</h1>
     <div class="sub">
       目标表 <b>{{ task.target_table|default:task.db_name|stringformat:"s"|add:"."|add:task.table_name }}</b>
       {% if task.created_by %}· 发起人 <b>{{ task.created_by }}</b>{% endif %}
