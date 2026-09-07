@@ -92,12 +92,14 @@
       <a href="javascript:;" onclick="document.getElementById('gh-ost-scope-tip').style.display='block';this.style.display='none';" style="margin-left:6px;font-size:12px;">为什么?</a>
     </p>
     <div id="gh-ost-scope-tip" style="display:none;background:#fdf6ec;border:1px solid #faecd8;border-radius:6px;padding:10px 14px;margin:0 0 16px;font-size:12px;color:#b88230;line-height:1.7;">
-      任务管理列表是 DBA 运维入口, 只 DBA / DBA 组长 / 超级管理员能看全量。<br>
+      任务管理列表是 DBA 运维入口, 只 DBA / DBA 组长 / 审批人 / 超级管理员能看全量。<br>
       您有 <code>view_ddlghosttask</code> 权限, 但属于普通角色, 所以只能查看自己提交的工单 (workflow.engineer = 您的用户名)。<br>
       {# CUSTOM-MODIFIED: 去掉"权限组管理"链接 @ 2026-08-13 @ mavis #}
       {# 业务: 8/13 用户反馈弹窗里"权限组管理"链接对非管理员/DBA 没用 (RD 进不了 admin 后台); #}
       {#      弹窗本身只在 RD 视角渲染 ({% else %} 块), DBA 视角不渲染弹窗, 所以直接去掉链接最干净。 #}
-      如需查看全量, 请联系 DBA 把你加到 <code>DBA</code> 或 <code>DBA组长</code> 组。
+      {# CUSTOM-MODIFIED: 加"审批人"组白名单文案 @ 2026-09-07 @ mavis #}
+      {# 业务: 副总/总监/经理 等非 DBA 审批人需要看全量, 单独建 "审批人" 组解耦 #}
+      如需查看全量, 请联系 DBA 把你加到 <code>DBA</code> / <code>DBA组长</code> / <code>审批人</code> 组。
     </div>
   {% endif %}
 

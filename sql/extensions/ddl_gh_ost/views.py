@@ -1116,18 +1116,22 @@ def admin_list(request: HttpRequest) -> HttpResponse:
 def _is_admin_or_dba(user) -> bool:
     """判定用户是否"运维视角" — 看 gh-ost 任务全量。
 
-    True:  superuser 或属于 ``DBA`` / ``DBA组长`` 组 → 看全量
+    True:  superuser 或属于 ``DBA`` / ``DBA组长`` / ``审批人`` 组 → 看全量
     False: 其他用户 → 只看自己提交的 task (workflow.engineer == user.username)
 
     设计原因: Archery 上游没有统一的 "is_dba" 字段, 审批组 (workflow_audit_setting)
     用 group.id 配, 这里走 group.name 简单白名单。后续若需要更细粒度 (按部门),
     改这里 + task_list.html 头部提示即可, 不影响 perm 守卫。
+
+    2026-09-07 加 "审批人" 组白名单 @ mavis: 副总/总监/经理 等非 DBA 审批人
+    需要看全量 gh-ost 任务列表做审批, 但不应该继承 DBA 组长整套权限
+    (审批流 / rebuild 触发 / 选表页等). 单独建 "审批人" 组解耦.
     """
     if not user or not user.is_authenticated:
         return False
     if user.is_superuser:
         return True
-    return user.groups.filter(name__in=("DBA", "DBA组长")).exists()
+    return user.groups.filter(name__in=("DBA", "DBA组长", "审批人")).exists()
 
 
 # ===========================================================================
