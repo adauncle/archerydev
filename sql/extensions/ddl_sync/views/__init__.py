@@ -87,15 +87,35 @@ def pair_detail(request, pair_id):
     - history 分页: 每页 20 条, URL 加 ?history_page=N
     - 导出按钮: tab 内右上角, 跳 /ddl_sync/pair/<id>/history_export/
     - 实战背景: 业务方长期使用后, 库对历史可能积累到 100+ 条, 单页 50 行太多
+
+    ## CUSTOM-MODIFIED: 同步表清单加分页 + 行数选择 @ 2026-09-08 @ mavis
+    - tables 分页: 默认 50/页, 可选 50/100/200, URL 加 ?tables_page=N&tables_per_page=50
+    - 行数选择下拉: tab 内右上角, 跟 history 导出按钮同一行
+    - 实战背景: 业务方库对有 606 张表, 老代码写死 [:200], 看不到 200+ 部分
     """
     pair = get_object_or_404(
         DdlSyncPair.objects.select_related("source_instance", "target_instance", "created_by"),
         pk=pair_id,
     )
 
-    # 同步表清单 tab (前 200 张, 分页)
-    tables = pair.tables.all().order_by("sync_type", "table_name")[:200]
-    table_count = pair.tables.count()
+    # 同步表清单 tab - 同步表清单加分页 + 行数选择
+    TABLES_PER_PAGE_CHOICES = [50, 100, 200]
+    tables_per_page_param = request.GET.get("tables_per_page", 50)
+    try:
+        tables_per_page = int(tables_per_page_param)
+        if tables_per_page not in TABLES_PER_PAGE_CHOICES:
+            tables_per_page = 50
+    except (ValueError, TypeError):
+        tables_per_page = 50
+    tables_qs = pair.tables.all().order_by("sync_type", "table_name")
+    table_count = tables_qs.count()
+    tables_paginator = Paginator(tables_qs, tables_per_page)
+    tables_page_num = request.GET.get("tables_page", 1)
+    try:
+        tables_page_obj = tables_paginator.get_page(tables_page_num)
+    except Exception:
+        tables_page_obj = tables_paginator.get_page(1)
+    tables = tables_page_obj.object_list
 
     # 同步历史 tab - D33 改: 加分页 (每页 HISTORY_PER_PAGE 条)
     HISTORY_PER_PAGE = 20
@@ -113,6 +133,10 @@ def pair_detail(request, pair_id):
         "pair": pair,
         "tables": tables,
         "table_count": table_count,
+        "tables_paginator": tables_paginator,
+        "tables_page_obj": tables_page_obj,
+        "tables_per_page": tables_per_page,
+        "tables_per_page_choices": TABLES_PER_PAGE_CHOICES,
         "history": history,
         "history_count": history_count,
         "history_page_obj": history_page_obj,

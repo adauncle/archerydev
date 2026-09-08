@@ -165,7 +165,7 @@
   <!-- tab 2: 同步表清单 -->
   <div class="tab-pane fade" id="tab-tables">
     <div class="ddlsync-tab-pane">
-      <h5>同步表清单 (前 {{ tables|length }} 张)</h5>
+      <h5>同步表清单 (共 {{ table_count }} 张{% if tables_paginator.num_pages > 1 %}, 第 {{ tables_page_obj.number }}/{{ tables_paginator.num_pages }} 页{% endif %})</h5>
       <div class="ddlsync-table-toolbar">
         <input type="text" id="table-search" placeholder="搜索表名" style="width: 200px;">
         <select id="table-filter-sync-type">
@@ -173,6 +173,15 @@
           <option value="whitelist">白名单</option>
           <option value="blacklist">黑名单</option>
         </select>
+        <span style="margin-left: auto; display: flex; align-items: center; gap: 6px;">
+          <span style="color: #909399; font-size: 12px;">每页</span>
+          <select id="tables-per-page" onchange="window.location.href='?tables_page=1&tables_per_page='+this.value+'#tab-tables'" style="padding: 4px 8px;">
+            {% for n in tables_per_page_choices %}
+            <option value="{{ n }}" {% if n == tables_per_page %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+          <span style="color: #909399; font-size: 12px;">行</span>
+        </span>
       </div>
       {% if tables %}
       <table class="ddlsync-table-list">
@@ -201,8 +210,22 @@
           {% endfor %}
         </tbody>
       </table>
-      {% if table_count > 200 %}
-      <p class="text-muted" style="margin-top: 12px;">仅显示前 200 张, 完整列表请用「🎯 一键配」刷新后查看</p>
+      {% if tables_paginator.num_pages > 1 %}
+      <div class="ddlsync-pagination" style="margin-top: 12px;">
+        {% if tables_page_obj.has_previous %}
+          <a class="ddlsync-page-link" href="?tables_page={{ tables_page_obj.previous_page_number }}&tables_per_page={{ tables_per_page }}#tab-tables">‹ 上一页</a>
+        {% endif %}
+        {% for p in tables_paginator.page_range %}
+          {% if p == tables_page_obj.number %}
+            <span class="ddlsync-page-current">{{ p }}</span>
+          {% else %}
+            <a class="ddlsync-page-link" href="?tables_page={{ p }}&tables_per_page={{ tables_per_page }}#tab-tables">{{ p }}</a>
+          {% endif %}
+        {% endfor %}
+        {% if tables_page_obj.has_next %}
+          <a class="ddlsync-page-link" href="?tables_page={{ tables_page_obj.next_page_number }}&tables_per_page={{ tables_per_page }}#tab-tables">下一页 ›</a>
+        {% endif %}
+      </div>
       {% endif %}
       {% else %}
       <div class="ddlsync-empty">
