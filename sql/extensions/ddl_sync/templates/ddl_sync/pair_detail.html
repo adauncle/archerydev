@@ -213,7 +213,7 @@
       {% if tables_paginator.num_pages > 1 %}
       <div class="ddlsync-pagination" style="margin-top: 12px;">
         {% if tables_page_obj.has_previous %}
-          <a class="ddlsync-page-link" href="?tables_page={{ tables_page_obj.previous_page_number }}&tables_per_page={{ tables_per_page }}#tab-tables">‹ 上一页</a>
+          <a class="ddlsync-page-link" href="?tables_page={{ tables_page_obj.previous_page_number }}&tables_per_page={{ tables_per_page }}#tab-tables"><i class="fa fa-arrow-left"></i> Prev</a>
         {% endif %}
         {% for p in tables_paginator.page_range %}
           {% if p == tables_page_obj.number %}
@@ -223,7 +223,7 @@
           {% endif %}
         {% endfor %}
         {% if tables_page_obj.has_next %}
-          <a class="ddlsync-page-link" href="?tables_page={{ tables_page_obj.next_page_number }}&tables_per_page={{ tables_per_page }}#tab-tables">下一页 ›</a>
+          <a class="ddlsync-page-link" href="?tables_page={{ tables_page_obj.next_page_number }}&tables_per_page={{ tables_per_page }}#tab-tables">Next <i class="fa fa-arrow-right"></i></a>
         {% endif %}
       </div>
       {% endif %}
@@ -275,17 +275,17 @@
       {% if history_paginator.num_pages > 1 %}
       <nav class="ddlsync-pagination" style="margin-top: 12px; display: flex; justify-content: center; gap: 4px; flex-wrap: wrap;">
         {% if history_page_obj.has_previous %}
-          <a class="ddlsync-page-link" href="?history_page={{ history_page_obj.previous_page_number }}#tab-history">‹ 上一页</a>
+          <a class="ddlsync-page-link" href="?history_page={{ history_page_obj.previous_page_number }}&tables_per_page={{ tables_per_page }}#tab-history"><i class="fa fa-arrow-left"></i> Prev</a>
         {% endif %}
         {% for p in history_paginator.page_range %}
           {% if p == history_page_obj.number %}
             <span class="ddlsync-page-link ddlsync-page-current">{{ p }}</span>
           {% else %}
-            <a class="ddlsync-page-link" href="?history_page={{ p }}#tab-history">{{ p }}</a>
+            <a class="ddlsync-page-link" href="?history_page={{ p }}&tables_per_page={{ tables_per_page }}#tab-history">{{ p }}</a>
           {% endif %}
         {% endfor %}
         {% if history_page_obj.has_next %}
-          <a class="ddlsync-page-link" href="?history_page={{ history_page_obj.next_page_number }}#tab-history">下一页 ›</a>
+          <a class="ddlsync-page-link" href="?history_page={{ history_page_obj.next_page_number }}&tables_per_page={{ tables_per_page }}#tab-history">Next <i class="fa fa-arrow-right"></i></a>
         {% endif %}
       </nav>
       {% endif %}
