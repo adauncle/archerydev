@@ -36,7 +36,7 @@ DEV = "172.20.2.134"
 DEV_BASE = "/opt/archery/prod"
 
 # === 实战开关: True 才执行, False 只演练不实际推 ===
-LIVE_PUSH = False  # 实战前改为 True
+LIVE_PUSH = False  # 9/8 16:32-16:53 D35 实战已推完, 改回演练模式, 避免下次误触发
 
 def banner(s):
     print("\n" + "=" * 60)
@@ -133,6 +133,12 @@ def main():
     # 实战时: 找 if CUSTOM_DDL_SYNC_ENABLED 块位置, 加守卫 + INSTALLED_APPS
     # 110 prod 实际没 ddl_sync 守卫, 直接在 line 419 后加
     # 实战时: py 改文件 (跟 D32 演练 v6 一致)
+    #
+    # ⚠️ 9/8 16:36 实战踩坑 (D35 实战新发现): 不要加 `MIDDLEWARE += django_cas_ng.middleware.CASMiddleware`!
+    # 110 prod ENABLE_CAS=False, django_cas_ng 不在 INSTALLED_APPS. 加了 CAS middleware 会触发
+    # RuntimeError: Model class django_cas_ng.models.ProxyGrantingTicket doesn't declare
+    # an explicit app_label. 业务方走 dbaprinciples 登录, 不需要 CAS, 加了反而坏.
+    # 修法: 9/8 16:50 sed 删 110 prod settings.py 那行.
     py_modify = """
 path = '/dbdata/archery_v114_c9236a0/archery/settings.py'
 with open(path, 'r', encoding='utf-8') as f:
@@ -232,17 +238,34 @@ else:
     out = run_ssh(prod, "cd " + PROD_BASE + " && sudo -u archery venv/bin/python manage.py migrate ddl_sync 2>&1 | head -20 | iconv -f utf-8 -t ascii//IGNORE")
     print(out)
 
-    # === ⑥ Step 6: 推 D22-D33 跨 app 6 文件 ===
-    banner("⑥ Step 6: 推 D22-D33 跨 app 6 文件")
+    # === ⑥ Step 6: 推 D22-D35 跨 app 12 文件 (升级版) ===
+    banner("⑥ Step 6: 推 D22-D35 跨 app 12 文件 (升级版, 9/8 09:30 D24 ddl_rollback.py 已推自动 skip)")
     cross_app_files = [
-        "sql/templates/detail.html",
-        "sql/templates/sqlsubmit.html",
-        "sql/extensions/ddl_gh_ost/services/column_diff.py",
-        "sql/extensions/ddl_sync/views/__init__.py",
-        "sql/extensions/ddl_sync/urls.py",
-        "sql/extensions/ddl_sync/templates/ddl_sync/pair_detail.html",
+        "sql/extensions/ddl_gh_ost/models.py",                                                              # D35 nover line 32-33
+        "sql/extensions/ddl_gh_ost/migrations/0002_ddlghosttask_related_task_id_and_more.py",              # D35 nover line 41-42
+        "sql/extensions/ddl_gh_ost/templates/ddl_gh_ost/progress_rebuild.html",                             # D35 nover line 94
+        "sql/extensions/ddl_gh_ost/templates/ddl_gh_ost/task_list.html",                                   # D35 approver line 95, 100
+        "sql/extensions/ddl_gh_ost/views.py",                                                               # D35 approver line 1116-1133
+        "sql/extensions/ddl_gh_ost/services/column_diff.py",                                                # D27 ALTER COLUMN + D35 backticks line 403 + 757
+        "sql/services/ddl_rollback.py",                                                                     # D24 ForeignKey bug (9/8 09:30 紧急热补丁已推, md5 skip)
+        "sql/templates/detail.html",                                                                         # D18/D20/D25 v2 + D35 nover line 31, 74
+        "sql/templates/sqlsubmit.html",                                                                      # D28/D29 弹窗化
+        "sql/extensions/ddl_sync/views/__init__.py",                                                         # D22/D23/D25/D33 分页+导出
+        "sql/extensions/ddl_sync/urls.py",                                                                   # D33 history_export
+        "sql/extensions/ddl_sync/templates/ddl_sync/pair_detail.html",                                      # D33 同步历史 tab
     ]
     for f in cross_app_files:
+        # md5 预校验 (D12 实战新发现, 已推过文件自动 skip)
+        out = run_ssh(dev, "md5sum " + DEV_BASE + "/" + f)
+        dev_md5 = out.split()[0] if out and not out.startswith("ERR") else "?"
+        out = run_ssh(prod, "md5sum " + PROD_BASE + "/" + f + " 2>/dev/null")
+        if out and not out.startswith("ERR") and out.strip():
+            prod_md5 = out.split()[0]
+        else:
+            prod_md5 = "?"  # 110 prod 没这个文件 (新部署, 如 ddl_sync/*)
+        if dev_md5 == prod_md5 and prod_md5 != "?":
+            print(f"  [skip] {f} (md5 {dev_md5} 一致, 已推过)")
+            continue
         # scp from dev to prod
         sftp_dev = dev.open_sftp()
         sftp_prod = prod.open_sftp()
@@ -255,7 +278,7 @@ else:
         # 推文件
         remote_tmp = "/tmp/_d35_" + f.replace("/", "_")
         out = run_ssh(prod, "cp " + remote_tmp + " " + PROD_BASE + "/" + f)
-        print(f"  pushed: {f} ({out.strip()})")
+        print(f"  pushed: {f} ({len(data)} bytes, dev_md5 {dev_md5[:8]} -> {out.strip()})")
 
     # === ⑦ Step 7: kill + 拉新 gunicorn + qcluster ===
     banner("⑦ Step 7: kill + 拉新 gunicorn + qcluster (D24 实战新发现 qcluster 必 kill)")
