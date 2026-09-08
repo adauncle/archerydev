@@ -212,20 +212,25 @@ else:
 
     # === ④ Step 4: base.html 加 ddl_sync menu + 守卫 ===
     banner("④ Step 4: 110 prod common/templates/base.html 加 ddl_sync menu")
-    # ⚠️ 9/8 17:14 实战踩坑 (D35 实战新发现): 必须加到 sidebar 块 (gh-ost 任务 menu 后),
-    # 不能加到 dropdown-user 块 (用户头像下拉). 之前用 `{% endif %}` + `{% if perms.sql.menu_query %}`
-    # 找位置, 实际找到的是 dropdown-user 块, 业务方刷新页面左侧菜单不显示.
-    # 修法: 找 gh-ost 任务 menu 的 `{% if user.is_superuser or perms.ddl_gh_ost.view_ddlghosttask %}...{% endif %}`
-    # 的 {% endif %} 之后, dropdown style 跟 134 dev 一致.
+    # ⚠️ 9/8 17:14 实战踩坑 #1 (D35 实战新发现): 必须加到 sidebar 块 (gh-ost 任务 menu 后),
+    # 不能加到 dropdown-user 块 (用户头像下拉).
+    # ⚠️ 9/8 17:47 实战踩坑 #2 (D35 实战新发现): 用 non-greedy `[\s\S]*?{% endif %}` 找 gh-ost 任务
+    # menu, 但 gh-ost 任务块内有 2 个 `{% endif %}` (内层碎片回收 + 外层 gh-ost 任务), non-greedy
+    # 找第一个 (内层), 加错位置 (DDL 跨库同步嵌套在 gh-ost 任务子菜单里). 修法: 锚定外层
+    # `</ul> + <!-- /.nav-second-level --> + </li> + {% endif %}`, 这是 gh-ost 任务 menu 的外层关闭.
     py_base = """
 import re
 path = '/dbdata/archery_v114_c9236a0/common/templates/base.html'
 with open(path, 'r', encoding='utf-8') as f:
     content = f.read()
 if 'ddl_sync' not in content:
-    # 找 gh-ost 任务 menu 的 {% endif %} (sidebar 块内, 134 dev 风格)
-    pattern = r'({% if user\\.is_superuser or perms\\.ddl_gh_ost\\.view_ddlghosttask %\\}[\\s\\S]*?{% endif %})'
-    m = re.search(pattern, content)
+    # 找 gh-ost 任务 menu 的外层关闭: </ul> + <!-- /.nav-second-level --> + </li> + {% endif %}
+    # 锚定: 用 4 行上下文, 避免 non-greedy 找错 (上次踩坑: 找内层碎片回收 {% endif %})
+    pattern = re.compile(
+        r'(</ul>\\s*<!-- /\\.nav-second-level -->\\s*</li>\\s*\\{% endif %\\})',
+        re.DOTALL
+    )
+    m = pattern.search(content)
     if m:
         old = m.group(0)
         new = old + '\\n\\n'
@@ -245,9 +250,9 @@ if 'ddl_sync' not in content:
         content = content.replace(old, new, 1)
         with open(path, 'w', encoding='utf-8') as f:
             f.write(content)
-        print('base.html: ddl_sync menu added (sidebar 块, dropdown style)')
+        print('base.html: ddl_sync menu added (sidebar 块, dropdown style, 平级 gh-ost 任务)')
     else:
-        print('ERR: gh-ost 任务 menu 没找到, manual add')
+        print('ERR: gh-ost 任务外层关闭没找到, manual add')
 else:
     print('base.html: ddl_sync already exists, skip')
 """
