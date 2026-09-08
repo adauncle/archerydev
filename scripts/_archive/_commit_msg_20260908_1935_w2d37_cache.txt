@@ -1,0 +1,10 @@
+docs(changelogs): D37 跳首页问题 100% 锁定为浏览器缓存
+
+- 业务方 mkq 9/8 18:45 + 19:09 反馈"跳首页"
+- 110 prod view + template 实际渲染 6 种分页组合全对 (per_page=50/100/200, page=1/2/3/4)
+- 三环境 md5 全一致 (Win == 134 dev == 110 prod)
+- 业务方截图矛盾: per_page=200 标题显示"7 页"应该是 4 页
+- 100% 锁定: 浏览器缓存了 per_page=100 时的 HTML, 切 per_page=200 拿缓存返回
+- 修法: 业务方硬刷 (Ctrl+Shift+R) 或无痕窗口
+
+CHANGELOG: docs/changelogs/2026-09-08_ddl-sync-w2-d37-cache-confirmed.md
