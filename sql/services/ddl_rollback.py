@@ -21,6 +21,7 @@ import logging
 from typing import Optional, List, Tuple
 
 from sql.models import SqlWorkflow, SqlWorkflowContent
+from sql.extensions.ddl_gh_ost.models import DdlGhostTask
 from sql.extensions.ddl_gh_ost.services.column_diff import (
     _fetch_current_columns,
     _split_top_level_commas,
@@ -125,14 +126,18 @@ def _should_use_ddl_rollback(workflow: SqlWorkflow) -> bool:
     设计:
         - 不查 ghost_task.status, 因为任何 status (含 failed/cancelled) 都有意义
           (用户可能想知道"如果当初成功, 怎么回滚")
-        - rebuild 任务 (task_type=rebuild) workflow=NULL, 走 DdlGhostTask.DoesNotExist
-          分支, 不会误入 A 路径
+        - rebuild 任务 (task_type=rebuild) workflow=NULL, .filter().exists() 返回 False
+          不会误入 A 路径
+
+    ## CUSTOM-MODIFIED: D35 修复 ForeignKey 后 RelatedManager 永远 truthly 的 bug @ 2026-09-07 @ mavis
+    ## 关联: docs/changelogs/2026-09-07_ddl-sync-w2-d35-bug-ghost-task-manager.md
+    ## 根因: D24 8/6 改 DdlGhostTask.workflow 从 OneToOne 拆 ForeignKey, 但本函数
+    ##       用 workflow.ghost_task 期望 DoesNotExist, ForeignKey 关系下
+    ##       ghost_task 是 RelatedManager (永远 truthly), try-except 永远不触发,
+    ##       所有 DML 工单都被错走 A 方案 → rows=[].
+    ## 修法: 改用 .filter(workflow=workflow).exists() 显式查
     """
-    try:
-        workflow.ghost_task  # reverse OneToOne, 不存在就 DoesNotExist
-        return True
-    except Exception:  # noqa: BLE001
-        return False
+    return DdlGhostTask.objects.filter(workflow=workflow).exists()
 
 
 # ===========================================================================
