@@ -175,24 +175,33 @@ else:
 
     # === ③ Step 3: urls.py 加 ddl_sync 路由 ===
     banner("③ Step 3: 110 prod urls.py 加 ddl_sync 路由")
+    # 实战时: 找 if CUSTOM_GH_OST_ENABLED 块位置, 加 ddl_sync 路由
+    #
+    # ⚠️ 9/8 16:58 实战踩坑 (D35 实战新发现): 110 prod urls.py 第 45 行有
+    # `# pragma: no cover` 注释, D35 push 脚本 old 字符串没匹配, 路由没加成功.
+    # 修法: py_modify 改用 re.search 处理带 pragma 注释的 ddl_gh_ost 块
     py_urls = """
+import re
 path = '/dbdata/archery_v114_c9236a0/archery/urls.py'
 with open(path, 'r', encoding='utf-8') as f:
     content = f.read()
 if 'ddl_sync' not in content:
-    # 找 ddl_gh_ost 路由块后加 ddl_sync 路由
-    if 'CUSTOM_GH_OST_ENABLED' in content:
-        old = 'if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):\\n    urlpatterns += [\\n        path("gh_ost/", include(("sql.extensions.ddl_gh_ost.urls", "ddl_gh_ost"), namespace="ddl_gh_ost")),\\n    ]'
-        new = old + '\\n\\nif getattr(settings, "CUSTOM_DDL_SYNC_ENABLED", False):\\n    urlpatterns += [\\n        path("ddl_sync/", include(("sql.extensions.ddl_sync.urls", "ddl_sync"), namespace="ddl_sync")),\\n    ]'
-        if old in content:
-            content = content.replace(old, new, 1)
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print('urls.py: ddl_sync 路由 added')
-        else:
-            print('ERR: ddl_gh_ost 块 not found, manual add')
+    # 找 ddl_gh_ost 路由块 (考虑 # pragma: no cover 注释, 134 dev 演练用旧版块格式)
+    pattern = r'(if getattr\\(settings, "CUSTOM_GH_OST_ENABLED", False\\):\\s*#\\s*pragma: no cover\\n\\s*urlpatterns \\+= \\[\\n\\s*path\\("gh_ost/", include\\(\\(\"sql\\.extensions\\.ddl_gh_ost\\.urls\", \"ddl_gh_ost\"\\), namespace=\"ddl_gh_ost\"\\)\\),\\n\\s*\\])'
+    m = re.search(pattern, content)
+    if m:
+        old = m.group(0)
     else:
-        print('ERR: CUSTOM_GH_OST_ENABLED not in urls.py, manual add')
+        # fallback: 找不带 pragma 注释的版本 (134 dev 演练用)
+        old = 'if getattr(settings, "CUSTOM_GH_OST_ENABLED", False):\\n    urlpatterns += [\\n        path("gh_ost/", include(("sql.extensions.ddl_gh_ost.urls", "ddl_gh_ost"), namespace="ddl_gh_ost")),\\n    ]'
+    if old in content:
+        new = old + '\\n\\nif getattr(settings, "CUSTOM_DDL_SYNC_ENABLED", False):  # pragma: no cover\\n    urlpatterns += [\\n        path("ddl_sync/", include(("sql.extensions.ddl_sync.urls", "ddl_sync"), namespace="ddl_sync")),\\n    ]'
+        content = content.replace(old, new, 1)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        print('urls.py: ddl_sync 路由 added')
+    else:
+        print('ERR: ddl_gh_ost 块 not found, manual add')
 else:
     print('urls.py: ddl_sync already exists, skip')
 """
