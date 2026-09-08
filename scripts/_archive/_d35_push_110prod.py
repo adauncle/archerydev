@@ -212,30 +212,42 @@ else:
 
     # === ④ Step 4: base.html 加 ddl_sync menu + 守卫 ===
     banner("④ Step 4: 110 prod common/templates/base.html 加 ddl_sync menu")
+    # ⚠️ 9/8 17:14 实战踩坑 (D35 实战新发现): 必须加到 sidebar 块 (gh-ost 任务 menu 后),
+    # 不能加到 dropdown-user 块 (用户头像下拉). 之前用 `{% endif %}` + `{% if perms.sql.menu_query %}`
+    # 找位置, 实际找到的是 dropdown-user 块, 业务方刷新页面左侧菜单不显示.
+    # 修法: 找 gh-ost 任务 menu 的 `{% if user.is_superuser or perms.ddl_gh_ost.view_ddlghosttask %}...{% endif %}`
+    # 的 {% endif %} 之后, dropdown style 跟 134 dev 一致.
     py_base = """
+import re
 path = '/dbdata/archery_v114_c9236a0/common/templates/base.html'
 with open(path, 'r', encoding='utf-8') as f:
     content = f.read()
 if 'ddl_sync' not in content:
-    # 找 ddl_gh_ost menu 块后加 ddl_sync menu
-    # 实战时: 找 {% if perms.ddl_gh_ost.view_ddlghosttask_rebuild %}{% endif %} 末尾
-    pattern = r'(\\s*\\{% endif %\\})\\s*(?=\\s*\\{% if perms\\.sql\\.menu_query %\\})'
-    import re
+    # 找 gh-ost 任务 menu 的 {% endif %} (sidebar 块内, 134 dev 风格)
+    pattern = r'({% if user\\.is_superuser or perms\\.ddl_gh_ost\\.view_ddlghosttask %\\}[\\s\\S]*?{% endif %})'
     m = re.search(pattern, content)
     if m:
-        new_block = m.group(1) + '\\n\\n'
-        new_block += '                    {# CUSTOM-MODIFIED: DDL \\u8de8\\u5e93\\u540c\\u6b65 \\u83dc\\u5355 @ 2026-09-08 @ mavis #}\\n'
-        new_block += '                    {% if user.is_superuser or perms.ddl_sync.view_ddlsyncpair %}\\n'
-        new_block += '                        <li>\\n'
-        new_block += '                            <a href="{% url \\'ddl_sync:pair_list\\' %}"><i class="fa fa-list fa-fw"></i> \\u5e93\\u5bf9\\u5217\\u8868</a>\\n'
-        new_block += '                        </li>\\n'
-        new_block += '                    {% endif %}\\n'
-        content = content.replace(m.group(0), new_block, 1)
+        old = m.group(0)
+        new = old + '\\n\\n'
+        new += '                    {# CUSTOM-MODIFIED: DDL \\u8de8\\u5e93\\u540c\\u6b65 \\u83dc\\u5355 @ 2026-09-08 @ mavis #}\\n'
+        new += '                    {# \\u5b88\\u536b: superuser \\u6216\\u6709 ddl_sync.view_ddlsyncpair \\u6743\\u9650 #}\\n'
+        new += '                    {% if user.is_superuser or perms.ddl_sync.view_ddlsyncpair %}\\n'
+        new += '                        <li>\\n'
+        new += '                            <a href=\"#\"><i class=\"fa fa-exchange fa-fw\"></i> DDL \\u8de8\\u5e93\\u540c\\u6b65<span class=\"fa arrow\"></span></a>\\n'
+        new += '                            <ul class=\"nav nav-second-level collapse\">\\n'
+        new += '                                <li>\\n'
+        new += '                                    <a href=\"{% url \\'ddl_sync:pair_list\\' %}\"><i class=\"fa fa-list fa-fw\"></i> \\u5e93\\u5bf9\\u5217\\u8868</a>\\n'
+        new += '                                </li>\\n'
+        new += '                            </ul>\\n'
+        new += '                            <!-- /.nav-second-level -->\\n'
+        new += '                        </li>\\n'
+        new += '                    {% endif %}'
+        content = content.replace(old, new, 1)
         with open(path, 'w', encoding='utf-8') as f:
             f.write(content)
-        print('base.html: ddl_sync menu added')
+        print('base.html: ddl_sync menu added (sidebar 块, dropdown style)')
     else:
-        print('ERR: 没找到 {% endif %} 守卫, manual add')
+        print('ERR: gh-ost 任务 menu 没找到, manual add')
 else:
     print('base.html: ddl_sync already exists, skip')
 """
