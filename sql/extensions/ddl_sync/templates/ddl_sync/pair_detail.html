@@ -175,7 +175,8 @@
         </select>
         <span style="margin-left: auto; display: flex; align-items: center; gap: 6px;">
           <span style="color: #909399; font-size: 12px;">每页</span>
-          <select id="tables-per-page" onchange="window.location.href='?tables_page=1&tables_per_page='+this.value+'#tab-tables'" style="padding: 4px 8px;">
+          {# 修复 D37 二级: 相对 URL `?tables_page=...` 在某些浏览器场景下会解析到父级 URL. 改用绝对 URL, 始终跳到 pair/1/ 的正确分页页 #}
+          <select id="tables-per-page" onchange="window.location.href='{% url 'ddl_sync:pair_detail' pair.id %}?tables_page=1&tables_per_page='+this.value+'#tab-tables'" style="padding: 4px 8px;">
             {% for n in tables_per_page_choices %}
             <option value="{{ n }}" {% if n == tables_per_page %}selected{% endif %}>{{ n }}</option>
             {% endfor %}
@@ -213,17 +214,17 @@
       {% if tables_paginator.num_pages > 1 %}
       <div class="ddlsync-pagination" style="margin-top: 12px;">
         {% if tables_page_obj.has_previous %}
-          <a class="ddlsync-page-link" href="?tables_page={{ tables_page_obj.previous_page_number }}&tables_per_page={{ tables_per_page }}#tab-tables"><i class="fa fa-arrow-left"></i> Prev</a>
+          <a class="ddlsync-page-link" href="{% url 'ddl_sync:pair_detail' pair.id %}?tables_page={{ tables_page_obj.previous_page_number }}&tables_per_page={{ tables_per_page }}#tab-tables"><i class="fa fa-arrow-left"></i> Prev</a>
         {% endif %}
         {% for p in tables_paginator.page_range %}
           {% if p == tables_page_obj.number %}
             <span class="ddlsync-page-current">{{ p }}</span>
           {% else %}
-            <a class="ddlsync-page-link" href="?tables_page={{ p }}&tables_per_page={{ tables_per_page }}#tab-tables">{{ p }}</a>
+            <a class="ddlsync-page-link" href="{% url 'ddl_sync:pair_detail' pair.id %}?tables_page={{ p }}&tables_per_page={{ tables_per_page }}#tab-tables">{{ p }}</a>
           {% endif %}
         {% endfor %}
         {% if tables_page_obj.has_next %}
-          <a class="ddlsync-page-link" href="?tables_page={{ tables_page_obj.next_page_number }}&tables_per_page={{ tables_per_page }}#tab-tables">Next <i class="fa fa-arrow-right"></i></a>
+          <a class="ddlsync-page-link" href="{% url 'ddl_sync:pair_detail' pair.id %}?tables_page={{ tables_page_obj.next_page_number }}&tables_per_page={{ tables_per_page }}#tab-tables">Next <i class="fa fa-arrow-right"></i></a>
         {% endif %}
       </div>
       {% endif %}
@@ -275,17 +276,17 @@
       {% if history_paginator.num_pages > 1 %}
       <nav class="ddlsync-pagination" style="margin-top: 12px; display: flex; justify-content: center; gap: 4px; flex-wrap: wrap;">
         {% if history_page_obj.has_previous %}
-          <a class="ddlsync-page-link" href="?history_page={{ history_page_obj.previous_page_number }}&tables_per_page={{ tables_per_page }}#tab-history"><i class="fa fa-arrow-left"></i> Prev</a>
+          <a class="ddlsync-page-link" href="{% url 'ddl_sync:pair_detail' pair.id %}?history_page={{ history_page_obj.previous_page_number }}&tables_per_page={{ tables_per_page }}#tab-history"><i class="fa fa-arrow-left"></i> Prev</a>
         {% endif %}
         {% for p in history_paginator.page_range %}
           {% if p == history_page_obj.number %}
             <span class="ddlsync-page-link ddlsync-page-current">{{ p }}</span>
           {% else %}
-            <a class="ddlsync-page-link" href="?history_page={{ p }}&tables_per_page={{ tables_per_page }}#tab-history">{{ p }}</a>
+            <a class="ddlsync-page-link" href="{% url 'ddl_sync:pair_detail' pair.id %}?history_page={{ p }}&tables_per_page={{ tables_per_page }}#tab-history">{{ p }}</a>
           {% endif %}
         {% endfor %}
         {% if history_page_obj.has_next %}
-          <a class="ddlsync-page-link" href="?history_page={{ history_page_obj.next_page_number }}&tables_per_page={{ tables_per_page }}#tab-history">Next <i class="fa fa-arrow-right"></i></a>
+          <a class="ddlsync-page-link" href="{% url 'ddl_sync:pair_detail' pair.id %}?history_page={{ history_page_obj.next_page_number }}&tables_per_page={{ tables_per_page }}#tab-history">Next <i class="fa fa-arrow-right"></i></a>
         {% endif %}
       </nav>
       {% endif %}

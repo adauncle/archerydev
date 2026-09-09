@@ -1,0 +1,14 @@
+fix(ddl_sync): 分页链接 + 行数选择 onchange 改绝对 URL, 修跳"上一级"问题 (D38)
+
+- 业务方 mkq 9/8 19:34 反馈 "点击下一页或者任意页码都会跳转到上一级"
+- 根因: 分页链接用相对 URL `?tables_page=...&tables_per_page=...#tab-tables`,
+  业务方当前 URL 在某种情况下 (从 admin_list 跳过来) 处于非 pair/1/ 路径,
+  相对 URL `?...` 被浏览器解析到父级 URL
+- 修法: 用 Django `{% url 'ddl_sync:pair_detail' pair.id %}` 反向生成
+  绝对路径 `/ddl_sync/pair/1/`, 然后拼 `?query#hash`
+- 改动 3 处: pair_detail.html line 178 (onchange) + line 216-226 (tables 分页 4 链接) + line 278-288 (history 分页 4 链接)
+- 演练 PASS: 110 prod 6 种分页组合渲染, 所有链接 + onchange 全是绝对 URL
+- 推 110 prod + 134 dev (Django DEBUG=True 不用 restart gunicorn, 推完 chown archery:archery)
+- D38 演练脚本: _d37_check_links.py + _d37_check_links_runner.py + _d38_check_onchange.py + _d38_check_onchange_runner.py + _d38_push_template.py
+
+CHANGELOG: docs/changelogs/2026-09-08_ddl-sync-w2-d38-absolute-url-pagination.md
