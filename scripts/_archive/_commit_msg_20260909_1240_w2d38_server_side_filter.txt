@@ -1,0 +1,12 @@
+feat(ddl_sync): 同步表清单加 server-side 黑白名单筛选 + 搜索 (D38 续 3)
+
+- 业务方 9/9 12:22 反馈"再看看黑白名单筛选问题", 老 client-side JS filter 不持久化/分页不感知
+- view 读 sync_type + search query, 工具栏用 form GET 提交 onchange 自动 submit
+- 分页按过滤后数量 (黑名单 167 张 → 4 页, 不是 13 页)
+- page-link + 切每页都保留 sync_type + search query
+- 删 client-side filter 留空函数兼容 init()
+- 演练 18 组合 PASS (mkq + archery 全部一致)
+- 真 HTTP curl 4 组合 PASS (业务方已知密码 mkq123)
+- 3 文件推 110 prod + 134 dev (md5 一致), 110 prod gunicorn 重启 (PID 30918)
+
+CHANGELOG: docs/changelogs/2026-09-09_ddl-sync-w2-d38-续3-server-side-filter.md

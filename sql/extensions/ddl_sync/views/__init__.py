@@ -92,13 +92,18 @@ def pair_detail(request, pair_id):
     - tables 分页: 默认 50/页, 可选 50/100/200, URL 加 ?tables_page=N&tables_per_page=50
     - 行数选择下拉: tab 内右上角, 跟 history 导出按钮同一行
     - 实战背景: 业务方库对有 606 张表, 老代码写死 [:200], 看不到 200+ 部分
+
+    ## CUSTOM-MODIFIED: 同步表清单加 server-side 黑白名单筛选 + 搜索 @ 2026-09-09 @ mavis (D38 续 3)
+    - URL 加 ?sync_type=whitelist|blacklist&search=keyword
+    - 实战背景: 业务方 12:22 反馈"再看看黑白名单筛选问题", 老 client-side JS filter 不持久化 / 分页不感知
+    - server-side filter 让 URL 持久化 + 分页按过滤后数量 + 可分享链接
     """
     pair = get_object_or_404(
         DdlSyncPair.objects.select_related("source_instance", "target_instance", "created_by"),
         pk=pair_id,
     )
 
-    # 同步表清单 tab - 同步表清单加分页 + 行数选择
+    # 同步表清单 tab - 同步表清单加分页 + 行数选择 + 黑白名单筛选 + 搜索 (D38 续 3)
     TABLES_PER_PAGE_CHOICES = [50, 100, 200]
     tables_per_page_param = request.GET.get("tables_per_page", 50)
     try:
@@ -107,7 +112,17 @@ def pair_detail(request, pair_id):
             tables_per_page = 50
     except (ValueError, TypeError):
         tables_per_page = 50
+    # 黑白名单 server-side filter (D38 续 3)
+    sync_type_filter = request.GET.get("sync_type", "").strip()
+    if sync_type_filter not in ("whitelist", "blacklist"):
+        sync_type_filter = ""
+    # 搜索 server-side filter (D38 续 3)
+    search_filter = request.GET.get("search", "").strip()
     tables_qs = pair.tables.all().order_by("sync_type", "table_name")
+    if sync_type_filter:
+        tables_qs = tables_qs.filter(sync_type=sync_type_filter)
+    if search_filter:
+        tables_qs = tables_qs.filter(table_name__icontains=search_filter)
     table_count = tables_qs.count()
     tables_paginator = Paginator(tables_qs, tables_per_page)
     tables_page_num = request.GET.get("tables_page", 1)
@@ -137,6 +152,8 @@ def pair_detail(request, pair_id):
         "tables_page_obj": tables_page_obj,
         "tables_per_page": tables_per_page,
         "tables_per_page_choices": TABLES_PER_PAGE_CHOICES,
+        "sync_type_filter": sync_type_filter,  # D38 续 3 server-side filter
+        "search_filter": search_filter,  # D38 续 3 server-side filter
         "history": history,
         "history_count": history_count,
         "history_page_obj": history_page_obj,

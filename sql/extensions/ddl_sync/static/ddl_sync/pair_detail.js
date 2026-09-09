@@ -74,25 +74,11 @@
     }).then(r => r.json().then(data => ({ status: r.status, data: data })));
   }
 
-  // 4. 同步表 tab 搜索过滤 (D8 阶段 2 阶段 1 简单实现)
+  // 4. 同步表 tab 搜索过滤 (D38 续 3: 改 server-side filter, view 读 sync_type + search query, form GET 提交)
+  // 老 client-side filter 已废弃: 不持久化 / 分页不感知 / 不能分享链接
+  // 留个空函数兼容旧 init() 调用, 实际不做任何事
   function bindTableSearch() {
-    const searchInput = document.getElementById('table-search');
-    const filterSelect = document.getElementById('table-filter-sync-type');
-    if (!searchInput || !filterSelect) return;
-    const rows = document.querySelectorAll('#tab-tables tbody tr');
-    function filter() {
-      const keyword = searchInput.value.trim().toLowerCase();
-      const syncType = filterSelect.value;
-      rows.forEach(row => {
-        const name = (row.dataset.tableName || '').toLowerCase();
-        const type = row.dataset.syncType || '';
-        const matchKeyword = !keyword || name.includes(keyword);
-        const matchType = !syncType || type === syncType;
-        row.style.display = (matchKeyword && matchType) ? '' : 'none';
-      });
-    }
-    searchInput.addEventListener('input', filter);
-    filterSelect.addEventListener('change', filter);
+    // D38 续 3: server-side filter 通过 form GET 提交实现, 不再需要 client-side filter
   }
 
   // ============== 5. R1 批量导入 modal ==============
