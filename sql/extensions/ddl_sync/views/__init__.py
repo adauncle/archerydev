@@ -31,8 +31,38 @@ from django.views.decorators.http import require_http_methods
 
 from sql.models import Users
 
-from ..models import DdlSyncPair, DdlSyncTable, DdlSyncHistory
+from ..models import DdlSyncPair, DdlSyncTable, DdlSyncHistory, DdlSyncAuditLog
 from ..forms import DdlSyncPairForm
+
+
+# ============================================================
+# CUSTOM-MODIFIED: D35-Pending 操作日志 helper @ 2026-09-09 @ mavis
+# 关联: docs/plans/2026-09-04_ddl-sync-w2-d35-pending-audit-log.md
+# 业务: 5 view 埋点 emit 6 类 action, 业务方一眼看出谁什么时候做了什么操作
+# 设计: 公共 helper 统一写日志, 5 view 各自埋点
+# ============================================================
+def _write_audit_log(pair, action, operator, detail=None):
+    """统一写 DdlSyncAuditLog, 任何写操作后调一次即可
+
+    Args:
+        pair: DdlSyncPair
+        action: str (DdlSyncAuditLog.ACTION_CHOICES 之一)
+        operator: request.user
+        detail: dict (会 json.dumps 成 detail_json, 可选)
+    """
+    import json
+    try:
+        DdlSyncAuditLog.objects.create(
+            pair=pair,
+            action=action,
+            operator=operator if (operator and getattr(operator, "is_authenticated", False)) else None,
+            operator_display=operator.username if (operator and getattr(operator, "is_authenticated", False)) else "",
+            detail_json=json.dumps(detail, ensure_ascii=False) if detail else "",
+        )
+    except Exception:
+        # 日志写入失败不应阻塞主操作 (跟 D22 sync_trigger 错误兜底同套路)
+        import logging
+        logging.getLogger("default").exception("DdlSyncAuditLog 写入失败: pair=%s action=%s", pair.id, action)
 
 
 @permission_required("ddl_sync.view_ddlsyncpair", raise_exception=True)
@@ -144,6 +174,21 @@ def pair_detail(request, pair_id):
         history_page_obj = history_paginator.get_page(1)
     history = history_page_obj.object_list
 
+    # CUSTOM-MODIFIED: D35-Pending 操作日志 tab @ 2026-09-09 @ mavis
+    # 关联: docs/plans/2026-09-04_ddl-sync-w2-d35-pending-audit-log.md (方案 A 落地)
+    # 6 类 action: create / edit / enable / disable / one_click / bulk_import
+    # 按时间倒序, 每页 20 条 (跟 history 一致)
+    LOGS_PER_PAGE = 20
+    audit_logs_qs = pair.audit_logs.select_related("operator").order_by("-created_at")
+    audit_logs_count = audit_logs_qs.count()
+    audit_logs_paginator = Paginator(audit_logs_qs, LOGS_PER_PAGE)
+    audit_logs_page_num = request.GET.get("logs_page", 1)
+    try:
+        audit_logs_page_obj = audit_logs_paginator.get_page(audit_logs_page_num)
+    except Exception:
+        audit_logs_page_obj = audit_logs_paginator.get_page(1)
+    audit_logs = audit_logs_page_obj.object_list
+
     context = {
         "pair": pair,
         "tables": tables,
@@ -158,6 +203,10 @@ def pair_detail(request, pair_id):
         "history_count": history_count,
         "history_page_obj": history_page_obj,
         "history_paginator": history_paginator,
+        "audit_logs": audit_logs,  # D35-Pending 操作日志
+        "audit_logs_count": audit_logs_count,
+        "audit_logs_page_obj": audit_logs_page_obj,
+        "audit_logs_paginator": audit_logs_paginator,
     }
     return render(request, "ddl_sync/pair_detail.html", context)
 
@@ -237,6 +286,12 @@ def pair_create(request):
             try:
                 with transaction.atomic():
                     pair.save()
+                # CUSTOM-MODIFIED: D35-Pending 操作日志埋点 @ 2026-09-09 @ mavis
+                # 关联: docs/plans/2026-09-04_ddl-sync-w2-d35-pending-audit-log.md (方案 A)
+                _write_audit_log(
+                    pair=pair, action="create", operator=request.user,
+                    detail={"name": pair.name, "sync_mode": pair.sync_mode, "enabled": pair.enabled},
+                )
                 messages.success(request, f"库对 '{pair.name}' 创建成功")
                 return HttpResponseRedirect(reverse("ddl_sync:pair_detail", args=(pair.id,)))
             except Exception as e:
@@ -258,11 +313,36 @@ def pair_edit(request, pair_id):
     pair = get_object_or_404(DdlSyncPair, pk=pair_id)
 
     if request.method == "POST":
+        # CUSTOM-MODIFIED: D35-Pending 操作日志埋点 @ 2026-09-09 @ mavis
+        # 关联: docs/plans/2026-09-04_ddl-sync-w2-d35-pending-audit-log.md (方案 A)
+        # 业务: 启用/禁用 (D7 阶段 1 设计) 走 pair_edit 改 enabled 字段, 必识别
+        #       "仅 enabled 字段变化" 走 enable/disable 独立 action, 其他字段变化走 edit
+        # 实战: 之前 D35-Pending 拍板的 pair_toggle 端点一直没实现 (urls.py line 11 注释)
+        # 捕获原 enabled 状态, form 校验后再判断
+        old_enabled = pair.enabled
+        old_sync_mode = pair.sync_mode
+
         form = DdlSyncPairForm(request.POST, instance=pair)
         if form.is_valid():
             try:
                 with transaction.atomic():
                     form.save()
+                # 重新查一次拿新值 (form.save() 已经 in-place 改)
+                new_enabled = pair.enabled
+                new_sync_mode = pair.sync_mode
+
+                # 决定 action: 仅 enabled 字段变化 → enable/disable, 其他 → edit
+                if new_enabled != old_enabled and new_sync_mode == old_sync_mode:
+                    action = "enable" if new_enabled else "disable"
+                    detail = {"from": old_enabled, "to": new_enabled}
+                else:
+                    action = "edit"
+                    detail = {
+                        "changed_fields": [k for k in form.changed_data if k != "updated_at"],
+                        "enabled": {"from": old_enabled, "to": new_enabled} if new_enabled != old_enabled else None,
+                    }
+
+                _write_audit_log(pair=pair, action=action, operator=request.user, detail=detail)
                 messages.success(request, f"库对 '{pair.name}' 更新成功")
                 return HttpResponseRedirect(reverse("ddl_sync:pair_detail", args=(pair.id,)))
             except Exception as e:

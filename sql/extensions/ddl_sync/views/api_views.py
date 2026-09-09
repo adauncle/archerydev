@@ -47,7 +47,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from ..models import DdlSyncPair, DdlSyncTable, DdlSyncHistory
+from ..models import DdlSyncPair, DdlSyncTable, DdlSyncHistory, DdlSyncAuditLog
 from ..services.compute_diff import compute_diff, ComputeDiffError
 from ..services.one_click_setup import one_click_setup, OneClickSetupError
 from ..services.bulk_import import bulk_import_tables, BulkImportError
@@ -55,6 +55,25 @@ from ..services.table_service import add_sync_table, TableServiceError
 from ..services.perm_guard import require_perm
 
 logger = logging.getLogger("default")
+
+
+# ============================================================
+# CUSTOM-MODIFIED: D35-Pending 操作日志 helper (AJAX 端点用) @ 2026-09-09 @ mavis
+# 关联: docs/plans/2026-09-04_ddl-sync-w2-d35-pending-audit-log.md
+# 跟 views/__init__.py 的 _write_audit_log 同套路, 但这里 API 端点不需要事务
+# 失败不抛异常, 避免阻塞主操作
+# ============================================================
+def _write_audit_log(pair, action, operator, detail=None):
+    try:
+        DdlSyncAuditLog.objects.create(
+            pair=pair,
+            action=action,
+            operator=operator if (operator and getattr(operator, "is_authenticated", False)) else None,
+            operator_display=operator.username if (operator and getattr(operator, "is_authenticated", False)) else "",
+            detail_json=json.dumps(detail, ensure_ascii=False) if detail else "",
+        )
+    except Exception:
+        logger.exception("DdlSyncAuditLog 写入失败: pair=%s action=%s", pair.id, action)
 
 
 # ===== 通用辅助 =====
@@ -125,6 +144,17 @@ def one_click_setup_view(request, pair_id):
     try:
         result = one_click_setup(pair, accept_whitelist, accept_blacklist)
         total = result["whitelist_count"] + result["blacklist_count"]
+        # CUSTOM-MODIFIED: D35-Pending 操作日志埋点 @ 2026-09-09 @ mavis
+        _write_audit_log(
+            pair=pair, action="one_click", operator=request.user,
+            detail={
+                "whitelist_count": result.get("whitelist_count"),
+                "blacklist_count": result.get("blacklist_count"),
+                "duration_ms": result.get("duration_ms"),
+                "accept_whitelist": accept_whitelist[:50],  # 防止 detail 太大
+                "accept_blacklist": accept_blacklist[:50],
+            },
+        )
         return _json_success(
             data=result,
             message=f"一键配 {total} 张同步表完成 ({result['duration_ms']}ms)",
@@ -160,6 +190,17 @@ def bulk_import_view(request, pair_id):
 
     try:
         result = bulk_import_tables(pair, table_names, sync_type)
+        # CUSTOM-MODIFIED: D35-Pending 操作日志埋点 @ 2026-09-09 @ mavis
+        _write_audit_log(
+            pair=pair, action="bulk_import", operator=request.user,
+            detail={
+                "sync_type": sync_type,
+                "imported_count": result.get("imported_count"),
+                "skipped_count": result.get("skipped_count"),
+                "duration_ms": result.get("duration_ms"),
+                "table_names": table_names[:50],  # 防止 detail 太大
+            },
+        )
         return _json_success(
             data=result,
             message=f"批量导入 {result['imported_count']} 张完成 "

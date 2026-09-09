@@ -55,6 +55,15 @@
   .ddlsync-status-skipped { background: #E6A23C; }
   .ddlsync-status-failed { background: #F56C6C; }
 
+  /* CUSTOM-MODIFIED: D35-Pending 操作日志 tab 样式 @ 2026-09-09 @ mavis
+     6 类 action 用 6 种颜色区分: 蓝/绿/灰/红/紫/橙 */
+  .ddlsync-action-create { background: #409EFF; }
+  .ddlsync-action-edit { background: #909399; }
+  .ddlsync-action-enable { background: #67C23A; }
+  .ddlsync-action-disable { background: #F56C6C; }
+  .ddlsync-action-one_click { background: #9C27B0; }
+  .ddlsync-action-bulk_import { background: #E6A23C; }
+
   /* 基本信息 - 紧凑网格 (D33 改: 11 行 table → 6 行 dl-grid) */
   .ddlsync-basic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; font-size: 13px; }
   .ddlsync-basic-grid > div { display: flex; align-items: baseline; padding: 4px 0; }
@@ -309,10 +318,62 @@
   </div>
 
   <!-- tab 4: 操作日志 -->
+  <!-- CUSTOM-MODIFIED: D35-Pending 操作日志真渲染 @ 2026-09-09 @ mavis -->
+  <!-- 关联: docs/plans/2026-09-04_ddl-sync-w2-d35-pending-audit-log.md (方案 A) -->
+  <!-- 6 类 action: create / edit / enable / disable / one_click / bulk_import -->
   <div class="tab-pane fade" id="tab-logs">
     <div class="ddlsync-tab-pane">
-      <h5>操作日志</h5>
-      <div class="ddlsync-empty">D9 阶段 2 上线, 操作日志审计 (创建/编辑/启用/禁用/一键配/批量导入 6 类操作)</div>
+      <h5 style="margin-bottom: 10px;">操作日志 (共 {{ audit_logs_count }} 条{% if audit_logs_paginator.num_pages > 1 %}, 第 {{ audit_logs_page_obj.number }}/{{ audit_logs_paginator.num_pages }} 页{% endif %})</h5>
+      {% if audit_logs %}
+      <table class="ddlsync-table-list">
+        <thead>
+          <tr>
+            <th style="width: 60px;">ID</th>
+            <th style="width: 110px;">操作类型</th>
+            <th style="width: 100px;">操作人</th>
+            <th>详情</th>
+            <th style="width: 160px;">操作时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in audit_logs %}
+          <tr>
+            <td>{{ log.id }}</td>
+            <td><span class="ddlsync-history-status ddlsync-action-{{ log.action }}">{{ log.get_action_display }}</span></td>
+            <td>{% if log.operator %}{{ log.operator_display|default:log.operator.username }}{% else %}<span class="text-muted">{{ log.operator_display|default:"(已删除用户)" }}</span>{% endif %}</td>
+            <td>
+              {% if log.detail_json %}
+                <code style="font-size: 12px; word-break: break-all;">{{ log.detail_json }}</code>
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+            <td>{{ log.created_at|date:"Y-m-d H:i:s" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {# 分页栏 #}
+      {% if audit_logs_paginator.num_pages > 1 %}
+      <nav class="ddlsync-pagination" style="margin-top: 12px; display: flex; justify-content: center; gap: 4px; flex-wrap: wrap;">
+        {% if audit_logs_page_obj.has_previous %}
+          <a class="ddlsync-page-link" href="{% url 'ddl_sync:pair_detail' pair.id %}?logs_page={{ audit_logs_page_obj.previous_page_number }}&tables_per_page={{ tables_per_page }}#tab-logs"><i class="fa fa-arrow-left"></i> Prev</a>
+        {% endif %}
+        {% for p in audit_logs_paginator.page_range %}
+          {% if p == audit_logs_page_obj.number %}
+            <span class="ddlsync-page-link ddlsync-page-current">{{ p }}</span>
+          {% else %}
+            <a class="ddlsync-page-link" href="{% url 'ddl_sync:pair_detail' pair.id %}?logs_page={{ p }}&tables_per_page={{ tables_per_page }}#tab-logs">{{ p }}</a>
+          {% endif %}
+        {% endfor %}
+        {% if audit_logs_page_obj.has_next %}
+          <a class="ddlsync-page-link" href="{% url 'ddl_sync:pair_detail' pair.id %}?logs_page={{ audit_logs_page_obj.next_page_number }}&tables_per_page={{ tables_per_page }}#tab-logs">Next <i class="fa fa-arrow-right"></i></a>
+        {% endif %}
+      </nav>
+      {% endif %}
+      {% else %}
+      <div class="ddlsync-empty">暂无操作日志 (D35-Pending 拍板方案 A 上线, 历史数据需 DBA 手工补录)</div>
+      {% endif %}
     </div>
   </div>
 </div>
