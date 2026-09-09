@@ -28,6 +28,7 @@
 """
 
 from django.db import models
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
 
@@ -219,3 +220,76 @@ class DdlSyncHistory(models.Model):
             # 按库对查历史
             models.Index(fields=["pair", "-created_at"]),
         ]
+
+
+# ============================================================
+# CUSTOM-MODIFIED: D35-Pending 操作日志 DdlSyncAuditLog 模型 @ 2026-09-09 @ mavis
+# 关联: docs/plans/2026-09-04_ddl-sync-w2-d35-pending-audit-log.md
+# 业务背景: W1 D8 阶段 2 写 pair_detail.html "操作日志" tab 留了占位符
+#          但 W1 D9 阶段 2 没真做, W2 D22-D34 也没补, D35-Pending 拍板方案 A
+#          (完整独立 DdlSyncAuditLog 模型, 6 类操作: create/edit/enable/disable/one_click/bulk_import)
+# ============================================================
+class DdlSyncAuditLog(models.Model):
+    """DDL 跨库同步操作日志 — 6 类操作的审计轨迹 (D35-Pending 方案 A)"""
+
+    # CUSTOM-MODIFIED: 6 类 action enum @ 2026-09-09 @ mavis
+    # 跟 D35-Pending 拍板 1:1 对应, 业务方一眼看出谁什么时候做了什么操作
+    ACTION_CHOICES = [
+        ("create", _("创建库对")),
+        ("edit", _("编辑库对 (非启用/禁用字段)")),
+        ("enable", _("启用库对")),
+        ("disable", _("禁用库对")),
+        ("one_click", _("一键配置 (R2)")),
+        ("bulk_import", _("批量导入 (R1)")),
+    ]
+
+    id = models.BigAutoField(primary_key=True)
+    # 库对 (PROTECT 防止误删库对导致审计断链)
+    pair = models.ForeignKey(
+        DdlSyncPair, on_delete=models.PROTECT,
+        related_name="audit_logs",
+        verbose_name=_("库对"),
+    )
+    # 操作类型 (6 选 1)
+    action = models.CharField(
+        _("操作类型"), max_length=16, choices=ACTION_CHOICES, db_index=True,
+    )
+    # 操作人 (PROTECT 防止误删用户, SET_NULL 留 trace)
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="ddl_sync_audit_logs",
+        verbose_name=_("操作人"),
+    )
+    # 操作人 username (冗余, 用户被删后仍能展示 "DBA某某 启用了库对")
+    operator_display = models.CharField(
+        _("操作人"), max_length=64, blank=True, default="",
+        help_text="冗余 operator 的 username, 用户被删后仍能展示",
+    )
+    # 详情 JSON (按 action 不同 schema 不同)
+    # create / edit:  {"changed_fields": ["sync_mode", "enabled"], "old": {...}, "new": {...}}
+    # enable / disable: {"from": false, "to": true}
+    # one_click:      {"tables": ["t1", "t2", ...], "sync_type": "whitelist"}
+    # bulk_import:    {"sync_type": "whitelist", "count": 50, "tables": [...]}
+    detail_json = models.TextField(
+        _("详情 JSON"), blank=True, default="",
+        help_text="按 action 类型不同 schema 不同, 见模型 docstring",
+    )
+    # 时间
+    created_at = models.DateTimeField(_("操作时间"), auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "ext_ddl_sync_audit_log"
+        verbose_name = _("DDL 跨库同步操作日志")
+        verbose_name_plural = _("DDL 跨库同步操作日志")
+        ordering = ["-created_at"]
+        indexes = [
+            # 按库对查日志 (D35 模板渲染用, 按时间倒序)
+            models.Index(fields=["pair", "-created_at"]),
+            # 按操作类型过滤
+            models.Index(fields=["pair", "action", "-created_at"]),
+        ]
+
+    def __str__(self):
+        op = self.operator_display or (self.operator.username if self.operator else "未知")
+        return f"{op} {self.get_action_display()} {self.pair.name} @ {self.created_at:%Y-%m-%d %H:%M:%S}"
