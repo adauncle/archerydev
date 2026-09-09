@@ -625,7 +625,17 @@ class AuditV2:
                     )
                 )
                 continue
-            group_in_db = Group.objects.get(id=g)
+            # CUSTOM-MODIFIED: D38 续 8 修复老工单 Group.DoesNotExist 500 @ 2026-09-09 @ mavis
+            # 根因: 老工单 (8/27 之前) audit_auth_groups 引用了已被 DBA 删除的 Group, 上游 Archery 1.14.0
+            #      workflow_audit.py:628 没 try/except 兜底 (line 181-182 / 523-526 都有兜底, 漏了这一行)
+            # 业务: 8/29 业务方反馈 wf#4741 详情页报 500 Group matching query does not exist
+            #      (e.g. wf#4741 audit_auth_groups=6,3,15,16, Group 16 已被删)
+            # 修法: 加 try/except 兜底, Group 不存在时 group_in_db=None, review_nodes 跳过该节点
+            try:
+                group_in_db = Group.objects.get(id=g)
+            except Group.DoesNotExist:
+                # 上游 Archery bug 修复: Group 被删时, review_info 优雅降级
+                continue
             if self.audit.current_status != WorkflowStatus.WAITING:
                 # 总体状态不是待审核, 不设置详细的属性
                 review_nodes.append(
