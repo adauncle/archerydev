@@ -213,6 +213,31 @@
       updateOneClickPreview();
     });
     document.getElementById('one-click-confirm').addEventListener('click', confirmOneClickSetup);
+
+    // D38 续 4: 预览前 20 张按钮 - 之前是空 button 没绑事件, 业务方反馈"点击没有反应"
+    const wlPreview = document.getElementById('one-click-whitelist-preview');
+    if (wlPreview) wlPreview.addEventListener('click', () => showOneClickPreview('whitelist'));
+    const blPreview = document.getElementById('one-click-blacklist-preview');
+    if (blPreview) blPreview.addEventListener('click', () => showOneClickPreview('blacklist'));
+  }
+
+  // D38 续 4: 显示前 20 张表名 (白名单/黑名单)
+  function showOneClickPreview(type) {
+    const list = (oneClickData[type] || []).slice(0, 20);
+    const listDiv = document.getElementById('one-click-' + type + '-preview-list');
+    const ul = document.getElementById('one-click-' + type + '-preview-list-ul');
+    if (!listDiv || !ul) return;
+    if (list.length === 0) {
+      ul.innerHTML = '<li style="color: #909399;">(无)</li>';
+    } else {
+      ul.innerHTML = list.map(function (t) {
+        // 简单的 HTML escape 防 XSS (表名可能含特殊字符)
+        return '<li>' + String(t).replace(/[&<>"']/g, function (c) {
+          return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+        }) + '</li>';
+      }).join('');
+    }
+    listDiv.style.display = 'block';
   }
 
   function openOneClickSetupModal() {

@@ -32,6 +32,10 @@
               <button type="button" id="one-click-whitelist-select-all" class="btn btn-sm btn-outline-primary">全选</button>
               <button type="button" id="one-click-whitelist-deselect-all" class="btn btn-sm btn-outline-secondary">反选</button>
             </div>
+            {# D38 续 4: preview 区域默认 hidden, 点击"预览前 20 张"按钮后显示前 20 张表名 #}
+            <div id="one-click-whitelist-preview-list" style="display: none; margin-left: 24px; margin-top: 6px; max-height: 200px; overflow-y: auto; padding: 8px 12px; background: #f5f7fa; border: 1px solid #ebeef5; border-radius: 4px;">
+              <ul id="one-click-whitelist-preview-list-ul" style="margin: 0; padding-left: 16px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6;"></ul>
+            </div>
           </div>
 
           <div class="form-group" style="margin-top: 12px;">
@@ -45,6 +49,10 @@
               <button type="button" id="one-click-blacklist-preview" class="btn btn-sm btn-outline-primary">预览前 20 张</button>
               <button type="button" id="one-click-blacklist-select-all" class="btn btn-sm btn-outline-primary">全选</button>
               <button type="button" id="one-click-blacklist-deselect-all" class="btn btn-sm btn-outline-secondary">反选</button>
+            </div>
+            {# D38 续 4: preview 区域默认 hidden, 点击"预览前 20 张"按钮后显示前 20 张表名 #}
+            <div id="one-click-blacklist-preview-list" style="display: none; margin-left: 24px; margin-top: 6px; max-height: 200px; overflow-y: auto; padding: 8px 12px; background: #f5f7fa; border: 1px solid #ebeef5; border-radius: 4px;">
+              <ul id="one-click-blacklist-preview-list-ul" style="margin: 0; padding-left: 16px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6;"></ul>
             </div>
           </div>
 

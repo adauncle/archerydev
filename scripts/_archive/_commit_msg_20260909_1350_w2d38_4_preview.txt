@@ -1,0 +1,11 @@
+fix(ddl_sync): 一键配 modal 预览前 20 张按钮绑事件 (D38 续 4)
+
+- 业务方 13:44 反馈"预览前 20 张点击没反应"
+- 根因: _one_click_modal.html 模板有 button id (one-click-whitelist-preview + one-click-blacklist-preview), 但 pair_detail.js bindOneClickSetup() 没绑这 2 个事件监听器
+- template: 白名单/黑名单按钮组下加 preview-list 区域 (默认 hidden, 灰底滚动列表)
+- JS: bindOneClickSetup() 加 2 个 click listener + 新函数 showOneClickPreview(type) 渲染前 20 张表名 + HTML escape 防 XSS
+- 演练 PASS: pair/1 渲染 status 200, 4 个关键标识全 True
+- 部署: 2 文件 scp 推 110 prod + 134 dev (md5 一致), 静态文件不需重启 gunicorn
+- 业务方硬刷 Ctrl+Shift+R 拿新 JS
+
+CHANGELOG: docs/changelogs/2026-09-09_ddl-sync-w2-d38-续4-preview-fix.md
