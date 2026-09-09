@@ -1,0 +1,10 @@
+fix(ddl_gh_ost): 审批人组 (lisp) 只能看不能操作 (D38 续 5)
+
+- 业务方 14:42 反馈"lisp 操作列显示了查看+回滚两个按钮, 仅允许他查看"
+- 根因: D35 推的代码用 is_admin_or_dba 判定 cancel/retry/rollback 按钮, 但 is_admin_or_dba 包含审批人组, 跟"审批人只看不操作"设计冲突
+- 修法: 新加 _can_operate_gh_ost() helper, 只 superuser/DBA/DBA组长, **不含审批人组**
+- view admin_list 加 can_operate context, 模板 line 235 + 270 改 can_operate
+- 演练 4 组合 PASS: archery/dba/mkq 都能看+操作, lisp(审批人组)能看不能操作 (cancel/retry/rollback=0)
+- 2 文件推 110 prod + 134 dev (md5 一致), 110 prod gunicorn 重启 (PID 11230)
+
+CHANGELOG: docs/changelogs/2026-09-09_ddl-sync-w2-d38-续5-审批人组只读.md

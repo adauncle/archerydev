@@ -229,10 +229,12 @@
               {% if t.workflow %}
                 {# view 按钮所有有 view_ddlghosttask perm 的用户都可见 (RD 也能看自己 task 进度) #}
                 <a class="gh-ost-act-btn view mini" href="{% if t.task_type == 'rebuild' %}/gh_ost/rebuild/progress/{{ t.id }}/{% else %}/gh_ost/progress/{{ t.workflow.id }}/{% endif %}" target="_blank" title="查看进度"><i class="fa fa-eye"></i></a>
-                {# CUSTOM-MODIFIED: cancel / retry / rollback 按钮只 DBA/管理员可见 @ 2026-08-13 @ mavis #}
+                {# CUSTOM-MODIFIED: cancel / retry / rollback 按钮只 DBA 真运维可见 @ 2026-08-13 @ mavis #}
+                {# CUSTOM-MODIFIED: D38 续 5 9/9: 审批人组 (lisp) 只能看全量不能操作, 这里改用 can_operate 判定 #}
                 {# 关联: docs/changelogs/2026-08-13_gh-ost-action-endpoint-perm.md #}
+                {# 关联: docs/changelogs/2026-09-09_ddl-sync-w2-d38-续5-审批人组只读.md #}
                 {# 端点已加 change_ddlghosttask perm 守卫, 前端按钮按视角隐藏跟后端硬墙对齐 #}
-                {% if is_admin_or_dba %}
+                {% if can_operate %}
                   {% if t.status == "queued" or t.status == "running" or t.status == "cut_over" or t.status == "precheck_failed" %}
                     <button class="gh-ost-act-btn cancel mini" data-act="cancel" data-wf="{{ t.workflow.id }}" title="取消"><i class="fa fa-stop"></i></button>
                   {% endif %}
@@ -262,10 +264,13 @@
   </div>
 
   {# CUSTOM-MODIFIED: 底部 AJAX 提示 + Django admin 链接只 DBA/管理员可见 @ 2026-08-13 @ mavis #}
+  {# CUSTOM-MODIFIED: D38 续 5 9/9: 审批人组 (lisp) 只能看不能操作, 这里改用 can_operate 判定 #}
   {# 关联: docs/changelogs/2026-08-13_gh-ost-admin-list-hide-bottom-tip.md #}
+  {# 关联: docs/changelogs/2026-09-09_ddl-sync-w2-d38-续5-审批人组只读.md #}
   {# 原因: RD 提交人视角不需要看 cancel/retry/rollback 说明 (他没运维操作权), #}
   {#      Django admin 后台链接是技术后台入口, 不该暴露给普通 RD 防止误入。 #}
-  {% if is_admin_or_dba %}
+  {# D38 续 5: 审批人组 (能看不能操作) 也不显示这个提示, 体验一致 #}
+  {% if can_operate %}
     <p class="gh-ost-sub" style="margin-top:24px;">
       <i class="fa fa-info-circle"></i>
       操作走 AJAX 异步 (cancel/retry/rollback), 完成后自动刷新页面 · Django admin 后台完整版: <a href="/admin/ddl_gh_ost/ddlghosttask/">/admin/ddl_gh_ost/ddlghosttask/</a>

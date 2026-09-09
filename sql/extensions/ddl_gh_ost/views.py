@@ -1047,6 +1047,8 @@ def admin_list(request: HttpRequest) -> HttpResponse:
 
     # 0.5 角色判定 (DBA 视角 vs 提交人视角)
     is_admin_or_dba = _is_admin_or_dba(request.user)
+    # 0.6 操作权判定 (D38 续 5: 审批人组只看不能操作)
+    can_operate = _can_operate_gh_ost(request.user)
 
     # 1. 拿筛选参数
     filter_type = request.GET.get("task_type", "").strip()
@@ -1103,6 +1105,7 @@ def admin_list(request: HttpRequest) -> HttpResponse:
         "filter_status": filter_status,
         "filter_q": filter_q,
         "is_admin_or_dba": is_admin_or_dba,
+        "can_operate": can_operate,  # D38 续 5: cancel/retry/rollback 按钮判定
     })
 
 
@@ -1132,6 +1135,34 @@ def _is_admin_or_dba(user) -> bool:
     if user.is_superuser:
         return True
     return user.groups.filter(name__in=("DBA", "DBA组长", "审批人")).exists()
+
+
+# ===========================================================================
+# CUSTOM-MODIFIED: 任务列表页"操作"角色判定 @ 2026-09-09 @ mavis (D38 续 5)
+# 关联: docs/changelogs/2026-09-09_ddl-sync-w2-d38-续5-审批人组只读.md
+# 业务: D35 9/7 拍板"审批人"组只用来"看全量"审批, 不应该有 cancel/retry/rollback
+#       等高危操作权 (9/9 14:42 业务方反馈: 审批人 lisp 看到了"回滚"按钮, 期望只读).
+# 修法: 加 can_operate helper, 比 is_admin_or_dba 严格, **不含审批人组**:
+#       can_operate = superuser / DBA / DBA组长 (DBA 真正有运维操作权)
+#       审批人组 = 跟 _is_admin_or_dba 一样能看全量, 但 can_operate=False
+#       模板里 cancel/retry/rollback 按钮从 `is_admin_or_dba` 改成 `can_operate`
+# ===========================================================================
+def _can_operate_gh_ost(user) -> bool:
+    """判定用户是否能"操作" gh-ost 任务 (cancel/retry/rollback).
+
+    True:  superuser 或属于 ``DBA`` / ``DBA组长`` 组 → 能 cancel/retry/rollback
+    False: 其他用户 (含 ``审批人`` 组 / RD 等) → 只能看, 不能操作
+
+    设计原因: 跟 _is_admin_or_dba 区分. 审批人组 (副总/总监/经理) 只用来"看全量"
+    做审批, 不应该有 cancel/retry/rollback 高危操作权. 单独 helper 解耦.
+
+    跟 _is_admin_or_dba 的差别: 审批人组 True (能看) / False (不能操作).
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user.groups.filter(name__in=("DBA", "DBA组长")).exists()
 
 
 # ===========================================================================
