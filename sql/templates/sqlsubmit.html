@@ -989,44 +989,74 @@
             }
         }
         function showCopyModal(text, hintMsg) {
-            // 终极兜底: 弹 modal 含可见 readonly textarea + 自动 select + 提示 Ctrl+C
-            // 业务: 110 prod HTTP context 业务方, navigator.clipboard.writeText reject + execCommand
-            //       静默失败, 任何 JS 自动 copy 都不靠谱, 必须让用户手动复制
+            // CUSTOM-MODIFIED: D38 续 10 modal 加"用户主动点击"复制按钮 @ 2026-09-09 @ mavis
+            // 原因: D38 续 9 setTimeout 50ms 自动 select 没生效, 业务方按 Ctrl+C 时 focus 在原页面,
+            //       复制了整个 body 文字. Chrome 95+ 对**自动触发**的 execCommand 静默失败,
+            //       但对**用户主动点击**的 execCommand 正常工作 (user gesture)
+            // 修法: modal 提供"复制"按钮让用户主动点, focus + select + execCommand 在 user gesture 下能 work
             var modalId = "oneClickCopyModal";
-            $("#" + modalId).remove();  // 防重复弹
+            $("#" + modalId).remove();
+            var safeText = text == null ? "" : String(text);
+            var safeHint = hintMsg == null ? "请手动复制下方 SQL 文本" : String(hintMsg);
             var $modal = $(
                 '<div id="' + modalId + '" style="position:fixed;top:0;left:0;width:100%;height:100%;' +
                 'background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;">' +
                   '<div style="background:white;padding:20px 24px;border-radius:6px;width:600px;max-width:90%;' +
                   'box-shadow:0 4px 24px rgba(0,0,0,0.3);">' +
                     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">' +
-                      '<strong style="font-size:16px;color:#14171e;">📋 复制 SQL 文本</strong>' +
-                      '<button type="button" class="btn btn-default btn-xs" onclick="$(\'#' + modalId + '\').remove()">×</button>' +
+                      '<strong style="font-size:16px;color:#14171e;">\u{1F4CB} 复制 SQL 文本</strong>' +
+                      '<button type="button" class="btn btn-default btn-xs" id="' + modalId + '_closeX">\u00D7</button>' +
                     '</div>' +
                     '<p style="margin:0 0 10px 0;font-size:13px;color:#a94442;">' +
-                      '⚠️ ' + (hintMsg || "请手动复制下方 SQL 文本") +
+                      '\u26A0 ' + $('<div>').text(safeHint).html() +
                     '</p>' +
                     '<textarea id="' + modalId + '_textarea" readonly style="width:100%;height:200px;' +
                     'font-family:monospace;font-size:13px;padding:8px;border:1px solid #ccc;border-radius:4px;' +
-                    'background:#f5f5f5;resize:vertical;"></textarea>' +
+                    'background:#f5f5f5;resize:vertical;">' + $('<div>').text(safeText).html() + '</textarea>' +
                     '<p style="margin:10px 0 0 0;font-size:13px;color:#5d6975;">' +
-                      '💡 <strong>请按 Ctrl+C (Windows) / Cmd+C (Mac) 复制</strong>, 复制完成后关闭弹窗' +
+                      '\u{1F4A1} <strong>点击下方"复制"按钮</strong> (推荐), 或手动 Ctrl+A 全选 + Ctrl+C 复制' +
                     '</p>' +
-                    '<div style="margin-top:14px;text-align:right;">' +
-                      '<button type="button" class="btn btn-primary" onclick="$(\'#' + modalId + '\').remove()">关闭</button>' +
+                    '<div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;">' +
+                      '<button type="button" class="btn btn-primary" id="' + modalId + '_copyBtn">' +
+                        '<i class="fa fa-copy"></i> \u590D\u5236' +
+                      '</button>' +
+                      '<button type="button" class="btn btn-default" id="' + modalId + '_closeBtn">\u5173\u95ED</button>' +
                     '</div>' +
                   '</div>' +
                 '</div>'
             );
             $("body").append($modal);
             var $ta = $("#" + modalId + "_textarea");
-            $ta.val(text);
-            // 自动 select + focus, 用户直接按 Ctrl+C
-            setTimeout(function () {
-                $ta[0].focus({preventScroll: true});
+            // 用户点击/聚焦 textarea 时自动 select, 方便用户手动 Ctrl+A / Ctrl+C
+            $ta.on("focus click", function () {
                 $ta[0].select();
-                $ta[0].setSelectionRange(0, text.length);
-            }, 50);
+                $ta[0].setSelectionRange(0, $ta[0].value.length);
+            });
+            // 立即 focus (不要 setTimeout, 防止业务方先按 Ctrl+C)
+            $ta[0].focus({preventScroll: true});
+            $ta[0].select();
+            $ta[0].setSelectionRange(0, $ta[0].value.length);
+            // "复制"按钮 - 用户主动点击 (user gesture 触发 execCommand, Chrome 95+ 不会静默失败)
+            $("#" + modalId + "_copyBtn").on("click", function () {
+                $ta[0].focus();
+                $ta[0].select();
+                $ta[0].setSelectionRange(0, $ta[0].value.length);
+                var ok = false;
+                try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+                var $btn = $("#" + modalId + "_copyBtn");
+                if (ok) {
+                    $btn.html('<i class="fa fa-check"></i> \u5DF2\u590D\u5236');
+                    setTimeout(function () {
+                        $btn.html('<i class="fa fa-copy"></i> \u590D\u5236');
+                    }, 3000);
+                } else {
+                    // execCommand 失败, 提示用户手动复制
+                    $btn.html('\u8BF7\u624B\u52A8 Ctrl+C \u590D\u5236');
+                }
+            });
+            // 关闭按钮
+            $("#" + modalId + "_closeBtn").on("click", function () { $modal.remove(); });
+            $("#" + modalId + "_closeX").on("click", function () { $modal.remove(); });
             // Esc 关闭
             $modal.on("keydown", function (e) {
                 if (e.keyCode === 27) {
