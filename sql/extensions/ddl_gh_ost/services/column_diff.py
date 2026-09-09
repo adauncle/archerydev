@@ -1102,14 +1102,18 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
                 parts.append("NOT NULL")
             if new_default is not None:
                 if isinstance(new_default, str):
-                    parts.append(f"DEFAULT '\''{new_default}'\''")
+                    # CUSTOM-MODIFIED: D38 续 6 修复 DEFAULT 多单引号 @ 2026-09-09 @ mavis
+                    # 之前 f"DEFAULT '\''{x}'\''" 拆解后是 4 个单引号 ('\'\'') + 1 个 = 4 个,
+                    # 实际输出 DEFAULT '''123''' (6 个). 改 f"DEFAULT '{x}'" -> DEFAULT '123'.
+                    parts.append(f"DEFAULT '{new_default}'")
                 else:
                     parts.append(f"DEFAULT {new_default}")
             elif not new_nullable:
                 # NOT NULL 无 DEFAULT 是个 bug, 建议加 0
                 parts.append("DEFAULT 0")
             if new_comment:
-                parts.append(f"COMMENT '\''{new_comment}'\''")
+                # CUSTOM-MODIFIED: D38 续 6 修复 COMMENT 多单引号 @ 2026-09-09 @ mavis (同上)
+                parts.append(f"COMMENT '{new_comment}'")
             suggested_sql = " ".join(parts)
 
         columns_diff.append({

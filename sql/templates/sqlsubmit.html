@@ -917,6 +917,10 @@
         }
 
         // CUSTOM-MODIFIED: v0.3.x 字段 diff 一键复制补全 SQL @ 2026-08-12 @ mavis
+        // CUSTOM-MODIFIED: D38 续 6 修复一键复制失效 @ 2026-09-09 @ mavis
+        // 原因: 原版用 document.execCommand("copy") + top:-1000 textarea, 现代 Chrome 66+ 经常失效
+        // 修法: 优先 navigator.clipboard.writeText (Chrome 66+ HTTPS/localhost), 降级 textarea 放屏幕内
+        //       (top:0 + 1px + opacity:0) + focus({preventScroll:true}) + setSelectionRange 强制全选
         function copyColumnDiffFix(btn) {
             // 找最近的 fix-box 容器
             var $box = $(btn).closest("div[style*='rgba(47,111,94']");
@@ -925,18 +929,55 @@
                 texts.push($(this).text());
             });
             var combined = texts.join("\n\n");
-            // 用临时 textarea 复制
-            var $tmp = $("<textarea>").val(combined).css({position: "fixed", top: -1000}).appendTo("body");
-            $tmp[0].select();
-            try {
-                document.execCommand("copy");
-                var orig = $(btn).html();
+            var orig = $(btn).html();
+            function onSuccess() {
                 $(btn).html('<i class="fa fa-check"></i> 已复制');
                 setTimeout(function () { $(btn).html(orig); }, 1500);
-            } catch (e) {
-                alert("复制失败: " + e + "\\n请手动复制");
             }
-            $tmp.remove();
+            function onError(msg) {
+                alert("复制失败: " + msg + "\n请手动选中复制");
+            }
+            // 优先 navigator.clipboard.writeText (HTTPS / localhost 才生效, HTTP 走 fallback)
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+                navigator.clipboard.writeText(combined).then(onSuccess, function () {
+                    fallbackCopy(combined, onSuccess, onError);
+                });
+            } else {
+                fallbackCopy(combined, onSuccess, onError);
+            }
+        }
+        function fallbackCopy(text, onSuccess, onError) {
+            // 放屏幕内 (top:0 + 1px + opacity:0), 不要用 top:-1000 (部分浏览器 select 失败)
+            var $tmp = $("<textarea readonly>").val(text).css({
+                position: "fixed",
+                left: "0",
+                top: "0",
+                width: "1px",
+                height: "1px",
+                padding: "0",
+                border: "0",
+                opacity: "0",
+            }).appendTo("body");
+            var el = $tmp[0];
+            try {
+                el.focus({preventScroll: true});
+                el.select();
+                el.setSelectionRange(0, text.length);
+                var ok = document.execCommand("copy");
+                if (ok) {
+                    onSuccess();
+                } else {
+                    onError("浏览器拒绝复制 (HTTP context 可能限制)");
+                }
+            } catch (e) {
+                onError(e && e.message ? e.message : String(e));
+            } finally {
+                $tmp.remove();
+                // 释放 focus, 避免 select 残留
+                if (document.body && typeof document.body.focus === "function") {
+                    document.body.focus();
+                }
+            }
         }
 
         function sqlSubmit() {
