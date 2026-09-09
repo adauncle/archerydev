@@ -918,9 +918,10 @@
 
         // CUSTOM-MODIFIED: v0.3.x 字段 diff 一键复制补全 SQL @ 2026-08-12 @ mavis
         // CUSTOM-MODIFIED: D38 续 6 修复一键复制失效 @ 2026-09-09 @ mavis
-        // 原因: 原版用 document.execCommand("copy") + top:-1000 textarea, 现代 Chrome 66+ 经常失效
-        // 修法: 优先 navigator.clipboard.writeText (Chrome 66+ HTTPS/localhost), 降级 textarea 放屏幕内
-        //       (top:0 + 1px + opacity:0) + focus({preventScroll:true}) + setSelectionRange 强制全选
+        // CUSTOM-MODIFIED: D38 续 9 终极兜底弹 modal 让用户手动复制 @ 2026-09-09 @ mavis
+        // 原因: 110 prod 是 HTTP 业务方, navigator.clipboard.writeText() reject + document.execCommand("copy")
+        //       在 Chrome 95+ 静默失败但返回 true (按钮变"已复制"但剪贴板实际空)
+        // 修法: 3 级降级, 终极降级弹 modal 含可见 readonly textarea + 自动 select + 提示 Ctrl+C / Cmd+C
         function copyColumnDiffFix(btn) {
             // 找最近的 fix-box 容器
             var $box = $(btn).closest("div[style*='rgba(47,111,94']");
@@ -935,14 +936,18 @@
                 setTimeout(function () { $(btn).html(orig); }, 1500);
             }
             function onError(msg) {
-                alert("复制失败: " + msg + "\n请手动选中复制");
+                // 不再静默: 直接弹 modal 让用户手动复制 (终极兜底)
+                showCopyModal(combined, msg);
             }
-            // 优先 navigator.clipboard.writeText (HTTPS / localhost 才生效, HTTP 走 fallback)
-            if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            // 1) 优先 navigator.clipboard.writeText (HTTPS / localhost 才生效, HTTP 走 2)
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === "function"
+                && window.isSecureContext) {
                 navigator.clipboard.writeText(combined).then(onSuccess, function () {
+                    // HTTP context reject, 走 2
                     fallbackCopy(combined, onSuccess, onError);
                 });
             } else {
+                // 2) 降级 execCommand (老浏览器 / HTTP context)
                 fallbackCopy(combined, onSuccess, onError);
             }
         }
@@ -959,25 +964,75 @@
                 opacity: "0",
             }).appendTo("body");
             var el = $tmp[0];
+            var ok = false;
             try {
                 el.focus({preventScroll: true});
                 el.select();
                 el.setSelectionRange(0, text.length);
-                var ok = document.execCommand("copy");
-                if (ok) {
-                    onSuccess();
-                } else {
-                    onError("浏览器拒绝复制 (HTTP context 可能限制)");
-                }
+                ok = document.execCommand("copy");
             } catch (e) {
                 onError(e && e.message ? e.message : String(e));
-            } finally {
                 $tmp.remove();
-                // 释放 focus, 避免 select 残留
-                if (document.body && typeof document.body.focus === "function") {
-                    document.body.focus();
-                }
+                return;
             }
+            $tmp.remove();
+            if (document.body && typeof document.body.focus === "function") {
+                document.body.focus();
+            }
+            if (ok) {
+                // Chrome 95+ 可能静默失败但返回 true, 用户报告实际没复制
+                // 这里不直接显示"已复制", 而是再验证一下 (粘贴测试不现实, 改为保守策略)
+                // 保守: 仍弹 modal 让用户自己确认
+                onError("自动复制可能未生效, 请手动复制下方文本");
+            } else {
+                onError("浏览器拒绝复制, 请手动复制下方文本");
+            }
+        }
+        function showCopyModal(text, hintMsg) {
+            // 终极兜底: 弹 modal 含可见 readonly textarea + 自动 select + 提示 Ctrl+C
+            // 业务: 110 prod HTTP context 业务方, navigator.clipboard.writeText reject + execCommand
+            //       静默失败, 任何 JS 自动 copy 都不靠谱, 必须让用户手动复制
+            var modalId = "oneClickCopyModal";
+            $("#" + modalId).remove();  // 防重复弹
+            var $modal = $(
+                '<div id="' + modalId + '" style="position:fixed;top:0;left:0;width:100%;height:100%;' +
+                'background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;">' +
+                  '<div style="background:white;padding:20px 24px;border-radius:6px;width:600px;max-width:90%;' +
+                  'box-shadow:0 4px 24px rgba(0,0,0,0.3);">' +
+                    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">' +
+                      '<strong style="font-size:16px;color:#14171e;">📋 复制 SQL 文本</strong>' +
+                      '<button type="button" class="btn btn-default btn-xs" onclick="$(\'#' + modalId + '\').remove()">×</button>' +
+                    '</div>' +
+                    '<p style="margin:0 0 10px 0;font-size:13px;color:#a94442;">' +
+                      '⚠️ ' + (hintMsg || "请手动复制下方 SQL 文本") +
+                    '</p>' +
+                    '<textarea id="' + modalId + '_textarea" readonly style="width:100%;height:200px;' +
+                    'font-family:monospace;font-size:13px;padding:8px;border:1px solid #ccc;border-radius:4px;' +
+                    'background:#f5f5f5;resize:vertical;"></textarea>' +
+                    '<p style="margin:10px 0 0 0;font-size:13px;color:#5d6975;">' +
+                      '💡 <strong>请按 Ctrl+C (Windows) / Cmd+C (Mac) 复制</strong>, 复制完成后关闭弹窗' +
+                    '</p>' +
+                    '<div style="margin-top:14px;text-align:right;">' +
+                      '<button type="button" class="btn btn-primary" onclick="$(\'#' + modalId + '\').remove()">关闭</button>' +
+                    '</div>' +
+                  '</div>' +
+                '</div>'
+            );
+            $("body").append($modal);
+            var $ta = $("#" + modalId + "_textarea");
+            $ta.val(text);
+            // 自动 select + focus, 用户直接按 Ctrl+C
+            setTimeout(function () {
+                $ta[0].focus({preventScroll: true});
+                $ta[0].select();
+                $ta[0].setSelectionRange(0, text.length);
+            }, 50);
+            // Esc 关闭
+            $modal.on("keydown", function (e) {
+                if (e.keyCode === 27) {
+                    $modal.remove();
+                }
+            });
         }
 
         function sqlSubmit() {
