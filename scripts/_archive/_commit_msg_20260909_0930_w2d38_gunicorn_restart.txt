@@ -1,0 +1,9 @@
+docs(changelogs): D38 补充 110 prod gunicorn 重启确认 + 业务方硬刷验证清单 (9/9 09:30)
+
+- 9/8 18:55 拉的 gunicorn 没重启, worker 可能持有老 template
+- 9/9 09:24 pkill + setsid nohup 拉新, 6 进程全是新的 (PID 94484 master + 5 workers)
+- 演练 6 组合渲染全对, 绝对 URL
+- 100% 锁定业务方浏览器没真硬刷
+- 业务方验证清单: F12 Elements 搜 ddlsync-page-link 看 href
+
+CHANGELOG: docs/changelogs/2026-09-09_ddl-sync-w2-d38-gunicorn-restart.md
