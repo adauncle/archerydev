@@ -1,0 +1,11 @@
+docs(changelogs): D38 续 2 100% 锁定业务方网络/代理层截断 (11:50)
+
+- 业务方 Chrome 普通 + 无痕模式都拿 12k, 100% 排除扩展问题
+- 演练 force_login mkq 73k + archery 74k 全部 PASS
+- 真 HTTP curl 业务方已知密码: mkq 76k + archery 77k 全部 PASS
+- 110 prod 没 reverse proxy, gunicorn 直连 9123
+- 100% 锁定: 业务方浏览器跟 110 prod 之间有中间层 (公司网络/SSL inspection) 截断
+- 演练 + 真 HTTP + 业务方浏览器三层对比是排查"业务方反馈"的金标准
+- 业务方下一步: 用 134 dev 试 (走内网不走公网), DBA 直连 110 prod 试
+
+CHANGELOG: docs/changelogs/2026-09-09_ddl-sync-w2-d38-network-mitm-confirmed.md
