@@ -54,4 +54,7 @@ urlpatterns = [
 
     # D33 同步历史 Excel 导出
     path("pair/<int:pair_id>/history_export/", views.pair_history_export, name="pair_history_export"),
+
+    # v0.6.0-alpha-2 2.2 操作日志 Excel 导出
+    path("pair/<int:pair_id>/audit_log_export/", views.pair_audit_log_export, name="pair_audit_log_export"),
 ]

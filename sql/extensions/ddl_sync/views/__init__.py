@@ -302,6 +302,65 @@ def pair_history_export(request, pair_id):
     return response
 
 
+@permission_required("ddl_sync.view_ddlsyncpair", raise_exception=True)
+@require_http_methods(["GET"])
+def pair_audit_log_export(request, pair_id):
+    """导出库对操作日志为 Excel (.xlsx)
+
+    ## CUSTOM-MODIFIED: v0.6.0-alpha-2 操作日志 Excel 导出 @ 2026-09-10 @ mavis
+    ## 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 2.2
+    ## 实战需求: 跟 D33 同步历史导出按钮保持一致 (D33 runbook 复用)
+    ## 字段: ID / 操作类型 / 操作人 / 详情 / IP / UA / 时间
+    ## 文件名: ddl_sync_audit_log_pair<pair_id>_<timestamp>.xlsx
+    ## 权限: view_ddlsyncpair (跟同步历史一致)
+    """
+    from openpyxl import Workbook
+    from django.utils import timezone
+
+    pair = get_object_or_404(DdlSyncPair, pk=pair_id)
+    logs = pair.audit_logs.select_related("operator").order_by("-created_at")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "audit_log"
+    headers = ["ID", "操作类型", "操作人", "详情 (JSON)", "客户端 IP", "浏览器 UA", "操作时间", "补录数据"]
+    ws.append(headers)
+    from openpyxl.styles import Font, Alignment
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    # 列宽
+    ws.column_dimensions["A"].width = 8
+    ws.column_dimensions["B"].width = 14
+    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["D"].width = 60
+    ws.column_dimensions["E"].width = 18
+    ws.column_dimensions["F"].width = 30
+    ws.column_dimensions["G"].width = 20
+    ws.column_dimensions["H"].width = 12
+
+    for log in logs:
+        ws.append([
+            log.id,
+            log.get_action_display(),
+            log.operator_display or (log.operator.username if log.operator else "(已删除用户)"),
+            (log.detail_json or "")[:2000],  # 截 2000 字避免撑爆
+            log.client_ip or "",
+            (log.user_agent or "")[:256],
+            log.created_at.strftime("%Y-%m-%d %H:%M:%S") if log.created_at else "",
+            "是" if log.is_backfilled else "否",
+        ])
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"ddl_sync_audit_log_pair{pair_id}_{timestamp}.xlsx"
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
+
+
 @permission_required("ddl_sync.add_ddlsyncpair", raise_exception=True)
 @require_http_methods(["GET", "POST"])
 def pair_create(request):

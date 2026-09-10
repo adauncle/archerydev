@@ -349,7 +349,14 @@
   <!-- 9 类 action: create / edit / enable / disable / one_click / bulk_import / add_table / delete_table / transform_change -->
   <div class="tab-pane fade" id="tab-logs">
     <div class="ddlsync-tab-pane">
-      <h5 style="margin-bottom: 10px;">操作日志 (共 {{ audit_logs_count }} 条{% if audit_logs_paginator.num_pages > 1 %}, 第 {{ audit_logs_page_obj.number }}/{{ audit_logs_paginator.num_pages }} 页{% endif %})</h5>
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+        <h5 style="margin: 0;">操作日志 (共 {{ audit_logs_count }} 条{% if audit_logs_paginator.num_pages > 1 %}, 第 {{ audit_logs_page_obj.number }}/{{ audit_logs_paginator.num_pages }} 页{% endif %})</h5>
+        {# v0.6.0-alpha-2 2.2 操作日志 Excel 导出 (跟 D33 同步历史导出按钮保持一致) #}
+        {# 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 2.2 #}
+        {% if perms.ddl_sync.view_ddlsyncpair %}
+        <a href="{% url 'ddl_sync:pair_audit_log_export' pair.id %}" class="ddlsync-btn-export">导出 Excel</a>
+        {% endif %}
+      </div>
       {% if audit_logs %}
       <table class="ddlsync-table-list">
         <thead>
