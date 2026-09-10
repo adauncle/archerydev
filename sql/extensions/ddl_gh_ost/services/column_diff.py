@@ -272,7 +272,7 @@ _RE_MODIFY = re.compile(
     r"(?:MODIFY|CHANGE)\s+(?:COLUMN\s+)?"
     r"`?(?P<name>[^`\s(]+)`?"
     r"\s+(?P<definition>"
-    r"[^,]+"  # 类型段 (greedy, 吃尽可能多, 后面 optional 段会锚定具体关键字)
+    r"(?:[^,()]+|\([^)]*\))+"  # CUSTOM-MODIFIED: D39 修 decimal(M,N) / enum('a','b','c') 等内嵌逗号截断 @ 2026-09-10 @ mavis
     r"(?:\s+CHARACTER\s+SET\s+\S+)?"  # 可选 CHARSET
     r"(?:\s+COLLATE\s+\S+)?"           # 可选 COLLATE
     r"(?:\s+NOT\s+NULL)?"               # 可选 NOT NULL
@@ -288,7 +288,7 @@ _RE_ADD = re.compile(
     r"ADD\s+(?:COLUMN\s+)?"
     r"`?(?P<name>[^`\s(]+)`?"
     r"\s+(?P<definition>"
-    r"[^,]+"
+    r"(?:[^,()]+|\([^)]*\))+"  # CUSTOM-MODIFIED: D39 同上 (ADD COLUMN 也用此模式) @ 2026-09-10 @ mavis
     r"(?:\s+CHARACTER\s+SET\s+\S+)?"
     r"(?:\s+COLLATE\s+\S+)?"
     r"(?:\s+NOT\s+NULL)?"
