@@ -19,6 +19,12 @@
 
 1 导出端点 (D33):
 - /pair/<int:pair_id>/history_export/ — 同步历史 Excel 导出
+
+## CUSTOM-MODIFIED: v0.6.0-alpha-1 操作日志升级 @ 2026-09-10 @ mavis
+## 1.4 同步表增删埋点: 2 个新端点
+## 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 1.4
+- /pair/<int:pair_id>/delete_table/<int:table_id>/ — 删除同步表
+- /pair/<int:pair_id>/change_transform_rule/<int:table_id>/ — 改 transform_rule
 """
 
 from django.urls import path
@@ -41,6 +47,10 @@ urlpatterns = [
     path("pair/<int:pair_id>/bulk_import/", api_views.bulk_import_view, name="bulk_import"),
     path("pair/<int:pair_id>/add_table/", api_views.add_table_view, name="add_table"),
     path("history/", api_views.history_list_view, name="history_list"),
+
+    # v0.6.0-alpha-1 1.4 阶段 同步表增删端点
+    path("pair/<int:pair_id>/delete_table/<int:table_id>/", api_views.delete_table_view, name="delete_table"),
+    path("pair/<int:pair_id>/change_transform_rule/<int:table_id>/", api_views.change_transform_rule_view, name="change_transform_rule"),
 
     # D33 同步历史 Excel 导出
     path("pair/<int:pair_id>/history_export/", views.pair_history_export, name="pair_history_export"),

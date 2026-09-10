@@ -234,6 +234,9 @@ class DdlSyncAuditLog(models.Model):
 
     # CUSTOM-MODIFIED: 6 类 action enum @ 2026-09-09 @ mavis
     # 跟 D35-Pending 拍板 1:1 对应, 业务方一眼看出谁什么时候做了什么操作
+    ## CUSTOM-MODIFIED: v0.6.0-alpha-1 9 类 action enum + 3 类同步表增删 @ 2026-09-10 @ mavis
+    ## 1.4 同步表增删埋点: add_table / delete_table / transform_change
+    ## 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 1.4
     ACTION_CHOICES = [
         ("create", _("创建库对")),
         ("edit", _("编辑库对 (非启用/禁用字段)")),
@@ -241,6 +244,9 @@ class DdlSyncAuditLog(models.Model):
         ("disable", _("禁用库对")),
         ("one_click", _("一键配置 (R2)")),
         ("bulk_import", _("批量导入 (R1)")),
+        ("add_table", _("新增同步表")),         # v0.6.0-alpha-1
+        ("delete_table", _("删除同步表")),       # v0.6.0-alpha-1
+        ("transform_change", _("改 transform_rule")),  # v0.6.0-alpha-1
     ]
 
     id = models.BigAutoField(primary_key=True)
@@ -271,9 +277,34 @@ class DdlSyncAuditLog(models.Model):
     # enable / disable: {"from": false, "to": true}
     # one_click:      {"tables": ["t1", "t2", ...], "sync_type": "whitelist"}
     # bulk_import:    {"sync_type": "whitelist", "count": 50, "tables": [...]}
+    ## CUSTOM-MODIFIED: v0.6.0-alpha-1 详情 schema 升级 @ 2026-09-10 @ mavis
+    ## 1.3 库对配置前后 diff: edit 加 "changes" 字段, 实际 old/new 值
+    ## 1.4 同步表增删: add_table / delete_table / transform_change 加 table_name / sync_type
+    ## 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 1.2 / 1.3 / 1.4
+    # add_table:        {"table_name": "t1", "sync_type": "whitelist", "transform_rule": {...}}
+    # delete_table:     {"table_name": "t1", "sync_type": "whitelist"}
+    # transform_change: {"table_name": "t1", "old_rule": {...}, "new_rule": {...}}
     detail_json = models.TextField(
         _("详情 JSON"), blank=True, default="",
         help_text="按 action 类型不同 schema 不同, 见模型 docstring",
+    )
+    ## CUSTOM-MODIFIED: v0.6.0-alpha-1 IP / UA 记录 (合规审计) @ 2026-09-10 @ mavis
+    ## 1.5 IP / User-Agent: GenericIPAddressField (支持 IPv4/IPv6) + CharField 256
+    ## 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 1.5
+    client_ip = models.GenericIPAddressField(
+        _("客户端 IP"), null=True, blank=True,
+        help_text="从 X-Forwarded-For (有反代时) 或 REMOTE_ADDR 拿",
+    )
+    user_agent = models.CharField(
+        _("浏览器 UA"), max_length=256, blank=True, default="",
+        help_text="HTTP_USER_AGENT, 截断 256 字符",
+    )
+    ## CUSTOM-MODIFIED: v0.6.0-alpha-1 补录数据标记 @ 2026-09-10 @ mavis
+    ## 1.1 历史数据补录脚本用 (v0.6.0-alpha-2 启用): True=脚本从 Archery LogEntry 补录
+    ##      False=DBA 真实操作 (默认)
+    is_backfilled = models.BooleanField(
+        _("补录数据"), default=False, db_index=True,
+        help_text="True=脚本从 Archery LogEntry 补录, False=DBA 真实操作",
     )
     # 时间
     created_at = models.DateTimeField(_("操作时间"), auto_now_add=True, db_index=True)

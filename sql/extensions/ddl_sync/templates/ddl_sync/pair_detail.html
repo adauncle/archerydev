@@ -57,12 +57,36 @@
 
   /* CUSTOM-MODIFIED: D35-Pending 操作日志 tab 样式 @ 2026-09-09 @ mavis
      6 类 action 用 6 种颜色区分: 蓝/绿/灰/红/紫/橙 */
+  ## CUSTOM-MODIFIED: v0.6.0-alpha-1 9 类 action 颜色 @ 2026-09-10 @ mavis
+  ## 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 1.4
+  ## 1.4 同步表增删 3 类: add_table (青) / delete_table (暗红) / transform_change (靛)
   .ddlsync-action-create { background: #409EFF; }
   .ddlsync-action-edit { background: #909399; }
   .ddlsync-action-enable { background: #67C23A; }
   .ddlsync-action-disable { background: #F56C6C; }
   .ddlsync-action-one_click { background: #9C27B0; }
   .ddlsync-action-bulk_import { background: #E6A23C; }
+  .ddlsync-action-add_table { background: #00BCD4; }
+  .ddlsync-action-delete_table { background: #B71C1C; }
+  .ddlsync-action-transform_change { background: #3F51B5; }
+
+  /* CUSTOM-MODIFIED: v0.6.0-alpha-1 detail_json key-value 渲染 @ 2026-09-10 @ mavis
+     1.2 detail_json 模板渲染: 表格化展示, 业务方一眼能看
+     关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 1.2 */
+  .ddlsync-log-detail { font-size: 12px; }
+  .ddlsync-log-detail .kv-row { display: flex; gap: 8px; padding: 2px 0; }
+  .ddlsync-log-detail .kv-key { color: #909399; min-width: 90px; flex-shrink: 0; }
+  .ddlsync-log-detail .kv-val { color: #303133; flex: 1; word-break: break-all; }
+  .ddlsync-log-detail .kv-val.changed { color: #E6A23C; font-weight: 500; }
+  .ddlsync-log-detail .kv-arrow { color: #67C23A; font-weight: 700; }
+  .ddlsync-log-detail code { background: #f5f7fa; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  .ddlsync-log-detail .table-list { display: inline-block; max-width: 100%; }
+  .ddlsync-log-detail .table-list code { margin-right: 4px; margin-bottom: 2px; display: inline-block; }
+
+  /* v0.6.0-alpha-1 IP/UA 列 (1.5) */
+  .ddlsync-log-ip { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #5d6975; }
+  .ddlsync-log-backfilled { color: #b88200; font-size: 11px; margin-left: 4px; }
+  .ddlsync-log-ua { font-size: 11px; color: #909399; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
 
   /* 基本信息 - 紧凑网格 (D33 改: 11 行 table → 6 行 dl-grid) */
   .ddlsync-basic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; font-size: 13px; }
@@ -320,7 +344,9 @@
   <!-- tab 4: 操作日志 -->
   <!-- CUSTOM-MODIFIED: D35-Pending 操作日志真渲染 @ 2026-09-09 @ mavis -->
   <!-- 关联: docs/plans/2026-09-04_ddl-sync-w2-d35-pending-audit-log.md (方案 A) -->
-  <!-- 6 类 action: create / edit / enable / disable / one_click / bulk_import -->
+  ## CUSTOM-MODIFIED: v0.6.0-alpha-1 9 类 action + IP/UA 列 + detail 表格化 @ 2026-09-10 @ mavis
+  ## 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 1.2 / 1.3 / 1.4 / 1.5
+  ## 9 类 action: create / edit / enable / disable / one_click / bulk_import / add_table / delete_table / transform_change
   <div class="tab-pane fade" id="tab-logs">
     <div class="ddlsync-tab-pane">
       <h5 style="margin-bottom: 10px;">操作日志 (共 {{ audit_logs_count }} 条{% if audit_logs_paginator.num_pages > 1 %}, 第 {{ audit_logs_page_obj.number }}/{{ audit_logs_paginator.num_pages }} 页{% endif %})</h5>
@@ -328,25 +354,30 @@
       <table class="ddlsync-table-list">
         <thead>
           <tr>
-            <th style="width: 60px;">ID</th>
+            <th style="width: 50px;">ID</th>
             <th style="width: 110px;">操作类型</th>
             <th style="width: 100px;">操作人</th>
             <th>详情</th>
+            <th style="width: 110px;">IP / UA</th>
             <th style="width: 160px;">操作时间</th>
           </tr>
         </thead>
         <tbody>
           {% for log in audit_logs %}
           <tr>
-            <td>{{ log.id }}</td>
+            <td>{{ log.id }}{% if log.is_backfilled %}<span class="ddlsync-log-backfilled" title="从 Archery LogEntry 补录">↻</span>{% endif %}</td>
             <td><span class="ddlsync-history-status ddlsync-action-{{ log.action }}">{{ log.get_action_display }}</span></td>
             <td>{% if log.operator %}{{ log.operator_display|default:log.operator.username }}{% else %}<span class="text-muted">{{ log.operator_display|default:"(已删除用户)" }}</span>{% endif %}</td>
             <td>
-              {% if log.detail_json %}
-                <code style="font-size: 12px; word-break: break-all;">{{ log.detail_json }}</code>
-              {% else %}
-                <span class="text-muted">-</span>
-              {% endif %}
+              {# v0.6.0-alpha-1 1.2 detail_json 表格化渲染 #}
+              <div class="ddlsync-log-detail">
+                {% include "ddl_sync/_audit_log_detail.html" with log=log %}
+              </div>
+            </td>
+            <td>
+              {% if log.client_ip %}<div class="ddlsync-log-ip">{{ log.client_ip }}</div>{% endif %}
+              {% if log.user_agent %}<div class="ddlsync-log-ua" title="{{ log.user_agent }}">{{ log.user_agent }}</div>{% endif %}
+              {% if not log.client_ip and not log.user_agent %}<span class="text-muted">-</span>{% endif %}
             </td>
             <td>{{ log.created_at|date:"Y-m-d H:i:s" }}</td>
           </tr>

@@ -41,16 +41,29 @@ from ..forms import DdlSyncPairForm
 # 业务: 5 view 埋点 emit 6 类 action, 业务方一眼看出谁什么时候做了什么操作
 # 设计: 公共 helper 统一写日志, 5 view 各自埋点
 # ============================================================
-def _write_audit_log(pair, action, operator, detail=None):
+def _write_audit_log(pair, action, operator, detail=None, request=None):
     """统一写 DdlSyncAuditLog, 任何写操作后调一次即可
+
+    ## CUSTOM-MODIFIED: v0.6.0-alpha-1 接 request 自动拿 IP / UA @ 2026-09-10 @ mavis
+    ## 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 1.5
+    ## 历史数据补录场景可传 request=None (v0.6.0-alpha-2 1.1 用, is_backfilled=True 区分)
 
     Args:
         pair: DdlSyncPair
         action: str (DdlSyncAuditLog.ACTION_CHOICES 之一)
-        operator: request.user
+        operator: request.user (或 None, 历史数据补录场景)
         detail: dict (会 json.dumps 成 detail_json, 可选)
+        request: HttpRequest (可选, 传了就拿 client_ip / user_agent)
     """
     import json
+    # 1.5: 从 request 拿 IP / UA
+    client_ip = None
+    user_agent = ""
+    if request is not None:
+        # 优先 X-Forwarded-For (有反代时), 否则 REMOTE_ADDR
+        xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
+        client_ip = (xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR")) or None
+        user_agent = (request.META.get("HTTP_USER_AGENT", "") or "")[:256]
     try:
         DdlSyncAuditLog.objects.create(
             pair=pair,
@@ -58,6 +71,8 @@ def _write_audit_log(pair, action, operator, detail=None):
             operator=operator if (operator and getattr(operator, "is_authenticated", False)) else None,
             operator_display=operator.username if (operator and getattr(operator, "is_authenticated", False)) else "",
             detail_json=json.dumps(detail, ensure_ascii=False) if detail else "",
+            client_ip=client_ip,
+            user_agent=user_agent,
         )
     except Exception:
         # 日志写入失败不应阻塞主操作 (跟 D22 sync_trigger 错误兜底同套路)
@@ -176,7 +191,10 @@ def pair_detail(request, pair_id):
 
     # CUSTOM-MODIFIED: D35-Pending 操作日志 tab @ 2026-09-09 @ mavis
     # 关联: docs/plans/2026-09-04_ddl-sync-w2-d35-pending-audit-log.md (方案 A 落地)
-    # 6 类 action: create / edit / enable / disable / one_click / bulk_import
+    ## CUSTOM-MODIFIED: v0.6.0-alpha-1 9 类 action + view 端预解析 detail_json @ 2026-09-10 @ mavis
+    ## 1.2 detail_json 表格化: view 端 json.loads -> dict, 模板用 if action 渲染
+    ## 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 1.2
+    ## 9 类 action: create / edit / enable / disable / one_click / bulk_import / add_table / delete_table / transform_change
     # 按时间倒序, 每页 20 条 (跟 history 一致)
     LOGS_PER_PAGE = 20
     audit_logs_qs = pair.audit_logs.select_related("operator").order_by("-created_at")
@@ -187,7 +205,17 @@ def pair_detail(request, pair_id):
         audit_logs_page_obj = audit_logs_paginator.get_page(audit_logs_page_num)
     except Exception:
         audit_logs_page_obj = audit_logs_paginator.get_page(1)
-    audit_logs = audit_logs_page_obj.object_list
+    # 1.2: view 端预解析 detail_json, 模板直接用 if action 渲染
+    import json as _json
+    audit_logs = []
+    for _log in audit_logs_page_obj.object_list:
+        _log.detail_parsed = {}
+        if _log.detail_json:
+            try:
+                _log.detail_parsed = _json.loads(_log.detail_json)
+            except (ValueError, TypeError):
+                _log.detail_parsed = {"_raw": _log.detail_json}
+        audit_logs.append(_log)
 
     context = {
         "pair": pair,
@@ -288,9 +316,11 @@ def pair_create(request):
                     pair.save()
                 # CUSTOM-MODIFIED: D35-Pending 操作日志埋点 @ 2026-09-09 @ mavis
                 # 关联: docs/plans/2026-09-04_ddl-sync-w2-d35-pending-audit-log.md (方案 A)
+                ## CUSTOM-MODIFIED: v0.6.0-alpha-1 埋点加 request 拿 IP/UA @ 2026-09-10 @ mavis
                 _write_audit_log(
                     pair=pair, action="create", operator=request.user,
                     detail={"name": pair.name, "sync_mode": pair.sync_mode, "enabled": pair.enabled},
+                    request=request,
                 )
                 messages.success(request, f"库对 '{pair.name}' 创建成功")
                 return HttpResponseRedirect(reverse("ddl_sync:pair_detail", args=(pair.id,)))
@@ -334,15 +364,38 @@ def pair_edit(request, pair_id):
                 # 决定 action: 仅 enabled 字段变化 → enable/disable, 其他 → edit
                 if new_enabled != old_enabled and new_sync_mode == old_sync_mode:
                     action = "enable" if new_enabled else "disable"
-                    detail = {"from": old_enabled, "to": new_enabled}
+                    ## CUSTOM-MODIFIED: v0.6.0-alpha-1 enable/disable 详情升级 @ 2026-09-10 @ mavis
+                    ## 1.3 库对前后 diff: 加 who/when/operate_from/operate_to 字段
+                    detail = {
+                        "from": old_enabled,
+                        "to": new_enabled,
+                        "operate_from": old_enabled,  # D35 老 schema 兼容
+                        "operate_to": new_enabled,
+                    }
                 else:
                     action = "edit"
+                    ## CUSTOM-MODIFIED: v0.6.0-alpha-1 edit 详情升级, 记录 old/new 实际值 @ 2026-09-10 @ mavis
+                    ## 1.3 库对前后 diff: changed_fields + changes 字段 (每个字段 old/new)
+                    ## 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 1.3
+                    changed_fields = [k for k in form.changed_data if k != "updated_at"]
+                    # 实际 old/new 值 (form.initial 是原值, form.cleaned_data 是新值)
+                    changes = {}
+                    for f in changed_fields:
+                        old_val = form.initial.get(f)
+                        new_val = form.cleaned_data.get(f)
+                        # JSONField (pending_tables / filter_rule) 已经是 dict, 不用 dump
+                        if isinstance(old_val, (dict, list)):
+                            changes[f] = {"old": old_val, "new": new_val}
+                        else:
+                            changes[f] = {"old": old_val, "new": new_val}
                     detail = {
-                        "changed_fields": [k for k in form.changed_data if k != "updated_at"],
+                        "changed_fields": changed_fields,
+                        "changes": changes,
                         "enabled": {"from": old_enabled, "to": new_enabled} if new_enabled != old_enabled else None,
                     }
 
-                _write_audit_log(pair=pair, action=action, operator=request.user, detail=detail)
+                ## CUSTOM-MODIFIED: v0.6.0-alpha-1 埋点加 request 拿 IP/UA @ 2026-09-10 @ mavis
+                _write_audit_log(pair=pair, action=action, operator=request.user, detail=detail, request=request)
                 messages.success(request, f"库对 '{pair.name}' 更新成功")
                 return HttpResponseRedirect(reverse("ddl_sync:pair_detail", args=(pair.id,)))
             except Exception as e:

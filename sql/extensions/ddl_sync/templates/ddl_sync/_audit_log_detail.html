@@ -1,0 +1,105 @@
+{# -*- coding: utf-8 -*- -#}
+{# v0.6.0-alpha-1 1.2 detail_json 表格化渲染 #}
+{# 9 类 action 5 种 schema 渲染 (view 端预解析 log.detail_parsed) #}
+{# 关联: docs/plans/2026-09-10_d35-oplog-roadmap.html 阶段 1.2 #}
+{% with detail=log.detail_parsed %}
+  {% if detail %}
+    {% if log.action == "create" %}
+      {# create: name / sync_mode / enabled #}
+      <div class="kv-row"><span class="kv-key">配对名</span><span class="kv-val">{{ detail.name|default:"-" }}</span></div>
+      <div class="kv-row"><span class="kv-key">同步模式</span><span class="kv-val">{% if detail.sync_mode == "blacklist" %}黑名单{% elif detail.sync_mode == "whitelist" %}白名单{% else %}{{ detail.sync_mode|default:"-" }}{% endif %}</span></div>
+      <div class="kv-row"><span class="kv-key">启用</span><span class="kv-val">{% if detail.enabled %}是{% else %}否{% endif %}</span></div>
+
+    {% elif log.action == "edit" %}
+      {# edit: changed_fields + changes (old/new 实际值) #}
+      {% if detail.changed_fields %}
+        <div class="kv-row"><span class="kv-key">改动字段</span><span class="kv-val">{% for f in detail.changed_fields %}<code>{{ f }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</span></div>
+      {% endif %}
+      {% if detail.changes %}
+        {% for field, change in detail.changes.items %}
+          <div class="kv-row">
+            <span class="kv-key">{{ field }}</span>
+            <span class="kv-val">
+              <code>{{ change.old|stringformat:"s" }}</code>
+              <span class="kv-arrow">→</span>
+              <code class="changed">{{ change.new|stringformat:"s" }}</code>
+            </span>
+          </div>
+        {% endfor %}
+      {% endif %}
+
+    {% elif log.action == "enable" or log.action == "disable" %}
+      {# enable / disable: from -> to #}
+      <div class="kv-row">
+        <span class="kv-key">状态变更</span>
+        <span class="kv-val">
+          <code>{{ detail.from|default:detail.operate_from }}</code>
+          <span class="kv-arrow">→</span>
+          <code class="changed">{{ detail.to|default:detail.operate_to }}</code>
+        </span>
+      </div>
+
+    {% elif log.action == "one_click" %}
+      {# one_click: whitelist_count / blacklist_count / duration_ms / tables #}
+      <div class="kv-row"><span class="kv-key">白名单</span><span class="kv-val">{{ detail.whitelist_count|default:0 }} 张</span></div>
+      <div class="kv-row"><span class="kv-key">黑名单</span><span class="kv-val">{{ detail.blacklist_count|default:0 }} 张</span></div>
+      <div class="kv-row"><span class="kv-key">耗时</span><span class="kv-val">{{ detail.duration_ms|default:"-" }} ms</span></div>
+      {% if detail.tables %}
+        <div class="kv-row">
+          <span class="kv-key">表</span>
+          <span class="kv-val table-list">
+            {% if detail.tables.whitelist %}{% for t in detail.tables.whitelist|slice:":10" %}<code>{{ t }}</code>{% endfor %}{% if detail.tables.whitelist|length > 10 %}等 {{ detail.tables.whitelist|length }} 张{% endif %}{% endif %}
+            {% if detail.tables.blacklist %}{% for t in detail.tables.blacklist|slice:":10" %}<code>{{ t }}</code>{% endfor %}{% if detail.tables.blacklist|length > 10 %}等 {{ detail.tables.blacklist|length }} 张{% endif %}{% endif %}
+          </span>
+        </div>
+      {% endif %}
+
+    {% elif log.action == "bulk_import" %}
+      {# bulk_import: sync_type / imported_count / skipped_count / duration_ms / table_names #}
+      <div class="kv-row"><span class="kv-key">类型</span><span class="kv-val">{% if detail.sync_type == "blacklist" %}黑名单{% elif detail.sync_type == "whitelist" %}白名单{% else %}{{ detail.sync_type|default:"-" }}{% endif %}</span></div>
+      <div class="kv-row"><span class="kv-key">导入</span><span class="kv-val">{{ detail.imported_count|default:0 }} 张</span></div>
+      <div class="kv-row"><span class="kv-key">跳过</span><span class="kv-val">{{ detail.skipped_count|default:0 }} 张</span></div>
+      <div class="kv-row"><span class="kv-key">耗时</span><span class="kv-val">{{ detail.duration_ms|default:"-" }} ms</span></div>
+      {% with tables=detail.tables|default:detail.table_names %}
+        {% if tables %}
+          <div class="kv-row">
+            <span class="kv-key">表</span>
+            <span class="kv-val table-list">
+              {% for t in tables|slice:":10" %}<code>{{ t }}</code>{% endfor %}{% if tables|length > 10 %}等 {{ tables|length }} 张{% endif %}
+            </span>
+          </div>
+        {% endif %}
+      {% endwith %}
+
+    {% elif log.action == "add_table" %}
+      {# add_table: table_name / sync_type / transform_rule #}
+      <div class="kv-row"><span class="kv-key">表名</span><span class="kv-val"><code>{{ detail.table_name|default:"-" }}</code></span></div>
+      <div class="kv-row"><span class="kv-key">类型</span><span class="kv-val">{% if detail.sync_type == "blacklist" %}黑名单{% elif detail.sync_type == "whitelist" %}白名单{% else %}{{ detail.sync_type|default:"-" }}{% endif %}</span></div>
+      {% if detail.transform_rule %}
+        <div class="kv-row"><span class="kv-key">transform</span><span class="kv-val"><code>{{ detail.transform_rule|stringformat:"s" }}</code></span></div>
+      {% endif %}
+
+    {% elif log.action == "delete_table" %}
+      {# delete_table: table_name / sync_type #}
+      <div class="kv-row"><span class="kv-key">表名</span><span class="kv-val"><code>{{ detail.table_name|default:"-" }}</code></span></div>
+      <div class="kv-row"><span class="kv-key">类型</span><span class="kv-val">{% if detail.sync_type == "blacklist" %}黑名单{% elif detail.sync_type == "whitelist" %}白名单{% else %}{{ detail.sync_type|default:"-" }}{% endif %}</span></div>
+
+    {% elif log.action == "transform_change" %}
+      {# transform_change: table_name / old_rule / new_rule #}
+      <div class="kv-row"><span class="kv-key">表名</span><span class="kv-val"><code>{{ detail.table_name|default:"-" }}</code></span></div>
+      <div class="kv-row">
+        <span class="kv-key">规则</span>
+        <span class="kv-val">
+          <code>{{ detail.old_rule|stringformat:"s" }}</code>
+          <span class="kv-arrow">→</span>
+          <code class="changed">{{ detail.new_rule|stringformat:"s" }}</code>
+        </span>
+      </div>
+
+    {% else %}
+      <code style="font-size: 12px;">{{ log.detail_json }}</code>
+    {% endif %}
+  {% else %}
+    <span class="text-muted">-</span>
+  {% endif %}
+{% endwith %}
