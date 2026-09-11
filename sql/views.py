@@ -260,6 +260,13 @@ def _parse_first_alter(sql_content: str) -> dict:
     re.match 从字符串开头匹配, 看到 u/- 直接 NO MATCH, table=None, 大表 alert 不显示.
     修法: 逐行扫描, 跳过 use / -- 注释 / 空行, 找到第一个 ALTER 再 re.match.
     关联: docs/changelogs/2026-09-11_dba-bug-1-big-table-alert-drop-index-and-review-visibility.md
+
+    9/11 DBA-bug-2 修法: regex 支持反引号 schema.
+    9/11 实战踩坑 (consume_flow 5M+ 行 modify column 工单): 业务方 MySQL 客户端默认输出 `schema`.`table`,
+    views.py regex 之前是 `[^`\s.()]+` 不接受反引号, 解析时把 `hly_billing` 当 table, consume_flow 丢了
+    → 大表 alert 跟字段 diff 端点 /gh_ost/column_diff/ 不一致 (column_diff.py 早就有反引号支持).
+    修法: regex schema 段 `\`?[^`\s.()]+\`?` 跟 column_diff.py:402-405 / :756-758 保持一致.
+    关联: docs/changelogs/2026-09-11_dba-bug-2-big-table-alert-backtick-schema.md
     @ 2026-09-11 @ mavis
     """
     import re
@@ -275,8 +282,11 @@ def _parse_first_alter(sql_content: str) -> dict:
             continue
         cleaned_lines.append(stripped)
     cleaned = "\n".join(cleaned_lines).strip()
+    # CUSTOM-MODIFIED: 9/11 DBA-bug-2 schema 段支持反引号 (跟 column_diff.py:402-405 保持一致)
+    # 实战踩坑: 业务方 MySQL 客户端默认输出 `schema`.`table`, 老 regex [^`\s.()]+ 不接受反引号
+    #          会把 `hly_billing` 当 table, consume_flow 丢了, 大表 alert 不触发
     m = re.match(
-        r"^\s*ALTER\s+TABLE\s+(?:(?P<schema>[^`\s.()]+)\.)?`?(?P<table>[^`\s(]+)`?",
+        r"^\s*ALTER\s+TABLE\s+(?:(?P<schema>`?[^`\s.()]+`?)\.)?`?(?P<table>[^`\s(]+)`?",
         cleaned,
         re.IGNORECASE,
     )

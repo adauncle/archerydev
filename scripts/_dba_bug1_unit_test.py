@@ -43,6 +43,23 @@ CASES = [
     ("test_with_use_and_newline_add_column",
      "use hly_platform;\n\nalter table waybill_union_carrier add column x int",
      None, "waybill_union_carrier"),
+    # 9/11 DBA-bug-2 新增: 业务方 MySQL 客户端默认输出 `schema`.`table`
+    ("test_with_backtick_schema_drop_index",
+     "ALTER TABLE `hly_billing`.`consume_flow`\nADD INDEX `idx_create_time` (`create_time`)",
+     "hly_billing", "consume_flow"),
+    ("test_with_backtick_schema_modify_column",
+     "ALTER TABLE `hly_billing`.`consume_flow`\nmodify column `vehicle_plate` varchar(128) DEFAULT NULL COMMENT '车牌'",
+     "hly_billing", "consume_flow"),
+    ("test_with_backtick_only_table",
+     "ALTER TABLE `user` ADD INDEX `idx_x` (`y`)",
+     None, "user"),
+    ("test_with_backtick_only_schema",
+     "ALTER TABLE `hly_platform`.`user` ADD INDEX `idx_x` (`y`)",
+     "hly_platform", "user"),
+    # 9/11 DBA-bug-2 回归: 老的 use + 注释 + ALTER 也得保持 PASS
+    ("test_regression_with_use_and_backtick_schema",
+     "use hly_billing;\n-- 加索引\nALTER TABLE `hly_billing`.`consume_flow` ADD INDEX `idx_create_time` (`create_time`)",
+     "hly_billing", "consume_flow"),
     # 边界 case
     ("test_invalid_sql_no_alter",
      "select * from user where id = 1",

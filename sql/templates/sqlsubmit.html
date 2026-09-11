@@ -728,11 +728,44 @@
                         // 表不存在 / SQL 不含 MODIFY 等, 静默不显示
                         $("#column-diff-modal-body").empty();
                         $("#column-diff-inline").hide();
+                        // CUSTOM-MODIFIED: 9/11 DBA-bug-2 大表 alert 同步到主页面 banner
+                        // 业务: 之前大表 alert 只塞 modal body, 业务方没注意 modal 就完全错过
+                        //       现在主页面顶部加红色 banner, 跟 detail.html 大表 alert 风格一致
+                        //       重复检测先清空旧 banner, 避免堆叠
+                        // 关联: docs/changelogs/2026-09-11_dba-bug-2-big-table-alert-backtick-schema.md
+                        $("#sqlsubmit-big-table-alert-banner").remove();
                         return;
                     }
                     renderColumnDiff(data);
                     // SQL 检测成功后自动弹字段 diff 模态框 (D28)
                     $('#columnDiffModal').modal('show');
+                    // CUSTOM-MODIFIED: 9/11 DBA-bug-2 大表 alert 同步到主页面 banner
+                    // 业务: 大表 DDL 必须前置显眼, 不能依赖用户开 modal
+                    $("#sqlsubmit-big-table-alert-banner").remove();
+                    if (data.big_table_alert) {
+                        var bta = data.big_table_alert;
+                        var bannerHtml =
+                            '<div class="alert alert-danger" id="sqlsubmit-big-table-alert-banner" ' +
+                                 'style="margin:12px 0;padding:14px 18px;border-left:4px solid #b06367;' +
+                                          'background:rgba(176, 99, 103, 0.06);">' +
+                                '<div style="display:flex;align-items:flex-start;gap:14px;">' +
+                                    '<i class="fa fa-exclamation-triangle" style="font-size:22px;color:#b06367;flex-shrink:0;margin-top:2px;"></i>' +
+                                    '<div style="flex:1;">' +
+                                        '<strong style="font-size:15px;color:#5a3a3a;">⚠️ 检测到 <code style="color:#b06367;background:rgba(176,99,103,0.1);padding:1px 6px;border-radius:3px;">' + escapeHtml(bta.table_name) + '</code> 是大表 DDL</strong>' +
+                                        '<div style="margin-top:6px;color:#5a3a3a;font-size:13px;">' +
+                                            '行数 <strong>' + bta.rows + '</strong> / 数据大小 <strong>' + bta.size_mb + ' MB</strong>' +
+                                            ' (阈值: ' + bta.row_threshold + ' 行 或 ' + bta.size_threshold_mb + ' MB)' +
+                                        '</div>' +
+                                        '<div style="margin-top:8px;color:#5a3a3a;font-size:13px;line-height:1.55;">' +
+                                            '大表 DDL 走原路径"立即执行"会<strong>锁表</strong> (业务写入阻塞几秒到几分钟)。' +
+                                            '<br/><strong>强烈建议在上方勾选"启用 gh-ost 无锁变更"</strong> —— 提交后自动走 5 道预检, gh-ost 走完无需锁表。' +
+                                        '</div>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>';
+                        // 插到 inception-result 下面 (检测结果表格之后)
+                        $("#inception-result").after(bannerHtml);
+                    }
                 },
                 error: function () {
                     // 失败 fallback: 静默, 不影响 SQL 检测主体
