@@ -741,15 +741,13 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
             "big_table_alert": dict or None,
         }
     """
-    changes = _parse_alter_column_changes(alter_sql)
-    if not changes:
-        return {
-            "ok": False,
-            "error": f"ALTER TABLE 不包含 MODIFY/ADD/DROP COLUMN 字段变更",
-            "hint": "只支持 ALTER TABLE ... MODIFY/ADD/DROP COLUMN",
-        }
-
-    # 2. 拿表名 (从 SQL 解析 或 显式)
+    # 0. 拿表名 (提前到 changes 解析之前, 让 not changes 也能查大表 alert)
+    # CUSTOM-MODIFIED: 9/11 DBA-bug-3 提前表名解析 @ 2026-09-11 @ mavis
+    # 业务: ADD INDEX / DROP INDEX / RENAME 等非字段变更 DDL, 不会触发字段 diff,
+    #       但仍然是大表 DDL (影响行数大), 之前 _diff_single_table 在 not changes 时
+    #       直接 return ok=False 跳过表大小检查, 业务方实战 consume_flow 5M+ 行 ADD INDEX
+    #       完全错过大表 alert. 修法: 提前解析 table_name, not changes 时也查大表 alert.
+    # 关联: docs/changelogs/2026-09-11_dba-bug-3-big-table-alert-add-index-drop-index.md
     table_name = force_table_name
     if not table_name:
         # CUSTOM: D35 修复 backticks schema 解析 (与 _parse_alter_column_changes 保持一致)
@@ -763,6 +761,22 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
             return {"ok": False, "error": "解析不到表名"}
         table_name = m.group("table").strip("`")
 
+    # 0.5 大表 alert 检查 (DBA-bug-3: 提前到 changes 解析之前, 让 not changes 时也能触发)
+    size_info = _fetch_table_size(instance, db_name, table_name)
+    big_table_alert = _build_big_table_alert(size_info)
+
+    changes = _parse_alter_column_changes(alter_sql)
+    if not changes:
+        # CUSTOM-MODIFIED: 9/11 DBA-bug-3 not changes 时也保留大表 alert
+        # 实战踩坑: ADD INDEX/DROP INDEX/RENAME 等非字段变更, 业务方完全错过大表 alert
+        return {
+            "ok": False,
+            "error": f"ALTER TABLE 不包含 MODIFY/ADD/DROP COLUMN 字段变更",
+            "hint": "只支持 ALTER TABLE ... MODIFY/ADD/DROP COLUMN",
+            "table_name": table_name,
+            "big_table_alert": big_table_alert,  # 关键: 大表 alert 即便 not changes 也带上
+        }
+
     # 3. 查当前列定义
     current_cols = _fetch_current_columns(instance, db_name, table_name)
     if not current_cols:
@@ -771,6 +785,7 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
             "error": f"表 {db_name}.{table_name} 不存在或查不到列定义",
             "table_name": table_name,
             "table_exists": False,
+            "big_table_alert": big_table_alert,  # 关键: 大表 alert 即便表不存在也带上 (虽然 size_info=None)
         }
 
     # 4. 逐变更 diff
@@ -1139,8 +1154,8 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
     # 业务: SQL 提交页开发点"SQL检测"时就该看到大表 DDL 警告, 不需要等审批通过后 DBA 执行阶段才看到。
     # 思路: 字段 diff 已经查了 information_schema.columns, 顺手查一下 information_schema.tables 拿行数+大小,
     #      跟 CUSTOM_BIG_TABLE_* 阈值比, 触发大表 alert (跟详情页 big_table_alert 同一逻辑)。
-    size_info = _fetch_table_size(instance, db_name, table_name)
-    big_table_alert = _build_big_table_alert(size_info)
+    # CUSTOM-MODIFIED: 9/11 DBA-bug-3 大表 alert 在 0.5 步已经查过, 这里直接复用
+    # 关联: docs/changelogs/2026-09-11_dba-bug-3-big-table-alert-add-index-drop-index.md
 
     return {
         "ok": True,
@@ -1229,6 +1244,12 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
 
         if not single.get("ok"):
             # 单表失败 (无 MODIFY/ADD/DROP 或表不存在), 记录但不中断
+            # CUSTOM-MODIFIED: 9/11 DBA-bug-3 保留 single 里的 big_table_alert @ 2026-09-11 @ mavis
+            # 之前: 单表失败时 big_table_alert 直接置 None, 业务方实战 consume_flow 5M+ 行 ADD INDEX
+            #       端点返 ok=False 顶层 big_table_alert=None, 前端 banner 不显示
+            # 修法: 保留 single.big_table_alert (单表 _diff_single_table 0.5 步已经查过),
+            #       顶层 first_big_table_alert 也照常取
+            single_big_table_alert = single.get("big_table_alert")
             tables_diff.append({
                 "ok": False,
                 "table_name": single.get("table_name", "?"),
@@ -1239,8 +1260,11 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
                 "mid_risk_count": 0,
                 "low_risk_count": 0,
                 "summary": single.get("error", "解析失败"),
-                "big_table_alert": None,
+                "big_table_alert": single_big_table_alert,  # 关键: 保留单表大表 alert
             })
+            # 大表 alert 顶层汇总也要 (业务方 ok=False 但有 big_table_alert 也要弹 banner)
+            if single_big_table_alert and not first_big_table_alert:
+                first_big_table_alert = single_big_table_alert
             continue
 
         if single.get("table_exists"):
@@ -1258,6 +1282,7 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
             "ok": False,
             "error": "SQL 不包含任何 MODIFY/ADD/DROP COLUMN 字段变更",
             "hint": "只支持 ALTER TABLE ... MODIFY/ADD/DROP COLUMN",
+            "big_table_alert": first_big_table_alert,  # 关键: not changes 时也带上大表 alert
         }
 
     if not any_table_exists:
@@ -1265,6 +1290,7 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
             "ok": False,
             "error": "所有 ALTER 涉及表都不存在或查不到列定义",
             "tables": tables_diff,
+            "big_table_alert": first_big_table_alert,  # 关键: 表不存在也带上大表 alert (虽然 size_info 可能为 None)
         }
 
     # 3. 全局 summary

@@ -699,6 +699,57 @@
 
         }
 
+        {# CUSTOM-MODIFIED: 9/11 DBA-bug-3 大表 alert 渲染 helper @ 2026-09-11 @ mavis
+         业务: ok=False 但 big_table_alert 不为 None 时 (ADD INDEX/DROP INDEX/RENAME 等非字段变更),
+               单独渲染大表 alert 到 modal (没字段 diff) + 主页面 banner
+         关联: docs/changelogs/2026-09-11_dba-bug-3-big-table-alert-add-index-drop-index.md #}
+        function renderBigTableAlertOnly(bta) {
+            return '<div class="alert alert-danger" ' +
+                         'style="margin:14px 18px;padding:18px 22px;border-left:4px solid #b06367;">' +
+                        '<div style="display:flex;align-items:flex-start;gap:14px;">' +
+                            '<i class="fa fa-exclamation-triangle" style="font-size:24px;color:#b06367;flex-shrink:0;margin-top:2px;"></i>' +
+                            '<div style="flex:1;">' +
+                                '<strong style="font-size:16px;color:#5a3a3a;">⚠️ 检测到 <code style="color:#b06367;background:rgba(176,99,103,0.1);padding:1px 6px;border-radius:3px;">' + escapeHtml(bta.table_name) + '</code> 是大表 DDL</strong>' +
+                                '<div style="margin-top:6px;color:#5a3a3a;font-size:14px;">' +
+                                    '行数 <strong>' + bta.rows + '</strong> / 数据大小 <strong>' + bta.size_mb + ' MB</strong>' +
+                                    ' (阈值: ' + bta.row_threshold + ' 行 或 ' + bta.size_threshold_mb + ' MB)' +
+                                '</div>' +
+                                '<div style="margin-top:10px;color:#5a3a3a;font-size:14px;line-height:1.55;">' +
+                                    '<strong>当前 SQL 不含字段变更 (没 MODIFY/ADD/DROP COLUMN), 但仍是大表 DDL。</strong>' +
+                                    '<br/>走原路径"立即执行"会<strong>锁表</strong> (业务写入阻塞几秒到几分钟)。' +
+                                    '<br/><strong>强烈建议在上方勾选"启用 gh-ost 无锁变更"</strong> —— 提交后自动走 5 道预检, gh-ost 走完无需锁表。' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>';
+        }
+
+        function renderBigTableBanner(bta) {
+            // 重复检测先清空, 避免堆叠
+            $("#sqlsubmit-big-table-alert-banner").remove();
+            var bannerHtml =
+                '<div class="alert alert-danger" id="sqlsubmit-big-table-alert-banner" ' +
+                     'style="margin:12px 0;padding:14px 18px;border-left:4px solid #b06367;' +
+                              'background:rgba(176, 99, 103, 0.06);">' +
+                    '<div style="display:flex;align-items:flex-start;gap:14px;">' +
+                        '<i class="fa fa-exclamation-triangle" style="font-size:22px;color:#b06367;flex-shrink:0;margin-top:2px;"></i>' +
+                        '<div style="flex:1;">' +
+                            '<strong style="font-size:15px;color:#5a3a3a;">⚠️ 检测到 <code style="color:#b06367;background:rgba(176,99,103,0.1);padding:1px 6px;border-radius:3px;">' + escapeHtml(bta.table_name) + '</code> 是大表 DDL</strong>' +
+                            '<div style="margin-top:6px;color:#5a3a3a;font-size:13px;">' +
+                                '行数 <strong>' + bta.rows + '</strong> / 数据大小 <strong>' + bta.size_mb + ' MB</strong>' +
+                                ' (阈值: ' + bta.row_threshold + ' 行 或 ' + bta.size_threshold_mb + ' MB)' +
+                            '</div>' +
+                            '<div style="margin-top:8px;color:#5a3a3a;font-size:13px;line-height:1.55;">' +
+                                '大表 DDL 走原路径"立即执行"会<strong>锁表</strong> (业务写入阻塞几秒到几分钟)。' +
+                                '<br/><strong>强烈建议在上方勾选"启用 gh-ost 无锁变更"</strong> —— 提交后自动走 5 道预检, gh-ost 走完无需锁表。' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            // 插到 inception-result 下面 (检测结果表格之后)
+            $("#inception-result").after(bannerHtml);
+        }
+
         {# CUSTOM-MODIFIED: v0.3.x 字段 diff 联动函数 @ 2026-08-12 @ mavis #}
         {# ALTER TABLE 自动触发; 其他类型静默; 失败 fallback 不显示 #}
         function fetchColumnDiff(sqlContent, instanceId, dbName) {
@@ -724,16 +775,24 @@
                 dataType: "json",
                 data: {instance_id: instanceId, db_name: dbName, sql_content: sqlContent},
                 success: function (data) {
-                    if (!data.ok) {
-                        // 表不存在 / SQL 不含 MODIFY 等, 静默不显示
+                    // CUSTOM-MODIFIED: 9/11 DBA-bug-3 ok=False 但有大表 alert 也显示 @ 2026-09-11 @ mavis
+                    // 业务: ADD INDEX / DROP INDEX / RENAME 等非字段变更 DDL, 端点返 ok=False 但带 big_table_alert,
+                    //       之前 if (!data.ok) 直接 return, 业务方实战 consume_flow 5M+ 行 ADD INDEX 完全错过大表 alert
+                    // 修法: ok=False 但 big_table_alert 不为空时, 也清空旧 banner + 渲染新 banner + 弹 modal
+                    // 关联: docs/changelogs/2026-09-11_dba-bug-3-big-table-alert-add-index-drop-index.md
+                    $("#sqlsubmit-big-table-alert-banner").remove();
+                    if (!data.ok && !data.big_table_alert) {
+                        // 真正静默: 表不存在 / SQL 不含 MODIFY 等, 也没大表
                         $("#column-diff-modal-body").empty();
                         $("#column-diff-inline").hide();
-                        // CUSTOM-MODIFIED: 9/11 DBA-bug-2 大表 alert 同步到主页面 banner
-                        // 业务: 之前大表 alert 只塞 modal body, 业务方没注意 modal 就完全错过
-                        //       现在主页面顶部加红色 banner, 跟 detail.html 大表 alert 风格一致
-                        //       重复检测先清空旧 banner, 避免堆叠
-                        // 关联: docs/changelogs/2026-09-11_dba-bug-2-big-table-alert-backtick-schema.md
-                        $("#sqlsubmit-big-table-alert-banner").remove();
+                        return;
+                    }
+                    if (!data.ok && data.big_table_alert) {
+                        // ok=False 但有大表 alert (ADD INDEX/DROP INDEX/RENAME 等非字段变更)
+                        // 单独渲染大表 alert 到 modal, 没字段 diff
+                        $("#column-diff-modal-body").html(renderBigTableAlertOnly(data.big_table_alert));
+                        $('#columnDiffModal').modal('show');
+                        renderBigTableBanner(data.big_table_alert);
                         return;
                     }
                     renderColumnDiff(data);
@@ -741,30 +800,8 @@
                     $('#columnDiffModal').modal('show');
                     // CUSTOM-MODIFIED: 9/11 DBA-bug-2 大表 alert 同步到主页面 banner
                     // 业务: 大表 DDL 必须前置显眼, 不能依赖用户开 modal
-                    $("#sqlsubmit-big-table-alert-banner").remove();
                     if (data.big_table_alert) {
-                        var bta = data.big_table_alert;
-                        var bannerHtml =
-                            '<div class="alert alert-danger" id="sqlsubmit-big-table-alert-banner" ' +
-                                 'style="margin:12px 0;padding:14px 18px;border-left:4px solid #b06367;' +
-                                          'background:rgba(176, 99, 103, 0.06);">' +
-                                '<div style="display:flex;align-items:flex-start;gap:14px;">' +
-                                    '<i class="fa fa-exclamation-triangle" style="font-size:22px;color:#b06367;flex-shrink:0;margin-top:2px;"></i>' +
-                                    '<div style="flex:1;">' +
-                                        '<strong style="font-size:15px;color:#5a3a3a;">⚠️ 检测到 <code style="color:#b06367;background:rgba(176,99,103,0.1);padding:1px 6px;border-radius:3px;">' + escapeHtml(bta.table_name) + '</code> 是大表 DDL</strong>' +
-                                        '<div style="margin-top:6px;color:#5a3a3a;font-size:13px;">' +
-                                            '行数 <strong>' + bta.rows + '</strong> / 数据大小 <strong>' + bta.size_mb + ' MB</strong>' +
-                                            ' (阈值: ' + bta.row_threshold + ' 行 或 ' + bta.size_threshold_mb + ' MB)' +
-                                        '</div>' +
-                                        '<div style="margin-top:8px;color:#5a3a3a;font-size:13px;line-height:1.55;">' +
-                                            '大表 DDL 走原路径"立即执行"会<strong>锁表</strong> (业务写入阻塞几秒到几分钟)。' +
-                                            '<br/><strong>强烈建议在上方勾选"启用 gh-ost 无锁变更"</strong> —— 提交后自动走 5 道预检, gh-ost 走完无需锁表。' +
-                                        '</div>' +
-                                    '</div>' +
-                                '</div>' +
-                            '</div>';
-                        // 插到 inception-result 下面 (检测结果表格之后)
-                        $("#inception-result").after(bannerHtml);
+                        renderBigTableBanner(data.big_table_alert);
                     }
                 },
                 error: function () {
