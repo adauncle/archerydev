@@ -1,0 +1,3 @@
+@echo off
+chcp 65001 > nul
+F:\putty\plink.exe -ssh -pw lAqfb8uEmQYsnGNQwIHtGPwukjCz6J -hostkey SHA256:DHkk6e+b9hkybykAzqxARzkng5AHfvmO8v5KY0XNsLU root@172.20.2.110 "cd /dbdata/archery_v114_c9236a0 && sudo -u archery env CAS_SERVER_URL=https://cas.example.com CAS_VERSION=3 /dbdata/archery_v114_c9236a0/venv/bin/python -c 'import sys,os,django;sys.path.insert(0,\"/dbdata/archery_v114_c9236a0\");os.environ.setdefault(\"DJANGO_SETTINGS_MODULE\",\"archery.settings\");django.setup();from django.conf import settings;print(\"CUSTOM_GH_OST_ENABLED=\",settings.CUSTOM_GH_OST_ENABLED);print(\"CUSTOM_BIG_TABLE_ROW_THRESHOLD=\",settings.CUSTOM_BIG_TABLE_ROW_THRESHOLD);print(\"CUSTOM_BIG_TABLE_SIZE_THRESHOLD_MB=\",settings.CUSTOM_BIG_TABLE_SIZE_THRESHOLD_MB)' 2>&1 | head -10"

@@ -413,34 +413,13 @@
         </div>
     </div>
 
-    <!--审核备注输入框-->
-    {% if is_can_review or is_can_cancel %}
-        <textarea id="remark" name="remark" class="form-control" data-name="审核备注"
-                  placeholder="请填写审核备注/终止原因" rows=3></textarea>
-        <br>
-    {% endif %}
-    <!--审核人修改可执行时间按钮-->
-    {% if is_can_review %}
-        <form id="from-passed" action="/passed/" method="post" style="display:inline-block;">
-            {% csrf_token %}
-            <input type="hidden" name="workflow_id" value="{{ workflow_detail.id }}">
-            <input type="hidden" id="audit_remark" name="audit_remark" value="">
-            <input type="button" class="btn btn-info" data-toggle="modal" data-target="#Executabletime"
-                   value="可执行时间变更"/>
-        </form>
-    {% endif %}
-    <!--审核通过按钮-->
-    {% if is_can_review %}
-        <form id="from-passed" action="/passed/" method="post" style="display:inline-block;">
-            {% csrf_token %}
-            <input type="hidden" name="workflow_id" value="{{ workflow_detail.id }}">
-            <input type="hidden" id="audit_remark" name="audit_remark" value="">
-            <input type="button" id="btnPass" class="btn btn-success" value="审核通过"/>
-        </form>
-    {% endif %}
-    <!-- CUSTOM-MODIFIED: v0.3.0-beta 大表 DDL 防呆 alert (DBA 兜底)
-         关联 changelog: docs/changelogs/2026-08-11_gh-ost-dba-fallback.md
-         @ 2026-08-11 @ mavis -->
+    <!-- CUSTOM-MODIFIED: 9/11 DBA-bug-1 大表 DDL alert 移到审核按钮上面 @ 2026-09-11 @ mavis
+         业务: 审批人登录 detail 页第一眼就该看到大表风险, 不能被审核按钮压在下面.
+         8/11 v0.3.0-beta 设计: alert 在 line 441 (审核按钮后面), 审批人容易直接点"审核通过"忽略风险.
+         9/11 实战踩坑: 阿达叔叔翻 wf#4803 审批中状态 detail 页, 大表 alert 完全没显示.
+         修法: alert 块从 line 441 移到 line 416 之前 (审核备注输入框之前, 审批按钮最前面).
+         关联: docs/changelogs/2026-09-11_dba-bug-1-big-table-alert-drop-index-and-review-visibility.md
+    -->
     {% if big_table_alert %}
     <div class="alert alert-danger" id="big-table-alert"
          style="margin:12px 0;padding:14px 18px;border-left:4px solid #b06367;">
@@ -488,6 +467,31 @@
             </div>
         </div>
     </div>
+    {% endif %}
+    <!--审核备注输入框-->
+    {% if is_can_review or is_can_cancel %}
+        <textarea id="remark" name="remark" class="form-control" data-name="审核备注"
+                  placeholder="请填写审核备注/终止原因" rows=3></textarea>
+        <br>
+    {% endif %}
+    <!--审核人修改可执行时间按钮-->
+    {% if is_can_review %}
+        <form id="from-passed" action="/passed/" method="post" style="display:inline-block;">
+            {% csrf_token %}
+            <input type="hidden" name="workflow_id" value="{{ workflow_detail.id }}">
+            <input type="hidden" id="audit_remark" name="audit_remark" value="">
+            <input type="button" class="btn btn-info" data-toggle="modal" data-target="#Executabletime"
+                   value="可执行时间变更"/>
+        </form>
+    {% endif %}
+    <!--审核通过按钮-->
+    {% if is_can_review %}
+        <form id="from-passed" action="/passed/" method="post" style="display:inline-block;">
+            {% csrf_token %}
+            <input type="hidden" name="workflow_id" value="{{ workflow_detail.id }}">
+            <input type="hidden" id="audit_remark" name="audit_remark" value="">
+            <input type="button" id="btnPass" class="btn btn-success" value="审核通过"/>
+        </form>
     {% endif %}
     <!--立即执行按钮-->
     {% if is_can_execute %}

@@ -250,13 +250,34 @@ def _parse_first_alter(sql_content: str) -> dict:
 
     跟 gh-ost 的 _parse_first_alter 等价, 这里不引跨 app 函数避免启动期循环.
     返回 {"db": str|None, "table": str|None, "full": str|None}, 失败返 None.
+
+    9/11 DBA-bug-1 修法: 预处理 SQL, 去掉 use/注释/空行后再 re.match.
+    8/26 漏测: 8 个单元测试 case 都是单条干净 ALTER, 没覆盖 use + 注释前缀场景.
+    9/11 实战踩坑 (wf#4803 业务方 drop index 工单): 真实 SQL 经常是
+        use hly_platform;
+        -- 删除无用索引 xxx
+        ALTER TABLE waybill_union_carrier drop index idx_way_bill_id
+    re.match 从字符串开头匹配, 看到 u/- 直接 NO MATCH, table=None, 大表 alert 不显示.
+    修法: 逐行扫描, 跳过 use / -- 注释 / 空行, 找到第一个 ALTER 再 re.match.
+    关联: docs/changelogs/2026-09-11_dba-bug-1-big-table-alert-drop-index-and-review-visibility.md
+    @ 2026-09-11 @ mavis
     """
     import re
     if not sql_content:
         return None
+    # CUSTOM-MODIFIED: 9/11 DBA-bug-1 预处理 SQL 前缀 (use / -- 注释 / 空行)
+    cleaned_lines = []
+    for line in sql_content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("--"):
+            continue
+        if re.match(r"^\s*use\s+", stripped, re.IGNORECASE):
+            continue
+        cleaned_lines.append(stripped)
+    cleaned = "\n".join(cleaned_lines).strip()
     m = re.match(
         r"^\s*ALTER\s+TABLE\s+(?:(?P<schema>[^`\s.()]+)\.)?`?(?P<table>[^`\s(]+)`?",
-        sql_content.strip(),
+        cleaned,
         re.IGNORECASE,
     )
     if not m:
@@ -341,7 +362,19 @@ def detail(request, workflow_id):
     ## 阈值: 行数 ≥ 10w 或 大小 ≥ 100MB 视为大表
     ## @ 2026-08-11 @ mavis
     big_table_alert = None  # None or dict{rows, size_mb, table_name}
-    if workflow_detail.status == "workflow_review_pass" and not has_ghost_task:
+    ## CUSTOM-MODIFIED: 9/11 DBA-bug-1 状态限制放宽 (审批中 + 审批通过 + 已完成 都检测) @ 2026-09-11 @ mavis
+    ## 业务: 审批人在 workflow_manreviewing 状态就要看到大表提示 (而不是审批通过后才看到)
+    ## 8/11 v0.3.0-beta 设计初心是 DBA 兜底 (审批通过后 DBA 执行前才提示), 漏了审批人防呆
+    ## 9/11 实战踩坑: 阿达叔叔翻 wf#4803 (已正常结束) 详情页, 大表 alert 完全没有 (回看历史工单也看不到)
+    ## 修法: status in (manreviewing, review_pass, finish, finish_manual) 都触发
+    ## 关联: docs/changelogs/2026-09-11_dba-bug-1-big-table-alert-drop-index-and-review-visibility.md
+    status_for_alert = workflow_detail.status in (
+        "workflow_manreviewing",
+        "workflow_review_pass",
+        "workflow_finish",
+        "workflow_finish_manual",
+    )
+    if status_for_alert and not has_ghost_task:
         try:
             sql_text = _workflow_sql_text(workflow_detail)
             parsed = _parse_first_alter(sql_text)
