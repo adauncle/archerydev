@@ -699,10 +699,13 @@
 
         }
 
-        {# CUSTOM-MODIFIED: 9/11 DBA-bug-3 大表 alert 渲染 helper @ 2026-09-11 @ mavis
-         业务: ok=False 但 big_table_alert 不为 None 时 (ADD INDEX/DROP INDEX/RENAME 等非字段变更),
-               单独渲染大表 alert 到 modal (没字段 diff) + 主页面 banner
-         关联: docs/changelogs/2026-09-11_dba-bug-3-big-table-alert-add-index-drop-index.md #}
+        // CUSTOM-MODIFIED: 9/11 DBA-bug-3 大表 alert 渲染 helper @ 2026-09-11 @ mavis
+        // 业务: ok=False 但 big_table_alert 不为 None 时 (ADD INDEX/DROP INDEX/RENAME 等非字段变更),
+        //       单独渲染大表 alert 到 modal (没字段 diff) + 主页面 banner
+        // 关联: docs/changelogs/2026-09-11_dba-bug-3-big-table-alert-add-index-drop-index.md
+        // 注意: 之前用 Django 模板注释 {# #} 包裹, 但里面 JS 字符串含 } 字符
+        //       Django 解析器可能误识别 #}, 导致 {# ... 留在 JS 输出, JS 报 SyntaxError
+        //       改成 // 单行注释, Django 不解析, JS 安全
         function renderBigTableAlertOnly(bta) {
             return '<div class="alert alert-danger" ' +
                          'style="margin:14px 18px;padding:18px 22px;border-left:4px solid #b06367;">' +
