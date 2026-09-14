@@ -53,10 +53,21 @@ class TargetGroupNotConfiguredError(Exception):
 
 
 # ===== SQL 解析辅助 (跟 sql/views.py §_parse_first_alter 套路一致) =====
-
+## CUSTOM-MODIFIED: 9/12 DBA-bug-5a regex 跟 views.py 对齐 (支持反引号 schema) @ 2026-09-12 @ mavis
+## 关联: docs/changelogs/2026-09-12_dba-bug-5a-sync-trigger-regex-blacklist.md
+## 根因 (9/12 11:35): 老 regex 漏修反引号 schema, 业务方 `` ALTER TABLE `hly_billing`.`consume_flow` ADD INDEX ``
+##                  → _extract_table_name 错返 'hly_billing' (不是 'consume_flow')
+##                  → _should_sync 黑名单 miss (黑名单是 'consume_flow' 不是 'hly_billing')
+##                  → 镜像工单 wf#4808 误生成, 业务方在历史库走 gh-ost 预检发现表不存在
+## 实战踩坑: 9/11 DBA-bug-2 修 regex 一致性时只对齐了 2 个文件 (views.py + column_diff.py),
+##         漏了第 3 个文件 sync_trigger.py:57-60, 9/12 实战又踩一次
+## 修法: 跟 views.py _FIRST_ALTER_RE (sql/extensions/ddl_gh_ost/views.py:72-76) 完全对齐
+##       加 DOTALL 防多行漏匹配 (跟 9/11 DBA-bug-2 一致)
+## 实战新发现 (跨项目可复用): regex 跨文件一致性, 改一个 regex 修一个 bug 时, 必 grep 全代码库找同款
 _ALTER_PATTERN = re.compile(
-    r"^\s*ALTER\s+TABLE\s+(?:(?P<schema>[^`\s.()]+)\.)?`?(?P<table>[^`\s(]+)`?",
-    re.IGNORECASE,
+    r"^\s*ALTER\s+TABLE\s+`?(?P<schema>[^`\s.()]+(?:\.`?[^`\s.()]+`?)?`?\.)?`?"
+    r"(?P<table>[^`\s(]+)`?",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -65,10 +76,33 @@ def _extract_table_name(sql_content: str) -> str:
 
     只认 ALTER TABLE 开头, 其他 DDL (CREATE/DROP/RENAME) 暂时不触发 (Phase 2 加).
     返回 table_name (str), 解析失败返 "".
+
+    ## CUSTOM-MODIFIED: 9/12 DBA-bug-5a 加 use/注释/空行预处理 @ 2026-09-12 @ mavis
+    ## 关联: docs/changelogs/2026-09-12_dba-bug-5a-sync-trigger-regex-blacklist.md
+    ## 根因 (9/12 11:35): 老逻辑直接 re.match(sql.strip()), 业务方 wf#4803 实战写过
+    ##                  "use hly_platform;\n-- 注释\nALTER TABLE ..." 形态, 老逻辑 NO MATCH 返 ""
+    ##                  → 黑名单 / 白名单 判定全 miss, 镜像工单误生成
+    ## 修法: 跟 views.py _parse_first_alter (sql/views.py:79-108, 9/11 DBA-bug-1 修过) 同步,
+    ##       先 splitlines 跳过 use/-- 注释/空行, 再 re.match
+    ## 实战新发现 (跨项目可复用): regex 跨文件一致性, 改一个 regex 修一个 bug 时,
+    ##       必看配套的 use/注释预处理函数是不是也漏了
     """
     if not sql_content:
         return ""
-    m = _ALTER_PATTERN.match(sql_content.strip())
+    # 9/12 修: 跟 views.py _parse_first_alter 同款预处理 (跳过 use/注释/空行)
+    cleaned_lines = []
+    for line in sql_content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("--"):
+            continue
+        # 跳过 use xxx; 这种前缀 (DBA-bug-1 实战踩坑, 9/11 17:55 修过)
+        if re.match(r"^\s*use\s+", stripped, re.IGNORECASE):
+            continue
+        cleaned_lines.append(stripped)
+    cleaned = "\n".join(cleaned_lines).strip()
+    if not cleaned:
+        return ""
+    m = _ALTER_PATTERN.match(cleaned)
     if not m:
         return ""
     return (m.group("table") or "").strip("`")
