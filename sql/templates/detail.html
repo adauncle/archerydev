@@ -453,7 +453,16 @@
                         <i class="fa fa-warning"></i> 立即执行（确认锁表）
                     </button>
                     {% endif %}
-                    {% if is_can_cancel %}
+                    <!-- CUSTOM-MODIFIED: 9/15 镜像工单取消按钮加 wf.status 守卫 (终态隐藏) @ 2026-09-15 @ mavis -->
+                    <!-- 根因 (9/15 16:43): 老逻辑只看权限层变量 is_can_cancel, 终态 wf (workflow_abort/finish/exception) -->
+                    <!--              → can_cancel 返 False (result 默认值), 但 is_can_review 可能 True (superuser 例外) -->
+                    <!--              → 按钮显示但点了后端报"无权操作", UX 误导 -->
+                    <!-- 修法: 加 wf.status 守卫, 终态直接隐藏, 用户看不到就不会去点 -->
+                    <!-- 实战新发现 (跨项目可复用): UI 跟后端判断逻辑必须对齐, 别让用户看到点了没用的按钮 -->
+                    <!-- 关联: docs/changelogs/2026-09-15_mirror-cancel-button-final-state.md -->
+                    <!-- 注意: 用 HTML 注释, 不用 Django 模板注释 (跨行不识别, 跟 9/11 DBA-bug-3 hotfix 同款) -->
+                    <!-- 注意: 不能用 "if status in 'a,b,c'" 字符串列表, Django lexer 在字符串里看到单引号会误判闭合 -->
+                    {% if is_can_cancel and workflow_detail.status == 'workflow_manreviewing' or is_can_cancel and workflow_detail.status == 'workflow_review_pass' or is_can_cancel and workflow_detail.status == 'workflow_timingtask' %}
                     <form action="/cancel/" method="post" style="display:inline-block;margin:0;">
                         {% csrf_token %}
                         <input type="hidden" name="workflow_id" value="{{ workflow_detail.id }}">
@@ -521,13 +530,17 @@
         {% endif %}
     {% endif %}
     <!--终止执行按钮-->
-    {% if is_can_review or is_can_cancel %}
+    <!-- CUSTOM-MODIFIED: 9/15 加 wf.status 守卫 (终态隐藏 cancel 按钮) @ 2026-09-15 @ mavis -->
+    <!-- 关联: docs/changelogs/2026-09-15_mirror-cancel-button-final-state.md -->
+    {% if workflow_detail.status in 'workflow_manreviewing,workflow_review_pass,workflow_timingtask' %}
+        {% if is_can_review or is_can_cancel %}
         <form id="form-cancel" action="/cancel/" method="post" style="display:inline-block;">
             {% csrf_token %}
             <input type="hidden" name="workflow_id" value="{{ workflow_detail.id }}">
             <input type="hidden" id="cancel_remark" name="cancel_remark" value="">
             <input type="button" id="btnCancel" class="btn btn-default" value="终止流程"/>
         </form>
+        {% endif %}
     {% endif %}
     {% if workflow_detail.status == 'workflow_finish' and workflow_detail.is_offline_export %}
         <form id="form-download" class="form-horizontal">
