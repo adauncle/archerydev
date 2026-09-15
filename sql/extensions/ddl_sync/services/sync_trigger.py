@@ -397,6 +397,27 @@ def workflow_terminal_handler(sender, instance, created, **kwargs):
                 h.target_workflow.status = instance.status
                 h.target_workflow.save(update_fields=['status'])
 
+                ## CUSTOM-MODIFIED: 9/15 D7 联动 target_workflow audit.current_status (DBA-bug-7) @ 2026-09-15 @ mavis
+                ## 关联: docs/changelogs/2026-09-15_todo-list-final-state-wf.md
+                ## 根因 (9/15 18:30): 老逻辑只联动 wf.status + DdlSyncHistory, 没联动 audit, 导致
+                ##       待办列表 (common/workflow.py:32) 过滤 audit.current_status=WAITING 时
+                ##       还能命中终态 wf, 业务方待办列表里有 workflow_abort wf (马克群反馈)
+                ## 修法: 把 target_workflow 的 audit.current_status 也联动到对应终态 (跟 wf.status 同步),
+                ##       D25 思路一致 (联动所有相关表, 别只联动一两个)
+                ## 实战新发现 (跨项目可复用): wf.status 联动必同时联动 audit.current_status
+                from sql.models import WorkflowAudit
+                from common.utils.const import WorkflowStatus as _WFStatus
+                audit_status_map = {
+                    'workflow_reject': _WFStatus.REJECTED,
+                    'workflow_abort': _WFStatus.ABORTED,
+                    'workflow_exception': _WFStatus.ABORTED,  # exception 也归 ABORTED (上游设计如此)
+                }
+                target_audits = WorkflowAudit.objects.filter(workflow_id=h.target_workflow_id)
+                for ta in target_audits:
+                    ta.current_status = audit_status_map.get(instance.status, _WFStatus.ABORTED)
+                    ta.next_audit = "-1"
+                    ta.save()
+
                 # DdlSyncHistory 切终态
                 if instance.status == 'workflow_exception':
                     h.sync_status = 'failed'
@@ -411,7 +432,7 @@ def workflow_terminal_handler(sender, instance, created, **kwargs):
                 h.save()
 
                 logger.info(
-                    "ddl_sync.workflow_terminal_handler: 联动终止 pair=%s source_wf=%s target_wf=%s status=%s",
+                    "ddl_sync.workflow_terminal_handler: 联动终止 pair=%s source_wf=%s target_wf=%s status=%s (含 audit 联动)",
                     h.pair_id, instance.id, h.target_workflow_id, instance.status,
                 )
             except Exception as e:
@@ -498,6 +519,27 @@ def target_workflow_status_handler(sender, instance, created, **kwargs):
                     h.error_message = (
                         (h.error_message + '\n') if h.error_message else ''
                     ) + f'镜像工单 #{instance.id} status={instance.status} → DdlSyncHistory 联动切 {new_sync_status}'
+
+                ## CUSTOM-MODIFIED: 9/15 D7 联动 audit.current_status (DBA-bug-7) @ 2026-09-15 @ mavis
+                ## 关联: docs/changelogs/2026-09-15_todo-list-final-state-wf.md
+                ## 根因 (9/15 18:30): 老 D23 handler 只联动 DdlSyncHistory, 没联动 audit, 导致
+                ##       待办列表 (common/workflow.py:32) 过滤 audit.current_status=WAITING 时
+                ##       还能命中终态 wf (D11 hotfix 联动也不全, 漏 audit)
+                ## 修法: 终态联动 audit.current_status (workflow_reject/abort/exception),
+                ##       workflow_finish 不动 (DBA 手动审+执行成功, audit 早就被 operate_pass 联动到 PASSED)
+                if instance.status != 'workflow_finish':
+                    from sql.models import WorkflowAudit
+                    from common.utils.const import WorkflowStatus as _WFStatus
+                    audit_status_map = {
+                        'workflow_reject': _WFStatus.REJECTED,
+                        'workflow_abort': _WFStatus.ABORTED,
+                        'workflow_exception': _WFStatus.ABORTED,
+                    }
+                    instance_audits = WorkflowAudit.objects.filter(workflow_id=instance.id)
+                    for ia in instance_audits:
+                        ia.current_status = audit_status_map.get(instance.status, _WFStatus.ABORTED)
+                        ia.next_audit = "-1"
+                        ia.save()
 
                 h.save()
 

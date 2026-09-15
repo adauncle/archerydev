@@ -4,7 +4,7 @@ from django.http import HttpResponse
 
 from common.utils.const import WorkflowStatus
 from common.utils.extend_json_encoder import ExtendJSONEncoder, ExtendJSONEncoderFTime
-from sql.models import WorkflowAudit, WorkflowLog
+from sql.models import SqlWorkflow, WorkflowAudit, WorkflowLog
 from sql.utils.resource_group import user_groups
 
 
@@ -34,6 +34,16 @@ def lists(request):
         current_status=WorkflowStatus.WAITING,
         group_id__in=group_ids,
         current_audit__in=auth_group_ids,
+        ## CUSTOM-MODIFIED: 9/15 待办列表加 wf.status 守卫, 终态 wf 不显示 (DBA-bug-7) @ 2026-09-15 @ mavis
+        ## 根因: 待办列表只看 audit.current_status, 不联动 wf.status. wf 终止后 (workflow_abort/finish/exception/reject)
+        ##       audit 表没联动 (D11 hotfix workflow_terminal_handler 漏 audit 联动), 待办列表还显示终态 wf
+        ##       (马克群 9/15 18:16 反馈 wf#4827-#4830 4 个镜像工单已经 workflow_abort 还出现)
+        ## 修法: 加 wf.status__in 守卫, 终态 wf 直接排除 (前端兜底, 不依赖 audit 联动)
+        ## 关联: docs/changelogs/2026-09-15_todo-list-final-state-wf.md
+        ## 实战新发现 (跨项目可复用): 待办/审批列表 query 设计 checklist 必加 1 条: 必加 wf.status IN (活态) 兜底过滤
+        workflow_id__in=SqlWorkflow.objects.filter(
+            status__in=("workflow_manreviewing", "workflow_review_pass", "workflow_timingtask")
+        ).values_list("id", flat=True),
     )
     # 过滤工单类型
     if workflow_type != 0:

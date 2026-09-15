@@ -76,16 +76,19 @@ if not instances:
 print(f"\n[2/3] 用 instance_id={instances[0]} 测试 SQL")
 
 SQLS = [
-    ("图1 consume_flow ADD INDEX", "ALTER TABLE `hly_billing`.`consume_flow`\nADD INDEX `idx_create_time` (`create_time`)"),
-    ("图2 consume_flow modify column", "ALTER TABLE `hly_billing`.`consume_flow`\nmodify column `vehicle_plate` varchar(128) DEFAULT NULL COMMENT '车牌'"),
-    ("回归: waybill drop index", "use hly_platform;\nalter table waybill_union_carrier drop index idx_way_bill_id"),
+    # 业务方真实场景: 工单库是 hly_accesscard, SQL 跨库改 hly_billing.consume_flow
+    ("业务方真实 (库=hly_accesscard, SQL 改 hly_billing.consume_flow)", "ALTER TABLE `hly_billing`.`consume_flow` ADD INDEX `idx_create_time` (`create_time`)"),
+    ("业务方真实 (库=hly_accesscard, DROP INDEX)", "ALTER TABLE `hly_billing`.`consume_flow` DROP INDEX `idx_create_time`"),
+    # 跨库真实场景: 库名是 SELECT 的库, 不是 DDL 改的库
+    ("库=hly_billing, ADD INDEX (对照)", "ALTER TABLE `hly_billing`.`consume_flow` ADD INDEX `idx_create_time` (`create_time`)"),
 ]
 
 for name, sql in SQLS:
     print(f"\n--- {name} ---")
     print(f"SQL: {sql[:120]!r}")
+    # 业务方真实场景: 库=hly_accesscard (从 select 选), SQL 跨库改 hly_billing
     data_post = urllib.parse.urlencode({
-        "instance_id": instances[0], "db_name": "hly_billing", "sql_content": sql,
+        "instance_id": instances[0], "db_name": "hly_accesscard", "sql_content": sql,
     }).encode()
     req = urllib.request.Request(
         f"{BASE}/gh_ost/column_diff/",
