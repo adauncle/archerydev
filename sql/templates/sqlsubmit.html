@@ -824,6 +824,30 @@
                 $("#column-diff-modal-body").empty();
                 return;
             }
+            // CUSTOM-MODIFIED: DBA-bug-9.5 同时调 /gh_ost/check_non_alter/ 检测非 ALTER @ 2026-09-16 @ mavis
+            // 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+            // 业务: 业务方实测工单含 CREATE TABLE + ALTER, backend 拒绝, 但前端 SQL 检测弹窗没显示
+            //       "请拆分独立工单" 提示
+            // 修法: 在 fetchColumnDiff 同时调 /gh_ost/check_non_alter/ 拿到非 ALTER 类型,
+            //       在弹窗 modal 顶部加警告 banner
+            $.ajax({
+                type: "post",
+                url: "/gh_ost/check_non_alter/",
+                dataType: "json",
+                data: {sql_content: sqlContent},
+                success: function (naData) {
+                    window.__nonAlterData = naData;
+                    // 调用主 column_diff
+                    doFetchColumnDiff(sqlContent, instanceId, dbName);
+                },
+                error: function () {
+                    window.__nonAlterData = null;
+                    doFetchColumnDiff(sqlContent, instanceId, dbName);
+                }
+            });
+        }
+
+        function doFetchColumnDiff(sqlContent, instanceId, dbName) {
             $.ajax({
                 type: "post",
                 url: "/gh_ost/column_diff/",
@@ -892,28 +916,82 @@
             // 业务: 开发点"SQL检测"时就该看到大表 DDL 警告, 不需要等审批通过后 DBA 执行阶段才看到。
             // 关联: docs/changelogs/2026-08-13_sqlsubmit-big-table-alert.md
             // 端点 /gh_ost/column_diff/ 返回里 big_table_alert 字段 (跟 detail.html big_table_alert 同一逻辑)
+            // CUSTOM-MODIFIED: DBA-bug-9.5 改成支持多张大表 (data.big_tables 列表) @ 2026-09-16 @ mavis
+            // 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+            // 业务: 业务方实测 wf#4841 类似工单 4 张大表, 旧版只显示第一张 (顶层 big_table_alert)
+            // 修法: 用 data.big_tables 列表渲染, 每张大表一段
             var bigTableAlertHtml = "";
-            if (data.big_table_alert) {
-                var bta = data.big_table_alert;
-                bigTableAlertHtml =
-                    '<div class="alert" id="sqlsubmit-big-table-alert" ' +
-                         'style="background:rgba(176, 99, 103, 0.06);border:1px solid #b06367;border-left:4px solid #b06367;' +
-                                  'padding:14px 18px;margin-bottom:14px;border-radius:4px;">' +
-                        '<div style="display:flex;align-items:flex-start;gap:14px;">' +
-                            '<i class="fa fa-exclamation-triangle" style="font-size:22px;color:#b06367;flex-shrink:0;margin-top:2px;"></i>' +
-                            '<div style="flex:1;">' +
-                                '<strong style="font-size:15px;color:#5a3a3a;">⚠️ 检测到 <code style="color:#b06367;background:rgba(176,99,103,0.1);padding:1px 6px;border-radius:3px;">' + escapeHtml(bta.table_name) + '</code> 是大表 DDL</strong>' +
-                                '<div style="margin-top:6px;color:#5a3a3a;font-size:13px;">' +
-                                    '行数 <strong>' + bta.rows + '</strong> / 数据大小 <strong>' + bta.size_mb + ' MB</strong>' +
-                                    '（阈值: ' + bta.row_threshold + ' 行 或 ' + bta.size_threshold_mb + ' MB）' +
-                                '</div>' +
-                                '<div style="margin-top:8px;color:#5a3a3a;font-size:13px;line-height:1.55;">' +
-                                    '大表 DDL 走原路径"立即执行"会<strong>锁表</strong>（业务写入阻塞几秒到几分钟）。' +
-                                    '<br/><strong>强烈建议在上方勾选"启用 gh-ost 无锁变更"</strong> —— 提交后自动走 5 道预检, gh-ost 走完无需锁表。' +
-                                '</div>' +
+            var bigTables = data.big_tables || (data.big_table_alert ? [data.big_table_alert] : []);
+            if (bigTables && bigTables.length > 0) {
+                bigTableAlertHtml = '<div class="alert" id="sqlsubmit-big-table-alert" ' +
+                     'style="background:rgba(176, 99, 103, 0.06);border:1px solid #b06367;border-left:4px solid #b06367;' +
+                              'padding:14px 18px;margin-bottom:14px;border-radius:4px;">' +
+                    '<div style="display:flex;align-items:flex-start;gap:14px;">' +
+                        '<i class="fa fa-exclamation-triangle" style="font-size:22px;color:#b06367;flex-shrink:0;margin-top:2px;"></i>' +
+                        '<div style="flex:1;">' +
+                            (bigTables.length === 1
+                                ? ('<strong style="font-size:15px;color:#5a3a3a;">⚠️ 检测到 <code style="color:#b06367;background:rgba(176,99,103,0.1);padding:1px 6px;border-radius:3px;">' +
+                                   escapeHtml(bigTables[0].table_name) + '</code> 是大表 DDL</strong>')
+                                : ('<strong style="font-size:15px;color:#5a3a3a;">⚠️ 检测到 ' + bigTables.length + ' 张大表 DDL (共 ' +
+                                   (data.alter_count || "?") + ' 条 ALTER)</strong>')) +
+                            '<div style="margin-top:6px;color:#5a3a3a;font-size:13px;">' +
+                                bigTables.map(function (bt) {
+                                    return '<div style="margin-top:4px;padding:4px 8px;background:rgba(176,99,103,0.04);border-radius:4px;">' +
+                                           '<code style="color:#b06367;background:rgba(176,99,103,0.1);padding:1px 6px;border-radius:3px;">' +
+                                           escapeHtml(bt.table_name) + '</code>' +
+                                           ' 行数 <strong>' + (bt.rows || 0) + '</strong> / 数据大小 <strong>' + (bt.size_mb || "?") + ' MB</strong>' +
+                                           '</div>';
+                                }).join("") +
+                            '</div>' +
+                            '<div style="margin-top:8px;color:#5a3a3a;font-size:13px;line-height:1.55;">' +
+                                (bigTables.length === 1
+                                    ? '大表 DDL 走原路径"立即执行"会<strong>锁表</strong>（业务写入阻塞几秒到几分钟）。'
+                                    : '走原路径"立即执行"会<strong>锁多张大表</strong>（业务写入阻塞几秒到几分钟）。') +
+                                '<br/><strong>强烈建议在上方勾选"启用 gh-ost 无锁变更"</strong> —— 提交后自动走 5 道预检, gh-ost 走完无需锁表。' +
                             '</div>' +
                         '</div>' +
-                    '</div>';
+                    '</div>' +
+                '</div>';
+            }
+
+            // CUSTOM-MODIFIED: DBA-bug-9.5 加非 ALTER 警告 (来自 /gh_ost/check_non_alter/) @ 2026-09-16 @ mavis
+            // 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+            // 业务: 业务方实测工单含 CREATE/INSERT/UPDATE/DELETE 时, gh-ost 模式会被拒,
+            //       但前端 SQL 检测弹窗没显示 "请拆分独立工单" 提示
+            // 修法: 在 fetchColumnDiff 时同时调 /gh_ost/check_non_alter/, 拿到 has_non_alter,
+            //       在 modal 顶部加警告 banner
+            var nonAlterHtml = "";
+            if (window.__nonAlterData && window.__nonAlterData.has_non_alter) {
+                var nad = window.__nonAlterData;
+                var typeChips = nad.examples.map(function (ex) {
+                    return '<span style="background:rgba(201,162,63,0.15);padding:2px 8px;border-radius:4px;font-weight:600;margin-right:4px;color:#7a5c1f;">' +
+                           escapeHtml(ex.stmt_type) + '</span>';
+                }).join("");
+                var examples = nad.examples.map(function (ex) {
+                    return '<div style="margin-top:4px;padding:6px 10px;background:rgba(201,162,63,0.06);border-radius:4px;font-family:monospace;font-size:12px;color:#7a5c1f;">' +
+                           '<code>' + escapeHtml(ex.full) + '</code>' +
+                           '</div>';
+                }).join("");
+                nonAlterHtml = '<div class="alert" id="sqlsubmit-non-alter-warning" ' +
+                     'style="background:rgba(201, 162, 63, 0.06);border:1px solid #c9a23f;border-left:4px solid #c9a23f;' +
+                              'padding:14px 18px;margin-bottom:14px;border-radius:4px;">' +
+                    '<div style="display:flex;align-items:flex-start;gap:14px;">' +
+                        '<i class="fa fa-warning" style="font-size:22px;color:#c9a23f;flex-shrink:0;margin-top:2px;"></i>' +
+                        '<div style="flex:1;">' +
+                            '<strong style="font-size:15px;color:#7a5c1f;">⚠️ 工单含 ' + nad.non_alter_count + ' 条非 ALTER 语句 (gh-ost 模式不支持)</strong>' +
+                            '<div style="margin-top:6px;color:#7a5c1f;font-size:13px;">' +
+                                '类型: ' + typeChips +
+                            '</div>' +
+                            '<div style="margin-top:8px;color:#7a5c1f;font-size:13px;">' +
+                                examples +
+                            '</div>' +
+                            '<div style="margin-top:8px;color:#7a5c1f;font-size:13px;line-height:1.55;">' +
+                                '<strong>gh-ost 模式仅支持 ALTER TABLE</strong>。含 CREATE/INSERT/UPDATE/DELETE 时, 启用 gh-ost 会被拒。' +
+                                '<br/><strong>建议</strong>: 拆分 — CREATE / INSERT / UPDATE / DELETE 单独提交工单。' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
             }
 
             // 风险摘要 banner
@@ -1061,7 +1139,7 @@
                 headerTitle += ' <span style="font-size:13px;color:#7c7a72;margin-left:8px;font-weight:normal;">表: <code style="background:#f5f5f5;padding:1px 6px;border-radius:3px;">' + escapeHtml(tables[0] ? tables[0].table_name : "?") + '</code></span>';
             }
 
-            var html = bigTableAlertHtml +
+            var html = nonAlterHtml + bigTableAlertHtml +
                        '<div style="background:white;border:1px solid #e9e3d6;border-radius:6px;padding:14px 18px;margin-top:8px;">' +
                        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
                          '<strong style="font-size:15px;color:#14171e;">' + headerTitle + '</strong>' +

@@ -157,6 +157,59 @@ def _parse_all_statements(sql_content: str) -> List[dict]:
 # ===========================================================================
 # 视图：预检
 # ===========================================================================
+## CUSTOM-MODIFIED: DBA-bug-9.5 加 check_non_alter 端点 @ 2026-09-16 @ mavis
+## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+## 业务: 业务方在 SQL 提交页点 "SQL 检测" 时调用, 扫描 SQL 含非 ALTER 时,
+##       前端显示"gh-ost 模式不支持, 请拆分独立工单" 警告
+## 取数: POST sql_content (工单 SQL 文本)
+@login_required
+@require_POST
+def check_non_alter(request: HttpRequest) -> JsonResponse:
+    """扫 SQL 内容, 返回是否含非 ALTER (CREATE/INSERT/UPDATE/DELETE) + 数量 + 前 3 条示例。
+    """
+    sql_content = (request.POST.get("sql_content") or "").strip()
+    if not sql_content:
+        return JsonResponse({
+            "ok": False,
+            "error": "sql_content 为空",
+            "has_non_alter": False,
+            "non_alter_count": 0,
+        }, status=400)
+
+    parsed = _parse_all_statements(sql_content)
+    non_alter_stmts = [s for s in parsed if s["stmt_type"] not in ("ALTER", "USE", "OTHER")]
+    has_non_alter = len(non_alter_stmts) > 0
+
+    # 类型统计 (CREATE 几条 / INSERT 几条 / UPDATE 几条 / DELETE 几条)
+    from collections import Counter
+    type_counts = Counter(s["stmt_type"] for s in non_alter_stmts)
+
+    # ALTER 数量
+    alter_count = sum(1 for s in parsed if s["stmt_type"] == "ALTER")
+    use_count = sum(1 for s in parsed if s["stmt_type"] == "USE")
+
+    return JsonResponse({
+        "ok": True,
+        "has_non_alter": has_non_alter,
+        "non_alter_count": len(non_alter_stmts),
+        "alter_count": alter_count,
+        "use_count": use_count,
+        "type_counts": dict(type_counts),
+        # 前 3 条非 ALTER 示例 (用于前端展示)
+        "examples": [
+            {"stmt_type": s["stmt_type"], "full": s["full"][:200]}
+            for s in non_alter_stmts[:3]
+        ],
+        # 建议文案
+        "advice": (
+            "本工单含非 ALTER 语句 (CREATE/INSERT/UPDATE/DELETE), gh-ost 模式不支持, "
+            "请拆分: CREATE / INSERT / UPDATE / DELETE 单独提交工单"
+        ) if has_non_alter else (
+            "全部是 ALTER + USE, gh-ost 模式可以启用"
+        ),
+    })
+
+
 @login_required
 @require_POST
 def precheck(request: HttpRequest, workflow_id: int) -> JsonResponse:

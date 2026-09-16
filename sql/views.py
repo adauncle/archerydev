@@ -297,6 +297,88 @@ def _parse_first_alter(sql_content: str) -> dict:
     return {"db": schema or None, "table": table or None, "full": m.group(0)}
 
 
+## CUSTOM-MODIFIED: DBA-bug-9.5 加 _parse_all_alters 扫所有 ALTER @ 2026-09-16 @ mavis
+## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md §实战接
+## 根因: 业务方实测 wf#4841 类似工单 4 张大表, 但 _parse_first_alter 只解第一张,
+##       big_table_alert 只检测第一张, 其他 3 张没大表提示
+## 改法: 加 _parse_all_alters 扫所有 ALTER, 返回 list[{"db", "table", "full"}]
+def _parse_all_alters(sql_content: str) -> list:
+    """扫 SQL 内容里的所有 ALTER TABLE (兼容 db.table / 反引号 / use + 注释前缀).
+
+    Returns:
+        list of {"db": str|None, "table": str|None, "full": str}
+        空 SQL / 没 ALTER 返 []
+    """
+    import re
+    if not sql_content:
+        return []
+    result = []
+    # 按 ; 切 + 跳过 use/注释/空行
+    for raw_stmt in sql_content.split(";"):
+        cleaned_lines = []
+        for line in raw_stmt.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("--"):
+                continue
+            if re.match(r"^\s*use\s+", stripped, re.IGNORECASE):
+                continue
+            cleaned_lines.append(stripped)
+        cleaned = "\n".join(cleaned_lines).strip()
+        if not cleaned:
+            continue
+        # 复用 _parse_first_alter 的 regex
+        m = re.match(
+            r"^\s*ALTER\s+TABLE\s+(?:(?P<schema>`?[^`\s.()]+`?)\.)?`?(?P<table>[^`\s(]+)`?",
+            cleaned,
+            re.IGNORECASE,
+        )
+        if m:
+            schema = (m.group("schema") or "").strip("`")
+            table = (m.group("table") or "").strip("`")
+            result.append({
+                "db": schema or None,
+                "table": table or None,
+                "full": cleaned,
+            })
+    return result
+
+
+## CUSTOM-MODIFIED: DBA-bug-9.5 加 _detect_non_alter 检测非 ALTER 类型 @ 2026-09-16 @ mavis
+## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md §实战接
+## 根因: 业务方实测工单含 CREATE TABLE + ALTER, backend 拒绝, 但前端 SQL 检测弹窗没显示
+##       "请拆分独立工单" 提示
+## 改法: 加 _detect_non_alter 扫 SQL 返回所有非 ALTER 类型 (CREATE/INSERT/UPDATE/DELETE)
+def _detect_non_alter(sql_content: str) -> list:
+    """扫 SQL 内容里所有非 ALTER TABLE 语句 (CREATE/INSERT/UPDATE/DELETE/USE).
+
+    Returns:
+        list of {"stmt_type": "CREATE"|"INSERT"|"UPDATE"|"DELETE", "full": str (前 200 字符)}
+        空 SQL / 全是 ALTER/USE 返 []
+    """
+    import re
+    if not sql_content:
+        return []
+    result = []
+    for raw_stmt in sql_content.split(";"):
+        cleaned_lines = []
+        for line in raw_stmt.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("--"):
+                continue
+            cleaned_lines.append(stripped)
+        cleaned = "\n".join(cleaned_lines).strip()
+        if not cleaned:
+            continue
+        # 取首 token
+        first_word = cleaned.split()[0].upper() if cleaned.split() else ""
+        if first_word in ("CREATE", "INSERT", "UPDATE", "DELETE"):
+            result.append({
+                "stmt_type": first_word,
+                "full": cleaned[:200] + ("..." if len(cleaned) > 200 else ""),
+            })
+    return result
+
+
 def _get_table_size_info(instance, db_name: str, table_name: str) -> dict:
     """CUSTOM: 查 instance 库的某表大小 + 行数.
 
@@ -372,6 +454,13 @@ def detail(request, workflow_id):
     ## 阈值: 行数 ≥ 10w 或 大小 ≥ 100MB 视为大表
     ## @ 2026-08-11 @ mavis
     big_table_alert = None  # None or dict{rows, size_mb, table_name}
+    ## CUSTOM-MODIFIED: DBA-bug-9.5 加 big_tables 列表 (所有大表) @ 2026-09-16 @ mavis
+    ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md §实战接
+    ## 根因: 业务方实测 wf#4841 类似工单 4 张大表, 旧版只检测第一张 (因为 _parse_first_alter),
+    ##       其他 3 张没大表提示, 审批人/DBA 漏看风险
+    ## 改法: 扫所有 ALTER, 每张表都查大小, 顶层 big_table_alert 取第一张触发 (兼容老 detail.html),
+    ##       big_tables 列表含所有大表 (前端 detail.html 循环展示)
+    big_tables = []  # list of dict{rows, size_mb, table_name}
     ## CUSTOM-MODIFIED: 9/11 DBA-bug-1 状态限制放宽 (审批中 + 审批通过 + 已完成 都检测) @ 2026-09-11 @ mavis
     ## 业务: 审批人在 workflow_manreviewing 状态就要看到大表提示 (而不是审批通过后才看到)
     ## 8/11 v0.3.0-beta 设计初心是 DBA 兜底 (审批通过后 DBA 执行前才提示), 漏了审批人防呆
@@ -384,28 +473,39 @@ def detail(request, workflow_id):
         "workflow_finish",
         "workflow_finish_manual",
     )
-    if status_for_alert and not has_ghost_task:
+    ## CUSTOM-MODIFIED: DBA-bug-9.5 加 non_alter_stmts 检测 @ 2026-09-16 @ mavis
+    ## 业务: 工单含 CREATE/INSERT/UPDATE/DELETE 时, 在详情页提示"gh-ost 模式不支持, 请拆分"
+    non_alter_stmts = []  # list of dict{stmt_type, full}
+    if status_for_alert:
         try:
             sql_text = _workflow_sql_text(workflow_detail)
-            parsed = _parse_first_alter(sql_text)
-            if parsed and parsed.get("table"):
+            # DBA-bug-9.5: 扫所有 ALTER, 不是只第一张
+            all_alters = _parse_all_alters(sql_text)
+            for stmt in all_alters:
+                if not stmt.get("table"):
+                    continue
                 size_info = _get_table_size_info(
                     instance=workflow_detail.instance,
-                    db_name=parsed.get("db") or workflow_detail.db_name,
-                    table_name=parsed["table"],
+                    db_name=stmt.get("db") or workflow_detail.db_name,
+                    table_name=stmt["table"],
                 )
                 if size_info:
                     row_threshold = int(getattr(settings, "CUSTOM_BIG_TABLE_ROW_THRESHOLD", 100000))
                     size_threshold_mb = int(getattr(settings, "CUSTOM_BIG_TABLE_SIZE_THRESHOLD_MB", 100))
                     if (size_info["rows"] >= row_threshold
                             or size_info["size_mb"] >= size_threshold_mb):
-                        big_table_alert = {
-                            "table_name": parsed["table"],
+                        alert = {
+                            "table_name": stmt["table"],
                             "rows": size_info["rows"],
                             "size_mb": size_info["size_mb"],
                             "row_threshold": row_threshold,
                             "size_threshold_mb": size_threshold_mb,
                         }
+                        big_tables.append(alert)
+                        if big_table_alert is None:
+                            big_table_alert = alert  # 兼容老字段
+            # DBA-bug-9.5: 检测非 ALTER
+            non_alter_stmts = _detect_non_alter(sql_text)
         except Exception:  # noqa: BLE001
             logger.exception("big_table_alter detect crashed: wf=%s", workflow_detail.id)
 
@@ -610,6 +710,10 @@ def detail(request, workflow_id):
         "enable_gh_ost_marked": bool(getattr(workflow_detail, "enable_gh_ost", False)),
         # CUSTOM: 大表 DDL 防呆 (None = 不触发, dict = 触发红色 alert)
         "big_table_alert": big_table_alert,
+        ## CUSTOM-MODIFIED: DBA-bug-9.5 加 big_tables 列表 + non_alter_stmts @ 2026-09-16 @ mavis
+        ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+        "big_tables": big_tables,
+        "non_alter_stmts": non_alter_stmts,
         ## CUSTOM-MODIFIED: 8/26 detail 页字段 diff inline 区域 (业务 RD 审核/执行阶段) @ 2026-08-26 @ mavis
         ## 业务: alter 变更不管表大小都属高风险, 提交/审核/执行三阶段都要字段 diff
         ## 8/12 v0.3.x 设计只覆盖 sqlsubmit.html 提单时弹 modal, detail 页审核/执行无字段 diff 区域

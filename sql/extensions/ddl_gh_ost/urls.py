@@ -51,4 +51,8 @@ urlpatterns = [
     path("column_diff/", views.column_diff, name="column_diff"),
     # v0.4.5 选表页面 (DBA 主动重建入口) @ 2026-08-25
     path("rebuild/select/", views.rebuild_select_page, name="rebuild_select"),
+    ## CUSTOM-MODIFIED: DBA-bug-9.5 加 check_non_alter 端点 @ 2026-09-16 @ mavis
+    ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+    ## 业务: 前端 SQL 检测时调用, 含 CREATE/INSERT/UPDATE/DELETE → 显示"gh-ost 模式不支持,请拆分"
+    path("check_non_alter/", views.check_non_alter, name="check_non_alter"),
 ]

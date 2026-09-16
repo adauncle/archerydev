@@ -1621,6 +1621,15 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
 
     # 4. 顶层字段 (兼容老单表前端)
     first = tables_diff[0]
+    ## CUSTOM-MODIFIED: DBA-bug-9.5 加 big_tables 列表 @ 2026-09-16 @ mavis
+    ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md §实战接
+    ## 根因: 业务方实测 wf#4841 类似工单 4 张大表, 但顶层 big_table_alert 只显示第一张,
+    ##       业务方以为其他 3 张没风险, 实际都是大表
+    ## 改法: 加 big_tables 列表 (含所有触发大表阈值的表), 前端 sqlsubmit.html 循环展示
+    big_tables = [
+        t["big_table_alert"] for t in tables_diff
+        if t.get("big_table_alert")
+    ]
     return {
         "ok": True,
         # 9/2 D13 新增: 多表数据
@@ -1636,6 +1645,8 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
         "mid_risk_count": total_mid,
         "low_risk_count": total_low,
         "summary": global_summary,
+        ## DBA-bug-9.5: 大表列表 (所有触发大表阈值的表)
         "big_table_alert": first_big_table_alert,
+        "big_tables": big_tables,
     }
 

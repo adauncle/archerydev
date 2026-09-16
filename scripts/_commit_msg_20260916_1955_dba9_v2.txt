@@ -1,0 +1,40 @@
+fix: DBA-bug-9.5 多张大表提示 + 非 ALTER 警告 (前端可见 bug)
+
+业务方 9/16 18:50+ 实测 2 个前端可见问题:
+1. CREATE TABLE 没有提示要拆分独立工单 (backend reject 但前端没显示)
+2. 多条 ALTER TABLE 大表, 只提示一张表 (顶层 big_table_alert 只取第一张触发)
+
+修法 (双端):
+- sql/views.py: 加 _parse_all_alters (扫所有 ALTER) + _detect_non_alter (扫非 ALTER);
+            detail 视图 big_table_alert 改成扫所有 ALTER, 加 big_tables 列表 + non_alter_stmts
+- sql/extensions/ddl_gh_ost/views.py: 加 check_non_alter 端点 (扫非 ALTER + 返回 has_non_alter + 数量 + 示例)
+- sql/extensions/ddl_gh_ost/urls.py: 注册 /gh_ost/check_non_alter/
+- sql/extensions/ddl_gh_ost/services/column_diff.py: column_diff_full 返回 big_tables 列表
+- sql/templates/detail.html: 多张大表 banner + 非 ALTER 警告块
+- sql/templates/sqlsubmit.html: 字段 diff 弹窗 bigTables 多张循环 + check_non_alter 调用 + 警告 banner
+
+演练 6+1 PASS:
+- scripts/_w3_dba9_v2_drill.py 134 dev + 110 prod (真实业务表 accesscard_dynamicaccountinfo 1.5亿行)
+- A: 多 ALTER 同张大表 → big_tables 长度 = 3
+- B: 单 ALTER 大表 → 兼容旧逻辑
+- C: ALTER + CREATE → has_non_alter=True
+- D: ALTER 大表 + CREATE → 同时返回
+- E: USE + 注释 → 空
+- F: wf#4841 业务方实战场景 (USE + ALTER + CREATE) → big_tables + has_non_alter
+- Summary: detail.html big_tables 字段验证
+
+部署 (DBA 一条龙, 不动生产任何数据和表结构):
+- 134 dev: systemctl restart (master reload, 业务中断 ~10 秒)
+- 110 prod: kill -TERM 80828 + setsid nohup 启新 master (业务中断 ~10 秒)
+- HTTP 200 + 演练 6+1 PASS
+
+实战新发现 (跨项目可复用, 3 条入 MEMORY):
+1. 前端 UI 跟后端判断逻辑必须对齐, 不能 backend reject 但前端不显示 (用户看不到原因)
+2. 前端 SQL 检测弹窗 (字段 diff) 必须支持多张大表 (column_diff.tables 已支持, 但 big_table_alert 顶层只取第一张)
+3. 大表检测 should scan all ALTER not just first (跟 _parse_first_alter 设计缺陷同根)
+
+关联 commit:
+- c4ca623: DBA-bug-9 gh-ost 多 statement 工单支持 (基础)
+- 本 commit: DBA-bug-9.5 前端可见 bug (multi-table big_table + non_alter 提示)
+
+CHANGELOG: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md (更新)
