@@ -145,5 +145,24 @@ else:
     sql_f = f"ALTER TABLE {table_name} ADD INDEX idx_completely_new_name (user_id)"
     print(case(sql_f, expected_high=True))
 
+# Case G: 实战 case 9/16 业务方真实 SQL (name 后无空格, 业务方实战 主验证)
+print("\n=== G: 业务方实战真实 SQL (add index idx_owner_name(create_time) name 后无空格) ===")
+# 关键: idx_owner_name(create_time) 无空格, 业务方实战 add index idx_owner_name(owner_name) 同款
+# CREATE_TIME 字段已有 idx_c_time 普通索引 → 期望 high reject
+sql_g = f"ALTER TABLE {table_name} ADD INDEX idx_owner_name({mul_idx_first_col[1] if mul_idx_first_col else 'create_time'})"
+print(case(sql_g, expected_high=True))
+
+# Case H: 多字段索引 (第一列 create_time 已有 idx_c_time, 应该 high reject 不是 pass)
+print("\n=== H: 多字段索引 (第一列 create_time 已有 idx_c_time, high reject) ===")
+sql_h = f"ALTER TABLE {table_name} ADD INDEX idx_multi_field (create_time, account_number)"
+print(case(sql_h, expected_high=True))
+
+# Case I: 实战 mixed SQL (ADD COLUMN + add index 在同一 ALTER, 业务方实战)
+print("\n=== I: 实战 mixed SQL (ADD COLUMN xxx + add index yyy(z), 业务方实战) ===")
+sql_i = f"""ALTER TABLE {table_name}
+  ADD COLUMN new_test_col VARCHAR(150) DEFAULT NULL,
+  ADD INDEX idx_test_col (new_test_col)"""
+print(case(sql_i, expected_low_pass=True))
+
 
 print("\n=== 演练完成 ===")

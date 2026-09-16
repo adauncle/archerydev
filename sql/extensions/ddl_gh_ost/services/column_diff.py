@@ -398,7 +398,7 @@ _RE_ALTER_COLUMN = re.compile(
 _RE_INDEX_ADD = re.compile(
     r"^\s*ADD\s+(?P<unique>UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?"
     r"(?:INDEX|KEY)\s+"
-    r"(?:`?(?P<index_name>[^`\s(]+)`?\s+)?"
+    r"`?(?P<index_name>[^`\s(]+)`?\s*"  # CUSTOM-MODIFIED: 业务方实战 9/16: name 后可能没空格 (add index idx_owner(owner)), 改成 \s*
     r"\((?P<columns>[^)]+)\)",
     re.IGNORECASE,
 )

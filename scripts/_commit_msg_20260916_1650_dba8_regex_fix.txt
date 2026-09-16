@@ -1,0 +1,75 @@
+fix(sql): DBA-bug-8 regex bug fix - ADD INDEX name 后无空格业务方实战触发 (9/16)
+
+9/16 16:43 业务方实测反馈: add index idx_owner_name(owner_name); 字段 diff 弹窗
+还是错显示 "ADD index 新列, 无冲突" (commit e22d874 后已部署, 但实战未生效).
+
+排查脚本 _w3_110_repro_dba8.py + _w3_110_debug_dba8.py 复现:
+
+✅ 110 prod column_diff.py 已部署 (grep _fetch_current_indexes = 3 处匹配)
+✅ 110 prod sqlsubmit.html 已部署 (grep index_diff = 2 处匹配)
+✅ _fetch_current_indexes 成功查到 idx_owner_name (业务方实战索引)
+❌ _parse_alter_index_changes 返回 [] (index_diff 列表空)
+
+调试 _RE_INDEX_ADD.match:
+  input: "add index idx_owner_name(owner_name)"
+  ✗ regex 不匹配
+
+根因: 业务方实战 SQL 是 `add index idx_owner_name(owner_name)` —— **name 后直接是 `(`,
+     没空格!** 但原 _RE_INDEX_ADD regex 假设 `\s+` (一个或多个空格) 才能匹配.
+
+原 regex:
+```python
+_RE_INDEX_ADD = re.compile(
+    r"^\s*ADD\s+(?P<unique>UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?"
+    r"(?:INDEX|KEY)\s+"
+    r"(?:`?(?P<index_name>[^`\s(]+)`?\s+)?"  # ← 这里 \s+ 必须有空格
+    r"\((?P<columns>[^)]+)\)",
+    re.IGNORECASE,
+)
+```
+
+修法: `\s+` 改成 `\s*` (name 后允许 0 个空格).
+
+修后:
+```python
+r"`?(?P<index_name>[^`\s(]+)`?\s*"  # ← 业务方实战: name 后无空格 (idx_owner_name(owner_name))
+```
+
+演练脚本 _w3_index_drill.py 加 Case G (业务方实战真实无空格):
+  ADD INDEX idx_owner_name(create_time) name 后无空格 → high reject ✅ PASS
+
+## 9/16 修法实战教训 (跨项目可复用)
+
+跨项目写 SQL 解析 regex, **必考虑"实战 SQL 形态"**, 别只考虑"典型 SQL 形态":
+- 典型: `ADD INDEX idx_name (col)` (name 后有空格)
+- 实战: `ADD INDEX idx_name(col)` (name 后没空格, 业务方实战)
+- 实战: `ADD INDEX `idx_name` (col)` (name 带反引号)
+- 实战: `ADD INDEX idx_name( col)` (name 后空格在 `(` 后)
+- 实战: `ADD INDEX idx_name ( col)` (name 后空格 + 列名前空格)
+
+修法: regex 用 `\s*` 而不是 `\s+` (允许 0 空格), 边界 case 演练必覆盖业务方真实 SQL.
+
+## 演练脚本
+
+_w3_index_drill.py 134 dev 实战演练 10/10 PASS:
+- Case A: 索引名重复 accesscard_account_pk_2 → high reject ✅
+- Case B: id PK 不影响普通索引 → pass ✅
+- Case B2: create_time 字段已有 idx_c_time 普通索引 → high reject ✅
+- Case C: account_name 字段没索引 → pass ✅
+- Case D: drop 索引不存在 → high reject ✅
+- Case E: UNIQUE 字段加普通索引 → pass ✅
+- Case F: 字段重复 + 索引名不同 → high reject ✅
+- Case G: 业务方实战无空格 add index idx_owner_name(create_time) → high reject ✅ (本 fix)
+- Case H: 多字段索引第一列重复 → high reject ✅
+- Case I: 实战 mixed SQL (ADD COLUMN + ADD INDEX 同一 ALTER) → pass ✅
+
+## 110 prod 部署
+
+- 推 column_diff.py (regex bug fix)
+- reload master (业务中断 ~10 秒, 不动数据/表结构)
+- 业务方实测: add index idx_owner_name(owner_name) 应弹窗提示 "索引名 'idx_owner_name' 已存在 (字段: owner_name), ADD INDEX 会失败 (Duplicate key name)"
+
+## 同源 entry
+
+- 9/16 16:35 DBA-bug-8 字段 diff 弹窗识别重复索引 (commit e22d874, 4 实战新发现)
+- **9/16 16:55 DBA-bug-8 regex bug fix (本 commit, 业务方实测触发)**
