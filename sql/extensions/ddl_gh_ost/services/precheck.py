@@ -216,30 +216,53 @@ def check_replication_privileges(instance, db_name: str) -> Dict:
 # ===========================================================================
 # 关 4: SQL 是 ALTER TABLE，不改主键/索引/全文/外键
 # ===========================================================================
+## CUSTOM-MODIFIED: DBA-bug-9 check_alter_sql 扫所有 statement @ 2026-09-16 @ mavis
+## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+## 根因 (9/16 wf#4841): 旧版只检第一条 ALTER, 后续非 ALTER (CREATE/INSERT/UPDATE/DELETE) 被忽略
+## 改法: 扫所有 statement, 含非 ALTER → reject (业务方拆单); 多 ALTER → 通过 (每个 ALTER 一个 task)
 def check_alter_sql(sql_content: str) -> Dict:
     name = "alter_sql"
     try:
-        # 取第一条非空语句
+        # 取所有非空语句
         statements = [s for s in sqlparse.split(sql_content) if s.strip()]
         if not statements:
             return _fail(name, "SQL 内容为空", {})
 
-        first = statements[0].strip()
-        parsed = sqlparse.parse(first)
-        if not parsed:
-            return _fail(name, "SQL 解析失败", {"sql_head": first[:200]})
+        # DBA-bug-9: 检查每一条都是 ALTER (允许 USE 跳过; 其他 reject)
+        non_alter_types = []
+        first_alter = None
+        for idx, raw_stmt in enumerate(statements):
+            stmt_text = raw_stmt.strip()
+            parsed = sqlparse.parse(stmt_text)
+            if not parsed:
+                return _fail(name, f"第 {idx + 1} 条 SQL 解析失败", {"sql_head": stmt_text[:200]})
+            stmt: Statement = parsed[0]
+            first_token = stmt.token_first(skip_cm=True)
+            stmt_type = (first_token.normalized.upper() if first_token else "")
 
-        stmt: Statement = parsed[0]
-        first_token = stmt.token_first(skip_cm=True)
-        stmt_type = (first_token.normalized.upper() if first_token else "")
+            if stmt_type == "USE":
+                continue  # USE db 是切换 schema, 不算 DDL
+            if stmt_type != "ALTER":
+                non_alter_types.append((idx + 1, stmt_type or "未知"))
+                continue
+            if first_alter is None:
+                first_alter = (idx, stmt_text, stmt)
 
-        if stmt_type != "ALTER":
+        if non_alter_types:
+            types_str = ", ".join(f"第{i}条:{t}" for i, t in non_alter_types[:3])
+            more = "..." if len(non_alter_types) > 3 else ""
             return _fail(
                 name,
-                f"首条语句不是 ALTER TABLE（识别为 {stmt_type or '未知'}），"
-                f"gh-ost 仅支持 ALTER",
-                {"detected_type": stmt_type, "sql_head": first[:200]},
+                f"gh-ost 仅支持 ALTER TABLE, 工单含非 ALTER 语句 ({types_str}{more});"
+                f"请拆分工单 (CREATE/INSERT/UPDATE/DELETE 单独提交)",
+                {"non_alter_types": non_alter_types},
             )
+
+        if first_alter is None:
+            return _fail(name, "未找到 ALTER TABLE 语句", {})
+
+        # first_alter = (idx, stmt_text, parsed_stmt)
+        idx, first, _ = first_alter
 
         # 检查是否带 RENAME TO / TRUNCATE
         ## CUSTOM-MODIFIED: 8/24 移除 "DROP " 关键词检查 @ 2026-08-24 @ mavis
@@ -274,8 +297,8 @@ def check_alter_sql(sql_content: str) -> Dict:
 
         return _pass(
             name,
-            f"ALTER 语句符合 gh-ost 要求 ✓",
-            {"sql_head": first[:200]},
+            f"ALTER 语句符合 gh-ost 要求 (含 {len(statements)} 条, USE 跳过) ✓",
+            {"sql_count": len(statements), "sql_head": first[:200]},
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("check_alter_sql 异常")

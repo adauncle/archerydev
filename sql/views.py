@@ -434,17 +434,30 @@ def detail(request, workflow_id):
             except Exception:  # noqa: BLE001
                 logger.exception("lazy auto-enable crashed: wf=%s", workflow_detail.id)
 
-        try:
-            ghost_task = DdlGhostTask.objects.get(workflow=workflow_detail)
-            has_ghost_task = True
-            ghost_task_is_terminal = ghost_task.is_terminal
-            # 关键修复: 修复 #1 - 避免 gh-ost 与原路径"立即执行"冲突
-            # active 状态 (queued/running/cut_over/precheck_failed) 都视为在跑
-            has_active_ghost_task = ghost_task.status in (
-                "queued", "running", "cut_over", "precheck_failed"
-            )
-        except DdlGhostTask.DoesNotExist:
-            ghost_task = None
+        # ===== CUSTOM-MODIFIED: DBA-bug-9 改成 query 多个, 取最新 + list @ 2026-09-16 @ mavis
+        ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+        ## 业务: 一个工单可能含多条 ALTER TABLE, 每个 ALTER 一个 ghost task
+        ##       ghost_task 字段保留兼容 (= 第一个 task), ghost_tasks = 全部 task 列表
+        ghost_tasks = list(
+            DdlGhostTask.objects.filter(
+                workflow=workflow_detail, task_type="ghost",
+            ).order_by("statement_index", "id")
+        )
+        has_ghost_task = bool(ghost_tasks)
+        # ghost_task 兼容老代码 (取第一个)
+        ghost_task = ghost_tasks[0] if ghost_tasks else None
+        ghost_task_is_terminal = (
+            all(t.is_terminal for t in ghost_tasks) if ghost_tasks else False
+        )
+        # active = 至少有一个 task 在跑
+        has_active_ghost_task = any(
+            t.status in ("queued", "running", "cut_over", "precheck_failed")
+            for t in ghost_tasks
+        )
+        active_ghost_tasks = [
+            t for t in ghost_tasks
+            if t.status in ("queued", "running", "cut_over", "precheck_failed")
+        ]
         # 启用条件: superuser / DBA 组 / 工单 submitter
         from django.contrib.auth.models import Group
         user = request.user
@@ -589,6 +602,10 @@ def detail(request, workflow_id):
         "can_enable_ghost": can_enable_ghost,
         "ghost_task": ghost_task,
         "ghost_task_is_terminal": ghost_task_is_terminal,
+        ## CUSTOM-MODIFIED: DBA-bug-9 多 task 列表字段 @ 2026-09-16 @ mavis
+        ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+        "ghost_tasks": ghost_tasks,
+        "active_ghost_tasks": active_ghost_tasks,
         # CUSTOM: 提交人申请 gh-ost 标记 (审批前显示"等审批", 审批后自动启用)
         "enable_gh_ost_marked": bool(getattr(workflow_detail, "enable_gh_ost", False)),
         # CUSTOM: 大表 DDL 防呆 (None = 不触发, dict = 触发红色 alert)

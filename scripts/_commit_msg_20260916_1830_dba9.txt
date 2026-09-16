@@ -1,0 +1,51 @@
+fix: DBA-bug-9 gh-ost 多 statement 工单支持 (wf#4841 重大事故)
+
+业务方实战 9/16 17:00+ 工单 wf#4841 包含 8 条 SQL (4 CREATE + 4 ALTER),
+gh-ost 只处理了 statement_index=0 那一条 ALTER (accesscard_licensefront_info),
+其余 7 条 SQL 全部丢失, 工单状态仍显示 "已正常结束". **生产数据缺失风险**.
+
+4 处代码缺陷叠加:
+1. views.py:_parse_first_alter 只解第一条 ALTER
+2. precheck.py:check_alter_sql 只检第一条
+3. runner.py 单 gh-ost 进程只处理单表 ALTER
+4. poller.py:_sync_workflow_status task success 立即改 wf.status,
+   绕过 GoInception.execute_workflow 路径
+
+修法 (D 方案, 阿达叔叔 17:42 拍板):
+- models.py: 加 statement_index + statement_type 字段
+- migration 0005: AddField + UniqueConstraint 改 (task_type, workflow, statement_index)
+- views.py: 加 _parse_all_statements 扫所有 statement,
+            _enable_ghost_for_workflow 循环创建 task (每个 ALTER 一个)
+- precheck.py: check_alter_sql 扫所有 statement, 含非 ALTER → reject
+- poller.py: 加 _all_tasks_terminal 检查, 全部 task 终态才同步 wf.status;
+              任一 task failed → wf.status=workflow_exception
+- views.py (上游): 详情视图 query 多 task + 加 ghost_tasks context
+- detail.html: 单 task iframe 改成多 task 列表 (序号/task#/表/alter/状态/进度/开始/结束)
+- drill script: scripts/_w3_dba9_drill.py 134 dev + 110 prod 5/5 PASS
+
+实战新发现 (跨项目可复用, 5 条):
+1. gh-ost 启用 → 工单 execute 路径被绕过 (最关键)
+2. Archery poller 设计缺陷 (task success ≠ 工单完成)
+3. 业务方实战: 工单含多 DDL 是常态, 平台不该拒绝业务方
+4. CREATE TABLE 单独事务拆单原则 (跟 ALTER 不能走 gh-ost 一起)
+5. DdlGhostTask unique_together 限制 (一工单多 task)
+
+部署:
+- 134 dev: 推 7 文件 + migration 0005 + reload master + HTTP 200 + 演练 5/5 PASS
+- 110 prod: 推 7 文件 + migration 0005 + kill -TERM 54413 + setsid nohup 启新 master 61590 + HTTP 200 + 演练 5/5 PASS
+
+业务方通知: docs/changelogs/2026-09-16_dba-bug-9-wf4841-notify.md
+完整 SQL dump: docs/changelogs/2026-09-16_wf4841_full.sql (7.9KB)
+设计稿: docs/designs/2026-09-16_dba-bug-9-ghost-multi-statement-design.md (19.5KB)
+changelog: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md (7.3KB)
+wf#4841 实际影响: 1/8 SQL 成功 (1 ALTER), 7/8 失败 (4 CREATE + 3 ALTER)
+
+DBA 一条龙原则固化:
+- 不要动生产任何数据和表结构 (在生产不跑任何 SELECT/UPDATE/DELETE/ALTER 业务表)
+- 凭据不写入任何 .bat / .ps1 / .py 文件
+- 推代码后必 reload master, 只 kill workers 不动 master 不够
+- 业务方实测安排: DBA 通知业务方重新提交测试 SQL, DBA 不在生产演练
+- wf#4841 业务方实测特例: 不主动补建 vehicle_risk_hit_detail 等 7 条 SQL
+
+CHANGELOG: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+CHANGELOG: docs/changelogs/2026-09-16_dba-bug-9-wf4841-notify.md (业务方通知)

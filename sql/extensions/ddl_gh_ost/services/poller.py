@@ -12,7 +12,7 @@ import os
 import signal
 import threading
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import pymysql
 from django.conf import settings
@@ -173,20 +173,40 @@ _WORKFLOW_STATUS_MAP = {
 }
 
 
+## CUSTOM-MODIFIED: DBA-bug-9 _sync_workflow_status 改成"全部 task 终态"才改 wf.status @ 2026-09-16 @ mavis
+## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+## 根因 (9/16 wf#4841): 旧版 task success → 立即把 wf.status 改为 workflow_finish,
+##       绕过 execute_sql.execute 路径, 非 gh-ost 处理的 SQL (CREATE/INSERT/UPDATE/DELETE) 全部丢失
+## 改法:
+##   1. 加 _all_tasks_terminal 检查: 该工单所有 ghost task 都终态 → 才同步 wf.status
+##   2. 任一 task failed/cancelled/rolled_back → wf.status = workflow_exception (而非 workflow_finish)
+##   3. 全部 task success → wf.status = workflow_finish
+##   4. 任务级 (task) 与工单级 (wf) 状态解耦, 多 ALTER 工单支持
 def _sync_workflow_status(task, new_status: str):
     """CUSTOM: gh-ost 终态时同步 SqlWorkflow.status。
 
-    规则:
+    规则 (DBA-bug-9):
       - 仅同步 task_type="ghost"（挂载到 SqlWorkflow）；rebuild task 跳过
       - 仅在工单处于"待执行/执行中"语义时覆盖，避免打乱 manreviewing 等上游状态
-      - success → workflow_finish + finish_time
-      - failed/rolled_back → workflow_exception + finish_time
+      - **DBA-bug-9**: 全部 ghost task 都终态 → 才同步 wf.status;
+        任一 failed/cancelled/rolled_back → workflow_exception, 全 success → workflow_finish
     """
     if task.task_type != "ghost":
         return  # rebuild 任务无关联工单
     if not task.workflow_id:
         return  # 没挂工单
-    # 延迟 import 防循环
+
+    # DBA-bug-9: 检查该工单所有 ghost task 是否都已终态
+    all_terminal, total, finished = _all_tasks_terminal(task.workflow_id)
+    if not all_terminal:
+        logger.info(
+            "_sync_workflow_status: defer task=%s wf=%s status=%s "
+            "(%s/%s tasks terminal, 还有 task 在跑)",
+            task.id, task.workflow_id, new_status, finished, total,
+        )
+        return  # 还有 task 没结束, 暂不同步 wf.status
+
+    # 全部终态 → 计算 wf.status
     from sql.models import SqlWorkflow
     try:
         wf = SqlWorkflow.objects.get(pk=task.workflow_id)
@@ -194,9 +214,21 @@ def _sync_workflow_status(task, new_status: str):
         logger.warning("_sync_workflow_status: workflow %s not found", task.workflow_id)
         return
 
-    target = _WORKFLOW_STATUS_MAP.get(new_status)
-    if not target:
-        return  # cancelled / queued/running 不动
+    # DBA-bug-9: 任一 task 失败 → wf=workflow_exception; 全部 success → wf=workflow_finish
+    failed_tasks_qs = DdlGhostTask.objects.filter(
+        workflow_id=task.workflow_id,
+        task_type="ghost",
+        status__in=("failed", "cancelled", "rolled_back"),
+    )
+    if failed_tasks_qs.exists():
+        target = "workflow_exception"
+        failed_count = failed_tasks_qs.count()
+        logger.info(
+            "_sync_workflow_status: wf=%s 有 %s 个 task failed/cancelled/rolled_back → workflow_exception",
+            wf.id, failed_count,
+        )
+    else:
+        target = "workflow_finish"
 
     # 仅在工单处于"已审核通过待执行"或"执行中"时同步
     if wf.status not in ("workflow_review_pass", "workflow_executing", "workflow_timingtask"):
@@ -210,9 +242,31 @@ def _sync_workflow_status(task, new_status: str):
     wf.finish_time = timezone.now()
     wf.save(update_fields=["status", "finish_time"])
     logger.info(
-        "_sync_workflow_status: task=%s wf=%s status=%s → %s",
-        task.id, wf.id, _WORKFLOW_STATUS_MAP.get(new_status, "?"), target,
+        "_sync_workflow_status: ALL TERMINAL task=%s wf=%s status=%s (all %s tasks terminal)",
+        task.id, wf.id, target, total,
     )
+
+
+def _all_tasks_terminal(workflow_id: int) -> Tuple[bool, int, int]:
+    """DBA-bug-9: 检查该工单所有 ghost task 是否都已终态。
+
+    Returns:
+        (all_terminal, total, finished_count)
+        - all_terminal: True = 全部终态 (total>0 且 finished==total)
+        - total: 该工单的 ghost task 总数 (0 = 没 task, 视为非终态)
+        - finished_count: 已终态的 task 数
+    """
+    tasks = DdlGhostTask.objects.filter(
+        workflow_id=workflow_id,
+        task_type="ghost",
+    )
+    total = tasks.count()
+    if total == 0:
+        return (False, 0, 0)  # 没 task 不算终态 (避免业务方未启用 gh-ost 时误触发)
+    finished = tasks.filter(
+        status__in=("success", "failed", "cancelled", "rolled_back"),
+    ).count()
+    return (finished == total, total, finished)
 
 
 def poll_loop(task_id: int):

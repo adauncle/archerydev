@@ -99,6 +99,22 @@ class DdlGhostTask(models.Model):
         verbose_name="审批工单（审批通过后才有）",
     )
 
+    ## CUSTOM-MODIFIED: DBA-bug-9 加 statement_index + statement_type 字段 @ 2026-09-16 @ mavis
+    ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+    ## 根因 (9/16 wf#4841): 一个工单可能含多条 ALTER TABLE (e.g. CREATE + ALTER),
+    ##       旧 unique_together 限制一个工单只能一个 task, 后续 ALTER 全部被丢
+    ## 改法: statement_index 标识"工单 SQL 列表的第几条" (从 0 开始);
+    ##       statement_type 标识 DDL 类型 (ALTER/CREATE/INSERT/UPDATE/DELETE/USE),
+    ##       CREATE/INSERT/UPDATE/DELETE 走 GoInception 不走 gh-ost (9/16 阿达叔叔拍板)
+    statement_index = models.IntegerField(
+        "SQL 序号 (工单内的第几条)", default=0,
+        help_text="工单 SQL 列表的第几条 (从 0 开始);0 = 第一条",
+    )
+    statement_type = models.CharField(
+        "DDL 类型", max_length=16, blank=True, default="ALTER",
+        help_text="DDL 类型: ALTER / CREATE / INSERT / UPDATE / DELETE / USE (gh-ost 任务只存 ALTER)",
+    )
+
     # ===== 用户选择 =====
     enabled = models.BooleanField(
         "启用 gh-ost", default=True,
@@ -251,10 +267,13 @@ class DdlGhostTask(models.Model):
         ]
         ## CUSTOM-MODIFIED: v0.4.5-alpha 加 unique_together @ 2026-08-06 @ mavis
         ## 同 task_type + 同 workflow 唯一（rebuild 场景 workflow=NULL，允许多条）
+        ## CUSTOM-MODIFIED: DBA-bug-9 改 unique 到 (task_type, workflow, statement_index) @ 2026-09-16 @ mavis
+        ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+        ## 业务: 一个工单含多条 ALTER TABLE, 每个 ALTER 一个 task, statement_index 区分
         constraints = [
             models.UniqueConstraint(
-                fields=["task_type", "workflow"],
-                name="uniq_task_type_workflow",
+                fields=["task_type", "workflow", "statement_index"],
+                name="uniq_task_type_workflow_stmt",
             ),
         ]
         ## CUSTOM-MODIFIED: 8/26 碎片回收独立 perm 拆分 @ 2026-08-26 @ mavis

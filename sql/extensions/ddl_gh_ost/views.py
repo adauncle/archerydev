@@ -32,7 +32,7 @@ v0.4.5-alpha 新增（碎片回收）：
 import json
 import logging
 import re
-from typing import Optional
+from typing import List, Optional
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -80,32 +80,78 @@ def _parse_first_alter(sql_content: str) -> Optional[dict]:
     """提取 SQL 文本里的第一条 ALTER TABLE，兼容 ``db.table`` 写法。
 
     返回 {"db": "db1", "table": "t1", "full": "ALTER TABLE ..."}，解析失败返回 None。
+
+    ## CUSTOM-MODIFIED: DBA-bug-9 deprecated, 保留兼容老代码 @ 2026-09-16 @ mavis
+    ## 新逻辑用 _parse_all_statements 扫所有 statement
+    ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+    """
+    all_stmts = _parse_all_statements(sql_content)
+    for s in all_stmts:
+        if s["stmt_type"] == "ALTER":
+            return {"db": s["db"], "table": s["table"], "full": s["full"]}
+    return None
+
+
+## CUSTOM-MODIFIED: DBA-bug-9 加 _parse_all_statements @ 2026-09-16 @ mavis
+## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+## 根因 (9/16 wf#4841): 旧 _parse_first_alter 只解第一条 ALTER, 后续语句丢失
+## 改法: 扫所有 statement, 返回 list[dict], 每条带 stmt_type + db + table + full
+def _parse_all_statements(sql_content: str) -> List[dict]:
+    """提取 SQL 文本里的所有 statement。
+
+    Returns:
+        list of dict:
+            {
+                "stmt_type": "ALTER"|"CREATE"|"INSERT"|"UPDATE"|"DELETE"|"USE"|"OTHER",
+                "db": str|None,
+                "table": str|None,
+                "full": str,
+            }
+        空 SQL 返回 []
     """
     if not sql_content:
-        return None
-    # 按分号切，取第一条非空
-    statements = [s.strip() for s in sql_content.split(";") if s.strip()]
-    for stmt in statements:
-        # 去掉前导注释
+        return []
+
+    statements: List[dict] = []
+    # 按分号切, 取非空
+    raw_stmts = [s.strip() for s in sql_content.split(";") if s.strip()]
+    for raw in raw_stmts:
+        # 去掉前导注释 + 空行
         lines = []
-        for line in stmt.splitlines():
+        for line in raw.splitlines():
             stripped = line.strip()
             if stripped.startswith("--") or not stripped:
                 continue
             lines.append(line)
         cleaned = "\n".join(lines).strip()
+        if not cleaned:
+            continue
+
+        # 先试 ALTER (复用现有 regex)
         m = _FIRST_ALTER_RE.match(cleaned)
         if m:
-            schema = m.group("schema") or ""
-            table = m.group("table") or ""
-            schema = schema.rstrip(".").strip("`")
-            table = table.strip("`")
-            return {
+            schema = (m.group("schema") or "").rstrip(".").strip("`")
+            table = (m.group("table") or "").strip("`")
+            statements.append({
+                "stmt_type": "ALTER",
                 "db": schema or None,
                 "table": table,
                 "full": cleaned,
-            }
-    return None
+            })
+            continue
+
+        # 取首 token 识别 DDL 类型
+        first_word = cleaned.split()[0].upper().rstrip(";") if cleaned.split() else ""
+        stmt_type = first_word if first_word in (
+            "CREATE", "INSERT", "UPDATE", "DELETE", "USE",
+        ) else "OTHER"
+        statements.append({
+            "stmt_type": stmt_type,
+            "db": None,
+            "table": None,
+            "full": cleaned,
+        })
+    return statements
 
 
 # ===========================================================================
@@ -178,69 +224,143 @@ def enable(request: HttpRequest, workflow_id: int) -> JsonResponse:
 ## CUSTOM-MODIFIED: v0.3.0-beta 提交页集成 —— 抽 helper 函数让 WorkflowSubmit.post 复用
 ## 核心逻辑：parse + precheck + 写 DdlGhostTask。返回 dict 给上层自行序列化。
 ## @ 2026-08-10 @ mavis
+## CUSTOM-MODIFIED: DBA-bug-9 改成扫所有 statement, 每个 ALTER 一个 task @ 2026-09-16 @ mavis
+## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+## 根因 (9/16 wf#4841): 旧版只解第一条 ALTER, 后续语句全部丢失 (CREATE TABLE 等)
+## 改法:
+##   1. _parse_all_statements 扫所有 statement
+##   2. 含非 ALTER (CREATE/INSERT/UPDATE/DELETE) → 拒绝启用, 让业务方拆单
+##   3. 多个 ALTER → 每个 ALTER 一个 task (statement_index=0..N-1)
+##   4. 返回 tasks 列表 (旧 task_id 字段保留兼容, 取第一个 task)
 def _enable_ghost_for_workflow(workflow: SqlWorkflow, created_by: str) -> dict:
     """对工单启用 gh-ost：parse + precheck + 写 DdlGhostTask。
 
     Returns:
-        {"ok": True,  "passed": True,  "summary": ..., "task_id": ..., "status": "queued"}
-        {"ok": False, "passed": False, "summary": ..., "checks": [...], "task_id": ...} (precheck 未过)
+        {"ok": True,  "passed": True,  "summary": ..., "tasks": [...], "task_id": ..., "status": "queued"}
+        {"ok": False, "passed": False, "summary": ..., "tasks": [...], "task_id": ...} (precheck 未过)
+        {"ok": False, "error": "工单 SQL 为空"}
+        {"ok": False, "error": "gh-ost 模式仅支持 ALTER TABLE, 工单含非 ALTER 语句 (CREATE/INSERT/UPDATE/DELETE); 请拆分工单"}
         {"ok": False, "error": "未找到 ALTER TABLE 语句"}
         {"ok": False, "error": "task 已在执行中（status=...），不能重复启用"}
     """
-    parsed = _parse_first_alter(_workflow_sql_text(workflow))
-    if not parsed:
+    parsed_all = _parse_all_statements(_workflow_sql_text(workflow))
+    if not parsed_all:
+        return {"ok": False, "error": "工单 SQL 为空"}
+
+    # DBA-bug-9: 非 ALTER 检查 (CREATE/INSERT/UPDATE/DELETE/OTHER 触发 reject)
+    ## USE db 是切换 schema, 不算非 ALTER (跟 precheck.check_alter_sql 一致)
+    non_alter = [s for s in parsed_all if s["stmt_type"] not in ("ALTER", "USE")]
+    if non_alter:
+        names = ", ".join(
+            f"{i+1}:{s['stmt_type']}" for i, s in enumerate(non_alter[:3])
+        )
+        more = "..." if len(non_alter) > 3 else ""
+        return {
+            "ok": False,
+            "error": (
+                f"gh-ost 模式仅支持 ALTER TABLE, 工单含 {len(non_alter)} 条非 ALTER 语句 "
+                f"({names}{more});请拆分: CREATE / INSERT / UPDATE / DELETE 单独提交工单"
+            ),
+        }
+
+    # 至少要有一条 ALTER (理论上 non_alter=[] + parsed_all=[] 已经被上面覆盖)
+    if not parsed_all:
         return {"ok": False, "error": "未找到 ALTER TABLE 语句"}
 
-    db_name = parsed["db"] or workflow.db_name
-    table_name = parsed["table"]
-
-    # 已经存在 task？
-    existing = DdlGhostTask.objects.filter(workflow=workflow).first()
-    if existing and existing.status in ("running", "cut_over", "queued"):
+    # 已经存在 active task?
+    existing_qs = DdlGhostTask.objects.filter(
+        workflow=workflow, task_type="ghost",
+    )
+    active_existing = [
+        t for t in existing_qs
+        if t.status in ("running", "cut_over", "queued")
+    ]
+    if active_existing:
         return {
             "ok": False,
-            "error": f"task 已在执行中（status={existing.status}），不能重复启用",
+            "error": (
+                f"工单已有 {len(active_existing)} 个 task 在执行中 (status="
+                f"{active_existing[0].status}), 不能重复启用"
+            ),
         }
 
+    # 循环创建 task (每个 ALTER 一个)
     instance = workflow.instance
-    report = run_all_prechecks(
-        workflow=workflow,
-        instance=instance,
-        db_name=db_name,
-        table_name=table_name,
-        alter_sql=parsed["full"],
-    )
-    if not report["passed"]:
-        # 仍然写一条 task 记录（precheck_failed），便于审计
-        task = _upsert_task(
-            workflow, parsed, db_name, table_name,
-            passed=False, report=report, created_by=created_by,
-        )
-        return {
-            "ok": False,
-            "passed": False,
-            "summary": report["summary"],
-            "checks": report["checks"],
-            "task_id": task.id,
-        }
+    created_tasks: List[DdlGhostTask] = []
+    all_passed = True
+    failed_summaries: List[str] = []
 
-    # 预检通过 → 写 task（status=queued，alpha 阶段不进 running）
-    task = _upsert_task(
-        workflow, parsed, db_name, table_name,
-        passed=True, report=report, created_by=created_by,
-    )
+    for idx, stmt in enumerate(parsed_all):
+        db_name = stmt["db"] or workflow.db_name
+        table_name = stmt["table"]
+        if not db_name or not table_name:
+            return {
+                "ok": False,
+                "error": f"第 {idx + 1} 条 ALTER 无法解析 db/table: {stmt['full'][:100]}",
+            }
+
+        report = run_all_prechecks(
+            workflow=workflow,
+            instance=instance,
+            db_name=db_name,
+            table_name=table_name,
+            alter_sql=stmt["full"],
+        )
+        task = _upsert_task(
+            workflow, stmt, db_name, table_name,
+            passed=report["passed"], report=report, created_by=created_by,
+            statement_index=idx, statement_type="ALTER",
+        )
+        created_tasks.append(task)
+        if not report["passed"]:
+            all_passed = False
+            failed_summaries.append(
+                f"#{idx + 1} {db_name}.{table_name}: {report['summary']}"
+            )
+
+    # 汇总
+    if all_passed:
+        summary = (
+            f"全部 {len(created_tasks)} 条 ALTER 预检通过 "
+            f"(表: {', '.join(t.table_name for t in created_tasks)})"
+        )
+    else:
+        summary = (
+            f"{len(created_tasks) - len(failed_summaries)}/{len(created_tasks)} 预检通过; "
+            f"失败: {'; '.join(failed_summaries)}"
+        )
+
     return {
-        "ok": True,
-        "passed": True,
-        "summary": report["summary"],
-        "task_id": task.id,
-        "status": task.status,
+        "ok": all_passed,
+        "passed": all_passed,
+        "summary": summary,
+        "tasks": [
+            {
+                "id": t.id,
+                "index": t.statement_index,
+                "table": f"{t.db_name}.{t.table_name}",
+                "passed": t.precheck_passed,
+                "status": t.status,
+            }
+            for t in created_tasks
+        ],
+        # 兼容旧字段 (取第一个 task)
+        "task_id": created_tasks[0].id if created_tasks else None,
+        "status": created_tasks[0].status if created_tasks else None,
     }
 
 
+## CUSTOM-MODIFIED: DBA-bug-9 加 statement_index + statement_type 入参 @ 2026-09-16 @ mavis
+## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
 def _upsert_task(workflow, parsed, db_name, table_name,
-                 passed: bool, report: dict, created_by: str) -> DdlGhostTask:
-    """创建或更新 task（alpha 阶段如果 precheck 失败 → 写 failed record）。"""
+                 passed: bool, report: dict, created_by: str,
+                 statement_index: int = 0, statement_type: str = "ALTER") -> DdlGhostTask:
+    """创建或更新 task（alpha 阶段如果 precheck 失败 → 写 failed record）。
+
+    ## CUSTOM-MODIFIED: DBA-bug-9 加 statement_index @ 2026-09-16 @ mavis
+    ## unique_together 改为 (task_type, workflow, statement_index),
+    ## update_or_create 需要按 statement_index 区分, 否则同工单第 2 条 ALTER 会覆盖第 1 条
+    """
     defaults = {
         "enabled": True,
         "precheck_passed": passed,
@@ -253,6 +373,8 @@ def _upsert_task(workflow, parsed, db_name, table_name,
         "original_table_size_bytes": report.get("table_size_bytes") or None,
         "status": "queued" if passed else "precheck_failed",
         "created_by": created_by or "",
+        "statement_index": statement_index,
+        "statement_type": statement_type,
     }
     if passed:
         # 拿到 audit（如果工单已提交）
@@ -261,7 +383,8 @@ def _upsert_task(workflow, parsed, db_name, table_name,
             defaults["audit"] = audit
 
     task, _created = DdlGhostTask.objects.update_or_create(
-        workflow=workflow, defaults=defaults,
+        workflow=workflow, statement_index=statement_index,
+        task_type="ghost", defaults=defaults,
     )
     return task
 

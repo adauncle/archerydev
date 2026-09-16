@@ -202,61 +202,93 @@
     <div class="panel panel-primary" id="gh-ost-panel">
         <div class="panel-heading">
             <i class="fa fa-rocket"></i> gh-ost 无锁变更
-            {% if ghost_task %}<span class="badge" style="margin-left:10px;">task #{{ ghost_task.id }}</span>{% endif %}
+            <span class="badge" style="margin-left:10px;">
+                {{ ghost_tasks|length }} 个 task
+            </span>
             <span class="badge" style="margin-left:6px;background:{% if ghost_task_is_terminal %}#909399{% else %}#67C23A{% endif %};">
-                {{ ghost_task.get_status_display }}
+                {% if ghost_task_is_terminal %}全部已结束{% else %}{{ active_ghost_tasks|length }} 个执行中{% endif %}
             </span>
         </div>
         <div class="panel-body" style="padding:0;">
-            {% if ghost_task_is_terminal %}
-            <!-- 终态：显示结果摘要，不再轮询 -->
-            <div style="padding:20px 24px;">
-                <table class="table table-condensed" style="margin-bottom:8px;">
-                    <tbody>
+            <!-- CUSTOM-MODIFIED: DBA-bug-9 多 task 列表 @ 2026-09-16 @ mavis
+                 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+                 业务: 一个工单含多条 ALTER 时, 每个 ALTER 一个 task, 这里展示所有 task
+                      active 时显示 iframe (单 task) 或列表 (多 task) -->
+            <div style="padding:16px 24px;">
+                <table class="table table-condensed table-hover" style="margin-bottom:8px;">
+                    <thead>
                         <tr>
-                            <th style="width:140px;">最终状态</th>
+                            <th style="width:50px;">序号</th>
+                            <th style="width:80px;">task #</th>
+                            <th style="width:200px;">表</th>
+                            <th>ALTER 子句</th>
+                            <th style="width:100px;">状态</th>
+                            <th style="width:80px;">进度</th>
+                            <th style="width:120px;">开始</th>
+                            <th style="width:120px;">结束</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in ghost_tasks %}
+                        <tr>
+                            <td>{{ t.statement_index }}</td>
+                            <td>#{{ t.id }}</td>
+                            <td><code>{{ t.db_name }}.{{ t.table_name }}</code></td>
+                            <td><code style="font-size:12px;">{{ t.alter_statement|truncatechars:80 }}</code></td>
                             <td>
-                                {% if ghost_task.status == "success" %}
-                                    <font color="green"><i class="fa fa-check-circle"></i> cut-over 成功</font>
-                                {% elif ghost_task.status == "failed" %}
-                                    <font color="red"><i class="fa fa-times-circle"></i> 失败</font>
-                                {% elif ghost_task.status == "cancelled" %}
-                                    <font color="#E6A23C"><i class="fa fa-ban"></i> 已取消</font>
-                                {% elif ghost_task.status == "rolled_back" %}
-                                    <font color="#909399"><i class="fa fa-undo"></i> 已回滚</font>
+                                {% if t.status == "success" %}
+                                    <font color="green"><i class="fa fa-check-circle"></i> {{ t.get_status_display }}</font>
+                                {% elif t.status == "failed" %}
+                                    <font color="red"><i class="fa fa-times-circle"></i> {{ t.get_status_display }}</font>
+                                {% elif t.status == "cancelled" %}
+                                    <font color="#E6A23C"><i class="fa fa-ban"></i> {{ t.get_status_display }}</font>
+                                {% elif t.status == "rolled_back" %}
+                                    <font color="#909399"><i class="fa fa-undo"></i> {{ t.get_status_display }}</font>
+                                {% elif t.status == "precheck_failed" %}
+                                    <font color="red"><i class="fa fa-exclamation-triangle"></i> {{ t.get_status_display }}</font>
+                                {% else %}
+                                    <font color="#67C23A">{{ t.get_status_display }}</font>
                                 {% endif %}
                             </td>
+                            <td>{{ t.progress_pct }}%</td>
+                            <td><small>{{ t.started_at|date:"m-d H:i:s"|default:"-" }}</small></td>
+                            <td><small>{{ t.finished_at|date:"m-d H:i:s"|default:"-" }}</small></td>
                         </tr>
-                        <tr>
-                            <th>进度</th>
-                            <td>{{ ghost_task.progress_pct }}% · 复制 {{ ghost_task.progress_rows_copied|default:"-" }}/{{ ghost_task.progress_rows_total|default:"-" }} 行</td>
-                        </tr>
-                        <tr>
-                            <th>耗时</th>
-                            <td>{{ ghost_task.duration_seconds }} 秒</td>
-                        </tr>
-                        {% if ghost_task.error_message %}
-                        <tr>
-                            <th>错误 / 备注</th>
-                            <td><pre style="max-height:120px;overflow:auto;background:#f5f5f5;padding:6px;margin:0;">{{ ghost_task.error_message }}</pre></td>
-                        </tr>
-                        {% endif %}
-                        <tr>
-                            <th>开始 / 结束</th>
-                            <td>{{ ghost_task.started_at|default:"-" }} → {{ ghost_task.finished_at|default:"-" }}</td>
-                        </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
-                <small class="text-muted">
-                    终态 task 不再轮询进度。要重跑（failed/cancelled）走"重试"端点；要 drop 影子表（failed）走"回滚"端点。
-                </small>
             </div>
-            {% else %}
-            <!-- active：iframe 轮询 -->
+            {% if not ghost_task_is_terminal and ghost_tasks|length == 1 %}
+            <!-- 单 task active: 保留 iframe 进度面板 -->
             <iframe src="/gh_ost/progress/{{ workflow_detail.id }}/"
                     style="width:100%;height:600px;border:0;background:transparent;"
                     id="gh-ost-iframe"
                     title="gh-ost 进度面板"></iframe>
+            {% elif not ghost_task_is_terminal and ghost_tasks|length > 1 %}
+            <!-- 多 task active: 进度详情走单独进度面板 (按 task_id) -->
+            <div style="padding:20px 24px;background:#f5f5f5;">
+                <i class="fa fa-info-circle"></i>
+                <b>多 task 工单</b> · 进度面板在每个 task 详情查看
+                <ul style="margin:8px 0 0 20px;">
+                    {% for t in ghost_tasks %}
+                    {% if t.status not in 'success,failed,cancelled,rolled_back' %}
+                    <li>task #{{ t.id }} ({{ t.db_name }}.{{ t.table_name }}):
+                        <a href="/gh_ost/progress/{{ workflow_detail.id }}/?task_id={{ t.id }}" target="_blank">
+                            进度详情
+                        </a>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            {% if workflow_detail.status == "workflow_finish" and not ghost_task_is_terminal %}
+            <!-- 异常: 工单已结束但 ghost task 还在跑 (poller defer) -->
+            <div class="alert alert-warning" style="margin:10px 24px;">
+                <i class="fa fa-warning"></i>
+                <b>工单状态已置为"已正常结束"</b>, 但还有 {{ active_ghost_tasks|length }} 个 gh-ost task 在跑;
+                请等待所有 task 结束 (DBA-bug-9 poller 全部终态才同步 wf.status).
+            </div>
             {% endif %}
         </div>
     </div>
