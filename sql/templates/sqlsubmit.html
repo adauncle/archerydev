@@ -1004,6 +1004,48 @@
                 });
                 tTableHtml += '</tbody></table></div>';
 
+                // CUSTOM-MODIFIED: DBA-bug-8 索引变更检测渲染 @ 2026-09-16 @ mavis
+                // 业务: 业务方实战 add index idx_owner_name(owner_name), 表里已有 idx_owner_name 索引
+                //       (owner_name 字段上), 字段 diff 弹窗 错显示 "ADD index 新列, 无冲突" (把 ADD INDEX 错解析成 ADD COLUMN).
+                // 修法: 索引 diff 表格 (跟 columns 平级), 展示 ADD/DROP INDEX 子句 + 按字段重复/按索引名重复判断.
+                // 关联: docs/changelogs/2026-09-16_dba-bug-8-field-diff-index-duplicate.md
+                if (t.index_diff && t.index_diff.length > 0) {
+                    tTableHtml += '<div style="margin-top:14px;padding:10px 14px;background:rgba(91,157,217,0.06);border:1px solid rgba(91,157,217,0.3);border-radius:6px;font-size:14px;color:#2f5f7e;">' +
+                                     '<strong>📊 索引变更检测</strong> <span style="color:#5a6f7e;font-size:12px;">(ADD/DROP INDEX 子句, 字段名 + 索引名双重判断)</span>' +
+                                     '</div>';
+                    tTableHtml += '<div style="overflow-x:auto;margin-top:6px;"><table class="table table-bordered table-hover" style="margin:0;font-size:14px;"><thead><tr style="background:#fafafa;"><th style="padding:10px;width:80px;">操作</th><th style="padding:10px;width:160px;">索引名</th><th style="padding:10px;width:140px;">字段</th><th style="padding:10px;">改前</th><th style="padding:10px;">改后</th><th style="padding:10px;width:60px;">风险</th><th style="padding:10px;">提示</th></tr></thead><tbody>';
+                    $.each(t.index_diff, function (idx_i, idx) {
+                        var idxOpLabel = idx.operation === "ADD_INDEX"
+                            ? '<span class="label label-success">ADD INDEX</</span>'
+                            : idx.operation === "DROP_INDEX"
+                                ? '<span class="label label-danger">DROP INDEX</</span>'
+                                : idx.operation;
+                        if (!idx.diffs || idx.diffs.length === 0) {
+                            // 无冲突 (新索引, 字段也不重复)
+                            tTableHtml += '<tr><td style="padding:10px;">' + idxOpLabel + '</td><td style="padding:10px;font-weight:600;">' + escapeHtml(idx.name || "?") + '</td><td style="padding:10px;font-family:monospace;font-size:13px;">' + escapeHtml((idx.new && idx.new.columns ? idx.new.columns.join(", ") : "?")) + '</td><td colspan="3" style="padding:10px;color:#909399;">无冲突</td></tr>';
+                        } else {
+                            var idxFirstRow = true;
+                            $.each(idx.diffs, function (di, d) {
+                                var dRiskColor = d.risk === "high" ? "#b06367" : (d.risk === "mid" ? "#c9a23f" : (d.risk === "low" ? "#5a8c6e" : "#909399"));
+                                var dRiskPill = '<span style="background:' + dRiskColor + ';color:white;padding:3px 10px;border-radius:10px;font-size:13px;font-weight:600;">' + (d.risk === "high" ? "🟥 高" : d.risk === "mid" ? "🟧 中" : "🟩 低") + '</span>';
+                                tTableHtml += '<tr>';
+                                if (idxFirstRow) {
+                                    tTableHtml += '<td style="padding:10px;vertical-align:top;" rowspan="' + idx.diffs.length + '">' + idxOpLabel + '</td>';
+                                    tTableHtml += '<td style="padding:10px;font-weight:600;vertical-align:top;" rowspan="' + idx.diffs.length + '">' + escapeHtml(idx.name || "?") + '</td>';
+                                    tTableHtml += '<td style="padding:10px;font-family:monospace;font-size:13px;vertical-align:top;" rowspan="' + idx.diffs.length + '">' + escapeHtml((idx.new && idx.new.columns ? idx.new.columns.join(", ") : "?")) + '</td>';
+                                    idxFirstRow = false;
+                                }
+                                tTableHtml += '<td style="padding:10px;font-family:monospace;font-size:13px;"><span style="background:rgba(176,99,103,0.1);color:#b06367;text-decoration:line-through;padding:2px 6px;border-radius:3px;">' + escapeHtml(String(d.old)) + '</span></td>';
+                                tTableHtml += '<td style="padding:10px;font-family:monospace;font-size:13px;"><span style="background:rgba(90,140,110,0.1);color:#5a8c6e;padding:2px 6px;border-radius:3px;">' + escapeHtml(String(d.new)) + '</span></td>';
+                                tTableHtml += '<td style="padding:10px;">' + dRiskPill + '</td>';
+                                tTableHtml += '<td style="padding:10px;color:#606266;font-size:13px;">' + escapeHtml(d.reason) + '</td>';
+                                tTableHtml += '</tr>';
+                            });
+                        }
+                    });
+                    tTableHtml += '</tbody></table></div>';
+                }
+
                 if (t.table_exists === false) {
                     tTableHtml = '<div style="padding:10px 14px;background:rgba(176,99,103,0.06);border:1px solid #b06367;border-radius:4px;margin-top:8px;color:#b06367;">⚠️ 表 ' + escapeHtml(t.table_name) + ' 不存在或查不到列定义, 跳过 diff</div>' + tTableHtml;
                 }

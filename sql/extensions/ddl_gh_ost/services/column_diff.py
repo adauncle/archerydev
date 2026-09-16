@@ -235,6 +235,68 @@ def _fetch_table_size(instance, db_name: str, table_name: str) -> dict:
         return None
 
 
+# ============================================================
+# 1.5 索引信息 (DBA-bug-8, 2026-09-16)
+# ============================================================
+def _fetch_current_indexes(instance, db_name: str, table_name: str) -> dict:
+    """CUSTOM: 查 information_schema.statistics 拿当前表的所有索引.
+
+    ## CUSTOM-MODIFIED: DBA-bug-8 索引重复判断 @ 2026-09-16 @ mavis
+    ## 业务背景: 业务方实战 add index idx_owner_name(owner_name), 表里已有
+    ##          idx_owner_name 索引 (owner_name 字段上), 字段 diff 弹窗 错显示
+    ##          "ADD index 新列, 无冲突" (把 ADD INDEX 错解析成 ADD COLUMN).
+    ## 修法: 查 information_schema.statistics 拿当前所有索引, 跟 ALTER TABLE ADD INDEX
+    ##      按字段 + 按索引名双重判断重复.
+
+    返回: {
+        "idx_name": {                              # PRIMARY 索引 name 固定为 "PRIMARY"
+            "columns": ["col1", "col2", ...],     # 按 SEQ_IN_INDEX 排序
+            "non_unique": bool,                     # True=Btree 普通索引, False=UNIQUE|PRIMARY
+            "type": "BTREE" | "HASH" | "FULLTEXT", | "",
+        },
+        ...
+    }
+    查不到返 {} (调用方需要容错).
+    """
+    if not (instance and db_name and table_name):
+        return {}
+    try:
+        user, password = (
+            instance.get_username_password()
+            if hasattr(instance, "get_username_password")
+            else (instance.user, instance.password)
+        )
+        import pymysql
+        conn = pymysql.connect(
+            host=instance.host, port=instance.port, user=user, password=password,
+            database=db_name, connect_timeout=5, autocommit=True,
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT INDEX_NAME, COLUMN_NAME, SEQ_IN_INDEX, NON_UNIQUE, INDEX_TYPE
+                       FROM information_schema.statistics
+                       WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s
+                       ORDER BY INDEX_NAME, SEQ_IN_INDEX""",
+                    (db_name, table_name),
+                )
+                indexes = {}
+                for row in cur.fetchall():
+                    idx_name = row[0] or "PRIMARY"  # PRIMARY 索引 INDEX_NAME='PRIMARY'
+                    col_name = row[1]
+                    non_unique = bool(row[3])
+                    idx_type = row[4] or ""
+                    if idx_name not in indexes:
+                        indexes[idx_name] = {"columns": [], "non_unique": non_unique, "type": idx_type}
+                    indexes[idx_name]["columns"].append(col_name)
+                return indexes
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        logger.exception("_fetch_current_indexes failed: %s.%s", db_name, table_name)
+        return {}
+
+
 def _build_big_table_alert(size_info: dict) -> dict:
     """CUSTOM: 拼大表 DDL 防呆 alert 字典 (SQL 提交页 + 详情页共用).
 
@@ -321,6 +383,34 @@ _RE_ALTER_COLUMN = re.compile(
     r"\s+(?P<action>SET\s+DEFAULT|DROP\s+DEFAULT)"
     r"(?:\s+(?P<value>'(?:[^']|'')*'|\([^)]*\)|\S+))?"
     r"\s*$",
+    re.IGNORECASE,
+)
+
+
+# 模式 7: ADD [UNIQUE|FULLTEXT|SPATIAL] INDEX [name] (col1, col2, ...)
+# 模式 8: ADD PRIMARY KEY (col1, col2, ...)
+# CUSTOM-MODIFIED: DBA-bug-8 索引重复判断 @ 2026-09-16 @ mavis
+# 业务: 业务方实战 add index idx_owner_name(owner_name), 表里已有 idx_owner_name 索引,
+#       字段 diff 弹窗 错显示 "ADD index 新列, 无冲突" (把 ADD INDEX 错解析成 ADD COLUMN)
+# 修法: 加 _RE_INDEX_ADD / _RE_PRIMARY_KEY_ADD / _RE_INDEX_DROP regex 识别索引变更,
+#       跟 information_schema.statistics 比对 (按字段 + 按索引名双重判断)
+# 关联: docs/changelogs/2026-09-16_dba-bug-8-field-diff-index-duplicate.md
+_RE_INDEX_ADD = re.compile(
+    r"^\s*ADD\s+(?P<unique>UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?"
+    r"(?:INDEX|KEY)\s+"
+    r"(?:`?(?P<index_name>[^`\s(]+)`?\s+)?"
+    r"\((?P<columns>[^)]+)\)",
+    re.IGNORECASE,
+)
+
+_RE_PRIMARY_KEY_ADD = re.compile(
+    r"^\s*ADD\s+PRIMARY\s+KEY\s*\((?P<columns>[^)]+)\)",
+    re.IGNORECASE,
+)
+
+_RE_INDEX_DROP = re.compile(
+    r"^\s*DROP\s+(?P<primary>PRIMARY\s+KEY|INDEX|KEY)\s+"
+    r"`?(?P<index_name>[^`\s,;]+)`?",
     re.IGNORECASE,
 )
 
@@ -472,6 +562,106 @@ def _parse_alter_column_changes(sql_content: str) -> list:
                     "default_action": "drop",
                     "new_default": None,
                 })
+            continue
+
+    return changes
+
+
+# ============================================================
+# 2.5 解析 ALTER TABLE 子句中 ADD/DROP INDEX 部分 (DBA-bug-8)
+# ============================================================
+def _parse_columns_list(cols_str: str) -> list:
+    """CUSTOM: 解析索引字段列表 (字段名可能带长度 + asc/desc).
+
+    例如: "owner_name(10), plate ASC" -> ["owner_name", "plate"]
+    """
+    result = []
+    for part in cols_str.split(","):
+        col = part.strip().strip("`").strip()
+        # 去掉 (length)
+        col = re.sub(r"\s*\(\d+\)", "", col)
+        # 去掉 ASC/DESC
+        col = re.sub(r"\s+(ASC|DESC)\s*$", "", col, flags=re.IGNORECASE).strip()
+        if col:
+            result.append(col)
+    return result
+
+
+def _parse_alter_index_changes(sql_content: str) -> list:
+    """CUSTOM: 解析 ALTER TABLE 子句中 ADD/DROP INDEX 部分.
+
+    ## CUSTOM-MODIFIED: DBA-bug-8 索引重复判断 @ 2026-09-16 @ mavis
+    ## 业务: 业务方实战 add index idx_owner_name(owner_name), 字段 diff 弹窗错显示
+    ##      "ADD index 新列, 无冲突". 修法: 识别 ADD/DROP INDEX (跟 MODIFY/ADD/DROP
+    ##      COLUMN 区分开), 跟 information_schema.statistics 比对按字段 + 按索引名.
+
+    返回: [{
+        "operation": "add_index" | "drop_index" | "add_primary_key" | "drop_primary_key",
+        "index_name": str | None,   # ADD INDEX 没显式名字, MySQL 自动生成, 这里为 None
+        "columns": [str, ...],      # 索引字段列表 (去掉反引号/长度/asc/desc)
+        "unique": bool,             # 是否 UNIQUE 索引
+    }]
+    """
+    if not sql_content:
+        return []
+
+    m = re.match(
+        r"^\s*ALTER\s+TABLE\s+"
+        r"(?:(?P<schema>`?[^`\s.()]+`?)\.)?`?(?P<table>[^`\s(]+)`?",
+        sql_content.strip(),
+        re.IGNORECASE,
+    )
+    if not m:
+        return []
+
+    operations_text = sql_content[m.end():]
+    operations = _split_top_level_commas(operations_text)
+
+    changes = []
+    for op_text in operations:
+        op_text = op_text.strip().rstrip(";").strip()
+        if not op_text:
+            continue
+
+        # ADD PRIMARY KEY
+        m_pk_add = _RE_PRIMARY_KEY_ADD.match(op_text)
+        if m_pk_add:
+            columns = _parse_columns_list(m_pk_add.group("columns"))
+            changes.append({
+                "operation": "add_primary_key",
+                "index_name": "PRIMARY",
+                "columns": columns,
+                "unique": True,
+            })
+            continue
+
+        # ADD [UNIQUE|FULLTEXT|SPATIAL] INDEX [name] (col, col, ...)
+        m_idx_add = _RE_INDEX_ADD.match(op_text)
+        if m_idx_add:
+            raw_name = m_idx_add.group("index_name")
+            index_name = _strip_quotes(raw_name) if raw_name else None
+            columns = _parse_columns_list(m_idx_add.group("columns"))
+            unique = bool(m_idx_add.group("unique"))
+            changes.append({
+                "operation": "add_index",
+                "index_name": index_name,
+                "columns": columns,
+                "unique": unique,
+            })
+            continue
+
+        # DROP INDEX / DROP PRIMARY KEY
+        m_idx_drop = _RE_INDEX_DROP.match(op_text)
+        if m_idx_drop:
+            op_raw_upper = m_idx_drop.group(0).upper()
+            is_primary = "PRIMARY" in op_raw_upper
+            index_name = "PRIMARY" if is_primary else _strip_quotes(m_idx_drop.group("index_name"))
+            changes.append({
+                "operation": "drop_primary_key" if is_primary else "drop_index",
+                "index_name": index_name,
+                "columns": [],
+                "unique": False,
+            })
             continue
 
     return changes
@@ -766,18 +956,23 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
     big_table_alert = _build_big_table_alert(size_info)
 
     changes = _parse_alter_column_changes(alter_sql)
-    if not changes:
+    # CUSTOM-MODIFIED: DBA-bug-8 索引重复判断 @ 2026-09-16 @ mavis
+    # 业务: 业务方实战 add index idx_owner_name(owner_name), 表里已有 idx_owner_name 索引,
+    #       字段 diff 弹窗 错显示 "ADD index 新列, 无冲突". 修法: 同时解析 column + index 变更,
+    #       跟 information_schema.statistics 比对按字段 + 按索引名双重判断.
+    index_changes = _parse_alter_index_changes(alter_sql)
+    if not changes and not index_changes:
         # CUSTOM-MODIFIED: 9/11 DBA-bug-3 not changes 时也保留大表 alert
         # 实战踩坑: ADD INDEX/DROP INDEX/RENAME 等非字段变更, 业务方完全错过大表 alert
         return {
             "ok": False,
-            "error": f"ALTER TABLE 不包含 MODIFY/ADD/DROP COLUMN 字段变更",
-            "hint": "只支持 ALTER TABLE ... MODIFY/ADD/DROP COLUMN",
+            "error": f"ALTER TABLE 不包含 MODIFY/ADD/DROP COLUMN 或 INDEX 变更",
+            "hint": "只支持 ALTER TABLE ... MODIFY/ADD/DROP COLUMN + ADD/DROP INDEX",
             "table_name": table_name,
             "big_table_alert": big_table_alert,  # 关键: 大表 alert 即便 not changes 也带上
         }
 
-    # 3. 查当前列定义
+    # 3. 查当前列定义 (索引 diff 也需要表存在)
     current_cols = _fetch_current_columns(instance, db_name, table_name)
     if not current_cols:
         return {
@@ -787,6 +982,11 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
             "table_exists": False,
             "big_table_alert": big_table_alert,  # 关键: 大表 alert 即便表不存在也带上 (虽然 size_info=None)
         }
+
+    # 3.5 查当前索引 (DBA-bug-8)
+    # CUSTOM-MODIFIED: DBA-bug-8 索引重复判断 @ 2026-09-16 @ mavis
+    # 跟 _fetch_current_columns 共用 DB connection, 复用思路但单独查 (跟 column 一样逻辑)
+    current_indexes = _fetch_current_indexes(instance, db_name, table_name) if index_changes else {}
 
     # 4. 逐变更 diff
     columns_diff = []
@@ -1140,12 +1340,127 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
             "suggested_sql": suggested_sql,
         })
 
-    # 5. 总结 (单表)
+    # 4.5 索引 diff (DBA-bug-8, 2026-09-16)
+    # CUSTOM-MODIFIED: DBA-bug-8 索引重复判断 @ 2026-09-16 @ mavis
+    # 业务: 业务方实战 add index idx_owner_name(owner_name), 表里已有 idx_owner_name 索引
+    #       (owner_name 字段上), 字段 diff 弹窗 错显示 "ADD index 新列, 无冲突".
+    # 修法: 跟现有索引比对 - (1) 索引名重复 (2) 索引字段重复 (即使索引名不同).
+    # 实战数据 (业务方): "索引名没重复, 索引字段重了, 这个场景几率很大" (2026-09-16 15:58)
+    index_diff = []
+    for idx_change in index_changes:
+        op = idx_change["operation"]
+        new_index_name = idx_change.get("index_name")
+        new_cols = idx_change.get("columns") or []
+        new_cols_lc = [c.lower() for c in new_cols]
+
+        if op in ("add_index", "add_primary_key"):
+            # 1) 索引名重复判断 (按索引名)
+            if new_index_name and new_index_name in current_indexes:
+                existing = current_indexes[new_index_name]
+                index_diff.append({
+                    "name": new_index_name,
+                    "operation": "ADD_INDEX",
+                    "type": "high",
+                    "current": existing,
+                    "new": {"columns": new_cols, "unique": idx_change.get("unique", False)},
+                    "diffs": [{
+                        "field": "_index_name",
+                        "old": "exists",
+                        "new": "add duplicate",
+                        "risk": "high",
+                        "reason": (
+                            f"索引名 {new_index_name!r} 已存在 (字段: "
+                            f"{', '.join(existing['columns'])}), ADD INDEX 会失败 (Duplicate key name)"
+                        ),
+                    }],
+                })
+                high_risk += 1
+                continue
+
+            # 2) 索引字段重复判断 (按字段, 索引名不重复但字段已加索引)
+            #    实战踩坑 (业务方 9/16 15:58): 加 idx_new_name(owner_name), 但 owner_name 字段
+            #    上已经有 idx_old_name 索引 → ADD INDEX 仍会失败 (一个字段最多一个普通索引)
+            if new_cols_lc:
+                for cur_idx_name, cur_idx in current_indexes.items():
+                    # PRIMARY / UNIQUE 索引不影响普通索引冲突 (可同字段再加普通索引)
+                    if not cur_idx["non_unique"]:
+                        continue
+                    # 已有索引第一列 == 新索引第一列 → 字段冲突
+                    if cur_idx["columns"] and cur_idx["columns"][0].lower() == new_cols_lc[0]:
+                        index_diff.append({
+                            "name": new_index_name or f"<auto_{'_'.join(new_cols_lc)}>",
+                            "operation": "ADD_INDEX",
+                            "type": "high",
+                            "current": cur_idx,
+                            "new": {"columns": new_cols, "unique": idx_change.get("unique", False)},
+                            "diffs": [{
+                                "field": "_index_field",
+                                "old": "covered",
+                                "new": "add duplicate",
+                                "risk": "high",
+                                "reason": (
+                                    f"字段 {new_cols_lc[0]!r} 上已有普通索引 {cur_idx_name!r} "
+                                    f"(字段: {', '.join(cur_idx['columns'])}), 一个字段最多一个普通索引, "
+                                    f"ADD INDEX 会失败"
+                                ),
+                            }],
+                        })
+                        high_risk += 1
+                        break
+                else:
+                    # 没冲突, 普通新索引
+                    index_diff.append({
+                        "name": new_index_name or f"<auto_{'_'.join(new_cols_lc)}>",
+                        "operation": "ADD_INDEX",
+                        "type": "low",
+                        "current": None,
+                        "new": {"columns": new_cols, "unique": idx_change.get("unique", False)},
+                        "diffs": [],
+                    })
+            continue
+
+        if op in ("drop_index", "drop_primary_key"):
+            # DROP 索引: 检查索引是否存在 (不存在 DROP 会报错)
+            if new_index_name and new_index_name not in current_indexes:
+                index_diff.append({
+                    "name": new_index_name or "?",
+                    "operation": "DROP_INDEX",
+                    "type": "high",
+                    "current": None,
+                    "new": {"columns": [], "unique": False},
+                    "diffs": [{
+                        "field": "_index_name",
+                        "old": "missing",
+                        "new": "drop",
+                        "risk": "high",
+                        "reason": f"索引名 {new_index_name!r} 不存在, DROP INDEX 会报错",
+                    }],
+                })
+                high_risk += 1
+            elif new_index_name and new_index_name in current_indexes:
+                index_diff.append({
+                    "name": new_index_name,
+                    "operation": "DROP_INDEX",
+                    "type": "mid",
+                    "current": current_indexes[new_index_name],
+                    "new": {"columns": [], "unique": False},
+                    "diffs": [{
+                        "field": "_op",
+                        "old": "exists",
+                        "new": "dropped",
+                        "risk": "mid",
+                        "reason": f"删除索引 {new_index_name!r} (字段: {', '.join(current_indexes[new_index_name]['columns'])}), 查询性能可能下降",
+                    }],
+                })
+                mid_risk += 1
+            continue
+
+    # 5. 总结 (单表) — 含 index diff (DBA-bug-8)
     if high_risk > 0:
         summary = f"检测到 {high_risk} 个高风险变更, 强烈建议补全 SQL"
     elif mid_risk > 0:
         summary = f"检测到 {mid_risk} 个中风险变更, 注意已有数据"
-    elif any(c.get("diffs") for c in columns_diff):
+    elif any(c.get("diffs") for c in columns_diff) or any(i.get("diffs") for i in index_diff):
         summary = "检测到低风险变更, 兼容"
     else:
         summary = "所有变更兼容, 无风险"
@@ -1162,6 +1477,7 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
         "table_name": table_name,
         "table_exists": True,
         "columns": columns_diff,
+        "index_diff": index_diff,  # CUSTOM: DBA-bug-8 索引重复判断结果 (跟 columns 平级)
         "high_risk_count": high_risk,
         "mid_risk_count": mid_risk,
         "low_risk_count": low_risk,
@@ -1280,8 +1596,8 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
     if not tables_diff:
         return {
             "ok": False,
-            "error": "SQL 不包含任何 MODIFY/ADD/DROP COLUMN 字段变更",
-            "hint": "只支持 ALTER TABLE ... MODIFY/ADD/DROP COLUMN",
+            "error": "SQL 不包含任何 MODIFY/ADD/DROP COLUMN 或 INDEX 变更",
+            "hint": "只支持 ALTER TABLE ... MODIFY/ADD/DROP COLUMN + ADD/DROP INDEX",
             "big_table_alert": first_big_table_alert,  # 关键: not changes 时也带上大表 alert
         }
 
@@ -1313,6 +1629,8 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
         "table_name": first.get("table_name", "?"),
         "table_exists": first.get("table_exists", True),
         "columns": first.get("columns", []),
+        # CUSTOM: DBA-bug-8 索引 diff 顶层 (跟 columns 平级, 前端 sqlsubmit.html 渲染)
+        "index_diff": first.get("index_diff", []),
         # 顶层汇总
         "high_risk_count": total_high,
         "mid_risk_count": total_mid,
