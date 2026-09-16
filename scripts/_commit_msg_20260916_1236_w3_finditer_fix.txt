@@ -1,0 +1,87 @@
+fix(sql): W3 跨库检测 regex finditer 修复 (业务方多行 SQL 无 `;` wf#4821 实战 bug, 9/16)
+
+9/16 12:18 110 prod 演练 wf#4821 实战 case K (多行 ALTER 行间无 `;`) FAIL:
+
+```
+wf#4821 case: FAIL result={'ok': True, 'schemas': [], 'expected_db': 'hly_accesscard'}
+```
+
+业务方 wf#4821 SQL 多行无 `;` 分隔 (3 行 SQL: use hly_accesscard + ALTER 同库 + ALTER hly_usercenter 跨库),
+原 `_extract_schemas` 按 `;` 拆分, 整个 SQL 当成 1 个 statement, regex 只 match 第一个 ALTER (schema=None),
+漏掉第二个 ALTER 跨库检测 → ok=True 业务方误以为没跨库.
+
+## 9/16 修法 (2 步)
+
+### 第 1 步: regex finditer 全局扫描
+
+`_extract_schemas` 改用 `regex.finditer(cleaned)` 替代 `for stmt in cleaned.split(";")`,
+不依赖 `;` 分隔, 扫整段 SQL 找所有 DDL/DML 匹配.
+
+### 第 2 步: regex 去掉 `^\s*` 行首限制
+
+原 regex `r"^\s*ALTER\s+TABLE\s+"` 带 `^\s*` 行首限制, `re.finditer` 默认只匹配字符串开头
+(MULTILINE 模式才匹配每行开头), 第 1 步修后只 match 第一个 ALTER.
+
+修法: `r"\bALTER\s+TABLE\s+"` 用 `\b` 词边界替代 `^\s*` 行首限制, finditer 能匹配任意位置.
+6 个 DDL/DML regex (ALTER/INSERT/UPDATE/DELETE/CREATE/DROP) 全替换.
+
+## 134 dev 验证
+
+单元测试 `_w3_cross_db_unit.py` 加 Case P (wf#4821 多行无 `;` 实战) + Case O 改对 (多个 ALTER 一个跨库),
+**16/16 case 全 PASS** (修复前 14/16 FAIL O + P).
+
+## 110 prod 验证
+
+service 函数演练 (不走 HTTP, 不依赖 gunicorn reload):
+- 跨库 6/6 PASS (含 wf#4821 K case 多行无 `;` 主验证)
+- 老工单回归 2/2 PASS (wf#4791 同库 ALTER + wf#4783 同库 UPDATE)
+- PK 冲突 case 选错实例 id=5 没 hly_datacenter_mod, 改用真实业务实例 id=7 (prod core for etc慢日志, 172.20.2.205:3306)
+  + hly_billing.consume_flow 表 (DBA-bug-2 实战用过的表) + 真实雪花算法 PK (MIN/MAX+1) 演练,
+  PASS 验证 ✅
+
+## 110 prod master 二次 reload
+
+12:33 12:09 reload 之后又推了新代码 (finditer 修复 + changelog 上线操作日志), master 内存里还是
+老代码, 必 reload master 让代码进内存. 业务中断 ~10 秒, 不动任何数据和表结构.
+
+旧 master 95623 (12:09 启动) kill -TERM → 新 master 101791 (12:33 启动) + 5 workers,
+HTTP 200 ✅.
+
+## 实战新发现 (W3 跨项目, 6 条)
+
+1. **SQL 检测覆盖度必考虑业务方真实形态** (9/16 W3 实战新发现)
+2. **跨项目 regex 一致性必对齐** (9/11 DBA-bug-2 实战新发现复用)
+3. **跨库检测 + PK 冲突检测是 Archery 上游设计漏洞** (9/16 W3 调研结论)
+4. **UI 跟后端判断逻辑必须对齐** (9/15 DBA-bug-6 实战新发现复用)
+5. **大表 PK 冲突 IN 限制 1000 + LIMIT N** (9/16 W3 实战新发现)
+6. **业务方多行 SQL 无 `;` 分隔, regex 必支持 finditer 全局扫描** (9/16 实战 bug fix)
+7. **gunicorn reload 必 reload master, 只 kill workers 不够** (9/16 W3 跨环境实战新发现, 修正 9/15 实战新发现的"不动 master"前提)
+
+## 凭据清理 (9/16 12:35)
+
+`_dba_bug5a_deploy_110.ps1` 里有 110 prod root 硬编码密码, 违反 AGENTS.md 凭据规范.
+清理: 移到 `_archive/_dba_bug5a_deploy_110.ps1.CREDENTIAL_REMOVED` + 密码改为 `$env:ARCHERY_PROD_PASSWORD`
+环境变量占位符 + 加安全警告. 后续推 110 prod 走 PowerShell 临时变量.
+
+## 同源 entry (DBA 实战接龙 12 事件, 9/11-9/16, 6 commit + 2 软提示 + 1 凭据实战 + 2 事故 + 1 bug fix)
+
+- 9/11 17:55 DBA-bug-1 (4b2d19c) drop index + 审批节点不显示
+- 9/11 18:50 DBA-bug-2 (7bd988b) 反引号 schema 解析 + 主页面 banner
+- 9/11 19:30 DBA-bug-3 (bac9e4f) ADD/DROP INDEX 端点 ok=False 链路 bug
+- 9/11 20:10 DBA-bug-3 hotfix (fd7c831) Django 跨行注释 JS 报错
+- 9/12 10:50 DBA-bug-4 (软提示) 业务方选错库
+- 9/12 10:55 DBA-bug-5 (软提示) DDL 跨库镜像工单 + 历史库表不存在
+- 9/12 11:35 DBA-bug-5a (304ba21) sync_trigger.py regex bug
+- 9/14 10:11 archery 账号密码被改 (实战)
+- 9/15 16:43 DBA-bug-6 (33a966e) 镜像工单取消按钮终态隐藏
+- 9/15 17:34 gunicorn reload 事故 (实战新发现)
+- 9/15 18:16 DBA-bug-7 (7aa9fb4) 待办列表终态 wf 显示修复
+- 9/16 09:23 W3 跨库限制 + INSERT PK 冲突检测 (c65c93e, 13 files +1629/-2)
+- **9/16 12:18 W3 finditer bug fix (本 commit, wf#4821 实战 case)**
+
+## 上线 checklist 必加 (W3 实战新发现, 4 条)
+
+1. 单元测试必覆盖 10+ 真实业务方实战 case (跨库/重复 PK/use 切换库/多值 INSERT/复合 PK/表无 PK/表权限不够/表不存在)
+2. 跨项目 regex 必对齐格式 (反引号/不反引号/use/注释/多语句都支持), 必 `grep -rn "re.compile.*ALTER.*TABLE" .` 看现有写法
+3. 跨项目 SQL 解析 regex 必去掉 `^`/`^\s*` 行首限制改用 `\b` + `re.finditer` 全局扫描 + 业务方多行无 `;` 回归测试 case
+4. gunicorn 推代码后必 reload master (`systemctl restart` 或 `kill -TERM master_pid && nohup setsid 重启`), 只 kill workers 不动 master 不够

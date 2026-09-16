@@ -32,6 +32,8 @@ CASES = [
     ("N 只有 SELECT pass", "SELECT * FROM accesscard_vehicle_change WHERE id=1", "hly_accesscard", True, ""),
     # 多个 ALTER 一个跨库一个同库 (有跨库就 reject)
     ("O 多个 ALTER 一个跨库 reject", "ALTER TABLE accesscard_vehicle_change ADD COLUMN a INT;\nALTER TABLE hly_usercenter.xxx ADD COLUMN b INT", "hly_accesscard", False, "hly_usercenter"),
+    # 9/16 实战新发现: wf#4821 业务方多行 ALTER 行间无 `;` 分隔
+    ("P wf#4821 多行 ALTER 无 `;` 跨库 (实战 bug fix)", "use hly_accesscard\nALTER TABLE accesscard_vehicle_change ADD COLUMN ocr_travel_vehicletype VARCHAR(150) DEFAULT NULL\nALTER TABLE hly_usercenter.accesscard_user_vehicle_change ADD COLUMN ocr_travel_vehicletype varchar(150)", "hly_accesscard", False, "hly_usercenter"),
 ]
 
 

@@ -39,44 +39,45 @@ from common.config import SysConfig
 # DDL/DML regex: ALTER TABLE / INSERT INTO / UPDATE / DELETE FROM / CREATE TABLE / DROP TABLE
 # schema 段: `?[^`\s.()]+\`?\. (可选 schema. + 不带/带反引号)
 # table 段: `?[^`\s(]+\`? (不带/带反引号)
+# 9/16 实战 bug fix: 用 \bALTER 不带 ^\s*, 让 finditer 能匹配任意位置 (业务方多行无 `;` SQL)
 _RE_ALTER = re.compile(
-    r"^\s*ALTER\s+TABLE\s+"
+    r"\bALTER\s+TABLE\s+"
     r"(?:(?:`?(?P<schema>[^`\s.()]+)`?)\.)?"
     r"`?(?P<table>[^`\s(]+)`?",
     re.IGNORECASE | re.DOTALL,
 )
 _RE_INSERT = re.compile(
-    r"^\s*INSERT\s+INTO\s+"
+    r"\bINSERT\s+INTO\s+"
     r"(?:(?:`?(?P<schema>[^`\s.()]+)`?)\.)?"
     r"`?(?P<table>[^`\s(]+)`?",
     re.IGNORECASE | re.DOTALL,
 )
 _RE_UPDATE = re.compile(
-    r"^\s*UPDATE\s+"
+    r"\bUPDATE\s+"
     r"(?:(?:`?(?P<schema>[^`\s.()]+)`?)\.)?"
     r"`?(?P<table>[^`\s(]+)`?",
     re.IGNORECASE | re.DOTALL,
 )
 _RE_DELETE = re.compile(
-    r"^\s*DELETE\s+FROM\s+"
+    r"\bDELETE\s+FROM\s+"
     r"(?:(?:`?(?P<schema>[^`\s.()]+)`?)\.)?"
     r"`?(?P<table>[^`\s(]+)`?",
     re.IGNORECASE | re.DOTALL,
 )
 _RE_CREATE = re.compile(
-    r"^\s*CREATE\s+TABLE\s+"
+    r"\bCREATE\s+TABLE\s+"
     r"(?:(?:`?(?P<schema>[^`\s.()]+)`?)\.)?"
     r"`?(?P<table>[^`\s(]+)`?",
     re.IGNORECASE | re.DOTALL,
 )
 _RE_DROP = re.compile(
-    r"^\s*DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?"
+    r"\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?"
     r"(?:(?:`?(?P<schema>[^`\s.()]+)`?)\.)?"
     r"`?(?P<table>[^`\s(]+)`?",
     re.IGNORECASE | re.DOTALL,
 )
 
-# use 前缀跳过 (DBA-bug-1 套路)
+# use 前缀跳过 (DBA-bug-1 套路, ^\s* 只匹配行首/字符串开头 OK, 因为 use 永远在行首)
 _RE_USE = re.compile(r"^\s*use\s+", re.IGNORECASE)
 
 
@@ -104,25 +105,22 @@ def _extract_schemas(sql_content: str) -> set:
     - ALTER TABLE `hly_usercenter`.`accesscard_xxx` → {'hly_usercenter'}
     - ALTER TABLE accesscard_xxx → {None} (无 schema, 同库)
     - ALTER TABLE `hly_usercenter`.xxx + ALTER TABLE `hly_accesscard`.xxx → {'hly_usercenter', 'hly_accesscard'}
+    - 多个 ALTER 行间无 `;` (wf#4821 实战): `ALTER TABLE t1 ... \n ALTER TABLE hly_usercenter.t2 ...` → {None, 'hly_usercenter'}
+
+    9/16 实战新发现: wf#4821 业务方 SQL 多行无 `;` 分隔, 之前按 `;` 拆分漏掉第二个 ALTER 跨库检测.
+    修法: 改用 regex finditer 全局扫描, 不依赖 `;` 分隔.
     """
     cleaned = _preprocess_sql(sql_content)
     if not cleaned:
         return set()
 
     schemas = set()
-    # 按 `;` 拆分多条 SQL
-    for stmt in cleaned.split(";"):
-        stmt = stmt.strip()
-        if not stmt:
-            continue
-        # 5 个 DDL/DML regex 都试一次 (顺序不影响, 性能 OK)
-        for regex in (_RE_ALTER, _RE_INSERT, _RE_UPDATE, _RE_DELETE, _RE_CREATE, _RE_DROP):
-            m = regex.match(stmt)
-            if m:
-                schema = m.group("schema")
-                # schema 段可能是 None (无 schema, 同库) 或字符串
-                schemas.add(schema)  # None 直接 set 加进去
-                break  # 一个语句匹配一个 regex 就够了
+    # 5 个 DDL/DML regex 全局 finditer 扫描 (不依赖 `;` 分隔, 9/16 实战 bug fix)
+    for regex in (_RE_ALTER, _RE_INSERT, _RE_UPDATE, _RE_DELETE, _RE_CREATE, _RE_DROP):
+        for m in regex.finditer(cleaned):
+            schema = m.group("schema")
+            # schema 段可能是 None (无 schema, 同库) 或字符串
+            schemas.add(schema)  # None 直接 set 加进去
 
     return schemas
 
