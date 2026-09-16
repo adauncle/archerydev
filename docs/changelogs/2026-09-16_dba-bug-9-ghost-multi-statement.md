@@ -164,7 +164,12 @@ gh-ost task 切流成功 → 立即把 wf.status 改为 `workflow_finish` → **
 ## 后续
 
 1. ✅ 推 134 dev + 110 prod + 演练 5/5 PASS
-2. ⏳ 业务方实测 wf#4841 类似多表 DDL 工单
-3. ⏳ 通知业务方 wf#4841 vehicle_risk_hit_detail 表没建 (提供 CREATE 语句让他 review)
-4. ⏳ gh-ost v0.3.0-alpha 排期 (排在 v0.2.3 OA 对账之后)
-5. ⏳ 月度 DBA 宣讲更新 (DBA-bug-9 加进实战案例)
+2. ✅ **DBA-bug-9.5** (9/16 19:55+, 业务方实测发现 2 个前端可见 bug):
+   - 问题 1: CREATE TABLE 没提示要拆单
+   - 问题 2: 多 ALTER 大表只提示一张表
+   - 修法: 加 `big_tables` 列表 + `non_alter_stmts` + `/gh_ost/check_non_alter/` 端点 + 前端 SQL 检测弹窗警告 banner
+   - commit `4b1e415`, 演练 6+1 PASS (134 dev + 110 prod)
+3. ⏳ 业务方实测 wf#4841 类似多表 DDL 工单
+4. ⏳ 通知业务方 wf#4841 vehicle_risk_hit_detail 表没建 (提供 CREATE 语句让他 review)
+5. ⏳ gh-ost v0.3.0-alpha 排期 (排在 v0.2.3 OA 对账之后)
+6. ⏳ 月度 DBA 宣讲更新 (DBA-bug-9 + 9.5 加进实战案例)
