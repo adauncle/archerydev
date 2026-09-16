@@ -407,6 +407,28 @@ class SqlWorkflow(models.Model, WorkflowAuditMixin):
         default=False,
         help_text="勾选后等审批通过, detail 视图自动启用; 拒绝/撤回时 task 清理但标记保留",
     )
+    ## CUSTOM-MODIFIED: v0 gh-ost 智能模式加 gh_ost_mode 字段 @ 2026-09-16 @ mavis
+    ## 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+    ## 业务: 单工单多 ALTER 时, 业务方可选 smart (智能分流大表小表) / all_ghost / all_native
+    ## 9/16 21:42 阿达叔叔拍板 5A
+    GH_OST_MODE_CHOICES = (
+        ("smart", "智能 (默认: 大表 gh-ost + 小表原生 ALTER)"),
+        ("all_ghost", "全部 gh-ost (强制所有 ALTER 走 gh-ost)"),
+        ("all_native", "全部原生 ALTER (强制所有 ALTER 走原生)"),
+    )
+    gh_ost_mode = models.CharField(
+        "gh-ost 模式", max_length=16, choices=GH_OST_MODE_CHOICES,
+        default="smart", db_index=True,
+        help_text="smart=默认智能分流;all_ghost=全部 gh-ost;all_native=全部原生",
+    )
+    ## CUSTOM-MODIFIED: v0 gh-ost 智能模式存小表原生 ALTER 结果 @ 2026-09-16 @ mavis
+    ## 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+    ## 业务: smart 模式下小表原生 ALTER 的执行结果, poller 用它判断 wf.status
+    ## [{statement_index, db, table, alter, status, errormessage, started_at, finished_at}, ...]
+    native_alter_results = models.JSONField(
+        "小表原生 ALTER 结果", default=list, blank=True,
+        help_text="smart 模式下小表原生 ALTER 的执行结果",
+    )
 
     def __str__(self):
         return self.workflow_name

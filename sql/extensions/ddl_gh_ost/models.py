@@ -114,6 +114,15 @@ class DdlGhostTask(models.Model):
         "DDL 类型", max_length=16, blank=True, default="ALTER",
         help_text="DDL 类型: ALTER / CREATE / INSERT / UPDATE / DELETE / USE (gh-ost 任务只存 ALTER)",
     )
+    ## CUSTOM-MODIFIED: v0 gh-ost 智能模式加 task 依赖链 @ 2026-09-16 @ mavis
+    ## 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+    ## 业务: 多 ghost task 时按 statement_index 串行, 前一个 task success 才能起下一个 (9/16 5A 拍板)
+    depends_on = models.ForeignKey(
+        "self", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="dependent_tasks",
+        verbose_name="依赖 task (前一个串行任务)",
+        help_text="串行依赖: 本 task 启动需要 depends_on 任务 success 状态",
+    )
 
     # ===== 用户选择 =====
     enabled = models.BooleanField(

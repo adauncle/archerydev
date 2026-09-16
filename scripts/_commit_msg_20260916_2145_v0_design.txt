@@ -1,0 +1,40 @@
+WIP: v0 gh-ost 智能模式 - 设计稿 + 数据模型 (5A 拍板)
+
+业务: 单工单多 ALTER 含大表小表混合时, 业务方可选 gh_ost_mode:
+  - smart (默认): 大表走 gh-ost task, 小表走原生 ALTER
+  - all_ghost: 全部走 gh-ost (强制)
+  - all_native: 全部走原生 ALTER
+
+拍板: 9/16 21:42 阿达叔叔 同意 5A
+  1. 大表阈值: 复用 10w 行 / 100MB
+  2. 小表路径: mysql.execute() 原生连接数据库直连 ALTER
+  3. task 串行依赖链 (depends_on ForeignKey self)
+  4. gh_ost_mode 选法: 工单页下拉框
+  5. wf.status 控制: poller 统一 (全部 ghost task 终态 + 小表 ALTER 完成)
+
+本 commit (WIP, 阶段 1/4):
+- 设计稿: docs/designs/2026-09-16_v0-gh-ost-smart-mode-design.md (12.3KB)
+- SqlWorkflow 加 gh_ost_mode 字段 (smart/all_ghost/all_native, default=smart)
+- SqlWorkflow 加 native_alter_results JSONField (smart 模式小表 ALTER 结果)
+- DdlGhostTask 加 depends_on ForeignKey self (串行依赖链)
+- migration 0006_dba_bug_v0_gh_ost_smart.py
+
+阶段 2/4 待办:
+- sql/views.py 工单提交页加 gh_ost_mode 下拉框 + SqlWorkflowForm
+- sql/extensions/ddl_gh_ost/views.py _enable_ghost_for_workflow 按 gh_ost_mode 分流
+- sql/extensions/ddl_gh_ost/views.py start 串行依赖链
+- sql/extensions/ddl_gh_ost/services/poller.py _sync_workflow_status 全部终态检查
+
+阶段 3/4:
+- sql/templates/sqlsubmit.html + detail.html gh_ost_mode + native_alter_results 渲染
+- 演练脚本 _w3_v0_smart_drill.py 7 case
+
+阶段 4/4:
+- 134 dev + 110 prod 推 + reload + 演练 PASS
+- 业务方通知 + MEMORY + 月度宣讲更新
+
+CHANGELOG: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md (待写)
+关联 commit: c4ca623 (DBA-bug-9) + 4b1e415 (DBA-bug-9.5) + f880521 (changelog)
+关联设计稿: docs/designs/2026-09-16_v0-gh-ost-smart-mode-design.md
+关联事件: DBA-bug-9 + 9.5 + wf#4841 业务方实战
+关联实战接龙: 9/11-9/16 17 事件
