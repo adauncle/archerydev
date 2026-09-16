@@ -682,7 +682,59 @@
                     sessionStorage.setItem('CheckWarningCount', result.warning_count);
                     sessionStorage.setItem('CheckErrorCount', result.error_count);
                     $("#inception-result").show();
-                    $('#btn-submitsql').button('reset').removeClass('disabled').prop("disabled", false);
+
+                    // CUSTOM-MODIFIED: W3 跨库限制 + INSERT PK 冲突检测 (9/16 阿达叔叔拍板 A 严格) @ 2026-09-16 @ mavis
+                    // 关联: docs/changelogs/2026-09-16_cross-db-pk-check.md
+                    // 实战: 9/16 wf#4821 (alter table hly_usercenter.accesscard_user_vehicle_change 跨库)
+                    //       + wf#4834 (INSERT 306/307/308/309 重复 PK) 业务方实战触发
+                    // 修法: 检测到跨库/PK 冲突 → 红框 alert + 阻止提交按钮 (DBA-bug-6 UX 教训: UI 跟后端判断逻辑必须对齐)
+                    var hasBlockError = false;
+                    // 1. 跨库检测 alert
+                    $("#cross-db-alert-w3").remove();
+                    if (result.cross_db_check && !result.cross_db_check.ok) {
+                        var crossDbHtml = '<div class="alert alert-danger" id="cross-db-alert-w3" ' +
+                            'style="margin:14px 18px;padding:18px 22px;border-left:4px solid #b06367;">' +
+                            '<div style="display:flex;align-items:flex-start;gap:14px;">' +
+                                '<i class="fa fa-exclamation-triangle" style="font-size:24px;color:#b06367;flex-shrink:0;margin-top:2px;"></i>' +
+                                '<div style="flex:1;">' +
+                                    '<strong style="font-size:16px;color:#5a3a3a;">⚠️ 跨库 SQL 检测失败 (W3)</strong>' +
+                                    '<div style="margin-top:6px;color:#5a3a3a;font-size:14px;">' + escapeHtml(result.cross_db_check.error) + '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>';
+                        $("#inception-result").before(crossDbHtml);
+                        hasBlockError = true;
+                    }
+                    // 2. PK 冲突检测 alert
+                    $("#pk-conflict-alert-w3").remove();
+                    if (result.pk_conflict_check && !result.pk_conflict_check.ok) {
+                        var conflicts = result.pk_conflict_check.conflicts || [];
+                        var conflictItemsHtml = '';
+                        conflicts.forEach(function (c) {
+                            conflictItemsHtml += '<li><code>' + escapeHtml(c.table) + '</code> 表 PK 列 <code>' + escapeHtml(c.pk_col) +
+                                '</code> 已存在 <strong>' + c.existing_pks.join(', ') + '</strong> (' + c.duplicate_count + ' 个冲突)' +
+                                '<div style="margin-top:4px;font-size:13px;color:#666;">' + escapeHtml(c.hint) + '</div></li>';
+                        });
+                        var pkConflictHtml = '<div class="alert alert-danger" id="pk-conflict-alert-w3" ' +
+                            'style="margin:14px 18px;padding:18px 22px;border-left:4px solid #b06367;">' +
+                            '<div style="display:flex;align-items:flex-start;gap:14px;">' +
+                                '<i class="fa fa-exclamation-triangle" style="font-size:24px;color:#b06367;flex-shrink:0;margin-top:2px;"></i>' +
+                                '<div style="flex:1;">' +
+                                    '<strong style="font-size:16px;color:#5a3a3a;">⚠️ INSERT 主键冲突 (W3)</strong>' +
+                                    '<ul style="margin:6px 0 0 18px;color:#5a3a3a;font-size:14px;">' + conflictItemsHtml + '</ul>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>';
+                        $("#inception-result").before(pkConflictHtml);
+                        hasBlockError = true;
+                    }
+                    // 3. 阻止提交按钮 + 改文案 (DBA-bug-6 UX 教训)
+                    if (hasBlockError) {
+                        $('#btn-submitsql').button('reset').removeClass('disabled').addClass('disabled').prop("disabled", true).text("请先修复跨库/PK 冲突");
+                    } else {
+                        $('#btn-submitsql').button('reset').removeClass('disabled').prop("disabled", false).text("提交");
+                    }
+
                     {# CUSTOM-MODIFIED: v0.3.x 字段 diff 联动 @ 2026-08-12 @ mavis #}
                     {# SQL 检测成功后, ALTER TABLE 自动 fetch 字段 diff 端点 #}
                     {# 失败 fallback: 静默不显示, 不影响 SQL 检测 #}

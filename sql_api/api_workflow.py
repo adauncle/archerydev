@@ -30,6 +30,8 @@ from sql.utils.resource_group import user_groups
 from sql.utils.sql_review import can_cancel, can_execute, on_correct_time_period
 from sql.utils.tasks import del_schedule
 from sql.utils.workflow_audit import Audit, get_auditor, AuditException
+from sql.utils.cross_db_check import check_cross_db
+from sql.utils.pk_conflict_check import check_pk_conflict
 from .filters import WorkflowFilter, WorkflowAuditFilter
 from .pagination import CustomizedPagination
 from .serializers import (
@@ -74,7 +76,37 @@ class ExecuteCheck(views.APIView):
         except Exception as e:
             raise serializers.ValidationError({"errors": f"{e}"})
         check_result.rows = check_result.to_dict()
-        serializer_obj = ExecuteCheckResultSerializer(check_result)
+
+        ## CUSTOM-MODIFIED: W3 跨库限制 + INSERT PK 冲突检测 (9/16 阿达叔叔拍板 A 严格)
+        ## @ 2026-09-16 @ mavis
+        ## 关联: docs/changelogs/2026-09-16_cross-db-pk-check.md
+        ## 实战: 9/16 wf#4821 (alter table hly_usercenter.accesscard_user_vehicle_change 跨库)
+        ##       + wf#4834 (INSERT 306/307/308/309 重复 PK) 业务方实战触发
+        ## 9/16 调研: Archery 上游 + inception/goinception 都无跨库/PK 冲突检测能力,
+        ##            必须二次开发. inception 走 SQL 语法/语义 + `--real_row_count` 受影响行数,
+        ##            不查 DB 现有 PK 值.
+        ## 修法: 走 inception 之后 + 走 cross_db_check + pk_conflict_check
+        ##       + serializer 加 2 字段 + sqlsubmit.html 检测后回调红框 alert + 阻止提交按钮
+        full_sql = request.data["full_sql"].strip()
+        # 跨库检测
+        try:
+            cross_db_result = check_cross_db(full_sql, instance, db_name)
+        except Exception as e:
+            logger.warning("check_cross_db 失败: %s", e)
+            cross_db_result = {"ok": True, "error": str(e), "schemas": [], "expected_db": db_name}
+        # PK 冲突检测 (业务方实战 wf#4834 重复 PK)
+        try:
+            pk_conflict_result = check_pk_conflict(full_sql, instance, db_name)
+        except Exception as e:
+            logger.warning("check_pk_conflict 失败: %s", e)
+            pk_conflict_result = {"ok": True, "error": str(e), "conflicts": []}
+
+        serializer_obj = ExecuteCheckResultSerializer(
+            check_result, context={
+                "cross_db_check": cross_db_result,
+                "pk_conflict_check": pk_conflict_result,
+            }
+        )
         return Response(serializer_obj.data)
 
 

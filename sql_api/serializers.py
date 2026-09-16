@@ -422,6 +422,24 @@ class ExecuteCheckResultSerializer(serializers.Serializer):
     syntax_type = serializers.IntegerField(read_only=True)
     rows = serializers.JSONField(read_only=True)
     column_list = serializers.JSONField(read_only=True)
+
+    ## CUSTOM-MODIFIED: W3 跨库限制 + INSERT PK 冲突检测 (9/16 阿达叔叔拍板 A 严格)
+    ## @ 2026-09-16 @ mavis
+    ## 关联: docs/changelogs/2026-09-16_cross-db-pk-check.md
+    ## 实战: 9/16 wf#4821 跨库 + wf#4834 PK 冲突, 9/16 阿达叔叔拍板 A 严格 (reject 阻止提交)
+    ## 前端 sqlsubmit.html 检测后回调拿到这 2 字段 → 红框 alert + 阻止提交按钮
+    cross_db_check = serializers.JSONField(read_only=True)
+    pk_conflict_check = serializers.JSONField(read_only=True)
+
+    def to_representation(self, instance):
+        ## CUSTOM-MODIFIED: W3 跨库限制 + PK 冲突检测 注入 context (9/16 @ mavis)
+        data = super().to_representation(instance)
+        # cross_db_check + pk_conflict_check 由 ExecuteCheck.post 注入 context
+        # (9/16 DBA 一条龙全包: 实战驱动型需求, 跨项目可复用 alert 字段)
+        ctx = self.context
+        data["cross_db_check"] = ctx.get("cross_db_check", {"ok": True, "schemas": [], "expected_db": ""})
+        data["pk_conflict_check"] = ctx.get("pk_conflict_check", {"ok": True, "conflicts": []})
+        return data
     status = serializers.CharField(read_only=True)
     affected_rows = serializers.IntegerField(read_only=True)
 
