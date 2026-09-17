@@ -32,6 +32,9 @@ from sql.utils.tasks import del_schedule
 from sql.utils.workflow_audit import Audit, get_auditor, AuditException
 from sql.utils.cross_db_check import check_cross_db
 from sql.utils.pk_conflict_check import check_pk_conflict
+## CUSTOM-MODIFIED: v1 优化加 _check_mixed_ddl 后端兜底 @ 2026-09-17 @ mavis
+## 关联: docs/changelogs/2026-09-17_v1-optimize-mixed-ddl-block-submit.md
+from sql.views import _check_mixed_ddl
 from .filters import WorkflowFilter, WorkflowAuditFilter
 from .pagination import CustomizedPagination
 from .serializers import (
@@ -101,10 +104,24 @@ class ExecuteCheck(views.APIView):
             logger.warning("check_pk_conflict 失败: %s", e)
             pk_conflict_result = {"ok": True, "error": str(e), "conflicts": []}
 
+        ## CUSTOM-MODIFIED: v1 优化加 mixed_ddl_check (混合 DDL 检测) @ 2026-09-17 @ mavis
+        ## 关联: docs/changelogs/2026-09-17_v1-optimize-mixed-ddl-block-submit.md
+        ## 业务: 9/16 wf#4841 业务方工单含 4 CREATE + 4 ALTER, 旧提醒无效, 业务方还是提交, 工单显示"成功"
+        ##       但实际 7/8 失败 (CREATE 丢失, 9/16 阿达叔叔拍板)
+        ## 修法: SQL 检测时同时跑 _check_mixed_ddl, 含 ALTER + CREATE/INSERT/UPDATE/DELETE 时 → ok=False
+        ##       前端 sqlsubmit.html 检测回调: 渲染红框 alert + 阻止提交按钮 (跟 cross_db / pk_conflict 一致)
+        ##       后端 WorkflowList.post() 兜底: 即使前端绕过, 也 reject (raise ValidationError)
+        try:
+            mixed_ddl_result = _check_mixed_ddl(full_sql)
+        except Exception as e:
+            logger.warning("_check_mixed_ddl 失败: %s", e)
+            mixed_ddl_result = {"ok": True, "error": str(e)}
+
         serializer_obj = ExecuteCheckResultSerializer(
             check_result, context={
                 "cross_db_check": cross_db_result,
                 "pk_conflict_check": pk_conflict_result,
+                "mixed_ddl_check": mixed_ddl_result,
             }
         )
         return Response(serializer_obj.data)

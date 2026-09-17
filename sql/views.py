@@ -379,6 +379,55 @@ def _detect_non_alter(sql_content: str) -> list:
     return result
 
 
+## CUSTOM-MODIFIED: v1 优化加 _check_mixed_ddl 混合 DDL 检测 @ 2026-09-17 @ mavis
+## 关联: docs/changelogs/2026-09-17_v1-optimize-mixed-ddl-block-submit.md
+## 业务: 9/16 wf#4841 业务方工单含 4 CREATE + 4 ALTER, 旧提醒无效, 业务方还是提交, 工单显示"成功"
+##       但实际 7/8 失败 (CREATE 丢失, 9/16 阿达叔叔拍板)
+## 修法: 检测到混合 DDL (CREATE/INSERT/UPDATE/DELETE + ALTER) → return ok=False, 前端 disable 提交
+##       + 后端 WorkflowList.post() 兜底 reject, 不让混合 DDL 工单提交
+## 适用: 所有工单 (不限于 gh-ost, 普通工单也禁)
+def _check_mixed_ddl(sql_content: str) -> dict:
+    """扫 SQL 内容检测是否含混合 DDL (CREATE/INSERT/UPDATE/DELETE + ALTER).
+
+    Returns:
+        {"ok": True} 全 ALTER 或全 CREATE/INSERT/UPDATE/DELETE (单类) → 允许
+        {"ok": False, "error": str, "alter_count": int, "other_count": int,
+         "types": list[str]} 混合 DDL → 拒绝 + 业务方必须拆单
+    """
+    if not sql_content:
+        return {"ok": True}
+    types_seen = set()
+    for raw_stmt in sql_content.split(";"):
+        cleaned_lines = []
+        for line in raw_stmt.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("--"):
+                continue
+            cleaned_lines.append(stripped)
+        cleaned = "\n".join(cleaned_lines).strip()
+        if not cleaned:
+            continue
+        first_word = cleaned.split()[0].upper() if cleaned.split() else ""
+        if first_word in ("ALTER", "CREATE", "INSERT", "UPDATE", "DELETE"):
+            types_seen.add(first_word)
+    has_alter = "ALTER" in types_seen
+    has_other = bool(types_seen - {"ALTER"})  # CREATE / INSERT / UPDATE / DELETE
+    if has_alter and has_other:
+        other_types = sorted(types_seen - {"ALTER"})
+        return {
+            "ok": False,
+            "error": (
+                f"工单含混合 DDL (ALTER + {', '.join(other_types)}), "
+                f"请拆分成独立工单: CREATE/INSERT/UPDATE/DELETE 单独提交, "
+                f"ALTER 单独提交"
+            ),
+            "alter_count": 1,
+            "other_count": len(other_types),
+            "types": list(types_seen),
+        }
+    return {"ok": True}
+
+
 def _get_table_size_info(instance, db_name: str, table_name: str) -> dict:
     """CUSTOM: 查 instance 库的某表大小 + 行数.
 

@@ -1,0 +1,47 @@
+fix(v1): 混合 DDL 工单禁止提交 (CREATE+ALTER 拆单, 前后端双层防护)
+
+业务: 9/16 wf#4841 业务方工单含 4 CREATE + 4 ALTER, 旧提醒无效, 业务方还是提交
+       工单显示"成功" 但实际 7/8 失败 (CREATE 全部丢失, ALTER 仅 1 条成功)
+9/17 13:06 阿达叔叔拍板备忘: 从"提醒"升级"禁止"模式, SQL 提交按钮 disable + 后端兜底
+适用: 所有工单 (不限于 gh-ost, 普通工单也禁)
+
+实施 (4 文件):
+- sql/views.py: 加 _check_mixed_ddl 函数 (复用 _detect_non_alter 的 SQL 解析思路)
+- sql_api/api_workflow.py: ExecuteCheck.post() 调 _check_mixed_ddl + 注入 mixed_ddl_check context
+- sql_api/serializers.py: ExecuteCheckResultSerializer 加 mixed_ddl_check 字段
+  + WorkflowContentSerializer.create() 第一步 raise ValidationError (后端兜底)
+- sql/templates/sqlsubmit.html: 检测回调加 mixed_ddl alert + 阻止提交按钮 + 按错误优先级文案
+  - mixed_ddl > cross_db > pk_conflict 优先级
+  - 按钮文案: "请先拆分工单 (ALTER 与 CREATE 不能混合)" > "请先修复跨库" > "请先修复 PK 冲突"
+
+后端兜底机制 (DBA-bug-6 UX 教训 + 9/17 DBA-bug-9.5b 同源):
+- 前端即使绕过 disable 按钮 (DOM 操作 / 旧 cache), 后端 serializer.create() 第一步 _check_mixed_ddl
+- ok=False → raise ValidationError({"errors": error}) (返回 400, 工单不会创建)
+- 9/16 阿达叔叔拍板 5A 后端必兜底, 前端只是 UX
+
+演练 8/8 PASS (`scripts/_w3_v1_mixed_ddl_drill.py`):
+- Case 1 纯 ALTER: ok=True
+- Case 2 纯 CREATE: ok=True
+- Case 3 ALTER + CREATE: ok=False
+- Case 4 wf#4841 实战 4 CREATE + 4 ALTER: ok=False
+- Case 5 USE + ALTER: ok=True (USE 跳过)
+- Case 6 ALTER + INSERT: ok=False
+- Case 7 空 SQL: ok=True
+- Case 8 注释 + ALTER + 注释 + CREATE: ok=False
+
+后端兜底演练 (`scripts/_w3_v1_backend_reject_drill.py`):
+- POST mixed DDL → status 400 + error "工单含混合 DDL (ALTER + CREATE), 请拆分成独立工单..."
+
+部署 (DBA 一条龙, 不动生产任何数据和表结构):
+- 134 dev: 推 4 文件 + systemctl restart + HTTP 200 + 8/8 PASS
+- 110 prod: 推 5 文件 (含演练脚本) + 手动 reload master (77927 → 9387) + HTTP 200 + 8/8 PASS
+
+实战新发现 (2 条, 跨项目可复用):
+1. 跨项目工单系统: "提醒"升级"禁止"必须前后端双层防护 (前端 disable + 后端 serializer.create() 兜底)
+2. SQL 解析复用 split + skip comments + first word token 的简单方法, 不必全用正则
+
+CHANGELOG: docs/changelogs/2026-09-17_v1-mixed-ddl-block-submit.md (8.3KB)
+关联 commit: c4ca623 (DBA-bug-9) + 4b1e415 (DBA-bug-9.5) + d3264eb (v0 阶段 2) + 9d068d9 (DBA-bug-9.5b)
+关联实战接龙: 9/11-9/17 21 事件 (14 commit + 2 软提示 + 1 凭据 + 2 事故 + 8 bug fix + v0 v1 拍板)
+
+@ 2026-09-17 13:50 @ mavis

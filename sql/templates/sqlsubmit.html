@@ -744,9 +744,40 @@
                         $("#inception-result").before(pkConflictHtml);
                         hasBlockError = true;
                     }
-                    // 3. 阻止提交按钮 + 改文案 (DBA-bug-6 UX 教训)
+                    // 3. v1 优化: 混合 DDL 检测 alert (CREATE/INSERT/UPDATE/DELETE + ALTER)
+                    // 关联: docs/changelogs/2026-09-17_v1-optimize-mixed-ddl-block-submit.md
+                    // 业务: 9/16 wf#4841 业务方工单含 4 CREATE + 4 ALTER, 旧提醒无效, 业务方还是提交
+                    // 修法: 后端 _check_mixed_ddl + 前端红框 alert + 阻止提交按钮 (跟 cross_db / pk_conflict 一致)
+                    $("#mixed-ddl-alert-v1").remove();
+                    if (result.mixed_ddl_check && !result.mixed_ddl_check.ok) {
+                        var mixedDdlTypes = (result.mixed_ddl_check.types || []).join(' + ');
+                        var mixedDdlHtml = '<div class="alert alert-danger" id="mixed-ddl-alert-v1" ' +
+                            'style="margin:14px 18px;padding:18px 22px;border-left:4px solid #b06367;">' +
+                            '<div style="display:flex;align-items:flex-start;gap:14px;">' +
+                                '<i class="fa fa-exclamation-triangle" style="font-size:24px;color:#b06367;flex-shrink:0;margin-top:2px;"></i>' +
+                                '<div style="flex:1;">' +
+                                    '<strong style="font-size:16px;color:#5a3a3a;">⚠️ 工单含混合 DDL (v1 优化)</strong>' +
+                                    '<div style="margin-top:6px;color:#5a3a3a;font-size:14px;">类型: <strong>' + escapeHtml(mixedDdlTypes) + '</strong></div>' +
+                                    '<div style="margin-top:6px;color:#5a3a3a;font-size:14px;">' + escapeHtml(result.mixed_ddl_check.error) + '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>';
+                        $("#inception-result").before(mixedDdlHtml);
+                        hasBlockError = true;
+                    }
+                    // 4. 阻止提交按钮 + 改文案 (DBA-bug-6 UX 教训)
                     if (hasBlockError) {
-                        $('#btn-submitsql').button('reset').removeClass('disabled').addClass('disabled').prop("disabled", true).text("请先修复跨库/PK 冲突");
+                        // CUSTOM-MODIFIED: v1 优化按钮文案区分 @ 2026-09-17 @ mavis
+                        // 业务: mixed_ddl 是新错误类型, 按错误优先级显示文案
+                        var blockMsg = "请先修复跨库/PK 冲突";
+                        if (result.mixed_ddl_check && !result.mixed_ddl_check.ok) {
+                            blockMsg = "请先拆分工单 (ALTER 与 CREATE 不能混合)";
+                        } else if (result.cross_db_check && !result.cross_db_check.ok) {
+                            blockMsg = "请先修复跨库";
+                        } else if (result.pk_conflict_check && !result.pk_conflict_check.ok) {
+                            blockMsg = "请先修复 PK 冲突";
+                        }
+                        $('#btn-submitsql').button('reset').removeClass('disabled').addClass('disabled').prop("disabled", true).text(blockMsg);
                     } else {
                         $('#btn-submitsql').button('reset').removeClass('disabled').prop("disabled", false).text("提交");
                     }

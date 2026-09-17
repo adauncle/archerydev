@@ -430,6 +430,12 @@ class ExecuteCheckResultSerializer(serializers.Serializer):
     ## 前端 sqlsubmit.html 检测后回调拿到这 2 字段 → 红框 alert + 阻止提交按钮
     cross_db_check = serializers.JSONField(read_only=True)
     pk_conflict_check = serializers.JSONField(read_only=True)
+    ## CUSTOM-MODIFIED: v1 优化加 mixed_ddl_check 字段 @ 2026-09-17 @ mavis
+    ## 关联: docs/changelogs/2026-09-17_v1-optimize-mixed-ddl-block-submit.md
+    ## 业务: 9/16 wf#4841 业务方工单含 4 CREATE + 4 ALTER, 旧提醒无效, 业务方还是提交
+    ## 修法: 检测到混合 DDL → 前端 disable 提交 + 后端 serializer.create() 兜底 reject
+    ## 前端 sqlsubmit.html 检测后回调拿到这字段 → 红框 alert + 阻止提交按钮
+    mixed_ddl_check = serializers.JSONField(read_only=True)
 
     def to_representation(self, instance):
         ## CUSTOM-MODIFIED: W3 跨库限制 + PK 冲突检测 注入 context (9/16 @ mavis)
@@ -439,6 +445,9 @@ class ExecuteCheckResultSerializer(serializers.Serializer):
         ctx = self.context
         data["cross_db_check"] = ctx.get("cross_db_check", {"ok": True, "schemas": [], "expected_db": ""})
         data["pk_conflict_check"] = ctx.get("pk_conflict_check", {"ok": True, "conflicts": []})
+        ## CUSTOM-MODIFIED: v1 优化 mixed_ddl_check 注入 context (9/17 @ mavis)
+        ## 关联: docs/changelogs/2026-09-17_v1-optimize-mixed-ddl-block-submit.md
+        data["mixed_ddl_check"] = ctx.get("mixed_ddl_check", {"ok": True, "types": [], "error": ""})
         return data
     status = serializers.CharField(read_only=True)
     affected_rows = serializers.IntegerField(read_only=True)
@@ -487,6 +496,16 @@ class WorkflowContentSerializer(serializers.ModelSerializer):
         workflow_data = validated_data.pop("workflow")
         instance = workflow_data["instance"]
         sql_content = validated_data["sql_content"].strip()
+        ## CUSTOM-MODIFIED: v1 优化加 mixed_ddl backend 兜底 @ 2026-09-17 @ mavis
+        ## 关联: docs/changelogs/2026-09-17_v1-optimize-mixed-ddl-block-submit.md
+        ## 业务: 9/16 wf#4841 业务方工单含 4 CREATE + 4 ALTER, 旧提醒无效, 业务方还是提交, 工单显示"成功"
+        ##       但实际 7/8 失败 (CREATE 丢失, 9/16 阿达叔叔拍板)
+        ## 修法: serializer.create() 第一步跑 _check_mixed_ddl, 含 ALTER + CREATE/INSERT/UPDATE/DELETE 时
+        ##       → raise ValidationError (前端即使绕过 disable 按钮, 后端也兜底 reject)
+        from sql.views import _check_mixed_ddl
+        mixed_ddl_result = _check_mixed_ddl(sql_content)
+        if not mixed_ddl_result.get("ok", True):
+            raise serializers.ValidationError({"errors": mixed_ddl_result["error"]})
         group = ResourceGroup.objects.get(pk=workflow_data["group_id"])
         engineer = workflow_data.get("engineer")
 
