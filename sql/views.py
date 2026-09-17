@@ -475,8 +475,12 @@ def detail(request, workflow_id):
     )
     ## CUSTOM-MODIFIED: DBA-bug-9.5 加 non_alter_stmts 检测 @ 2026-09-16 @ mavis
     ## 业务: 工单含 CREATE/INSERT/UPDATE/DELETE 时, 在详情页提示"gh-ost 模式不支持, 请拆分"
+    ## CUSTOM-MODIFIED: DBA-bug-9.5b 加 enable_gh_ost 守卫 @ 2026-09-17 @ mavis
+    ## 业务: 工单没勾 gh-ost 时, 不该显示"gh-ost 模式不支持"警告 (无关场景)
+    ## 实战 (9/17 wf#4848): 业务方先含 CREATE+ALTER 提交, 后删 ALTER 只剩 CREATE, 警告一直显示
+    ## 修法: enable_gh_ost=False 时, non_alter_stmts 设为空, detail.html 不渲染警告块
     non_alter_stmts = []  # list of dict{stmt_type, full}
-    if status_for_alert:
+    if status_for_alert and getattr(workflow_detail, "enable_gh_ost", False):
         try:
             sql_text = _workflow_sql_text(workflow_detail)
             # DBA-bug-9.5: 扫所有 ALTER, 不是只第一张

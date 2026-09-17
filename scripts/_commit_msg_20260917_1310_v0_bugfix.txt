@@ -1,0 +1,42 @@
+fix: DBA-bug-9.5b detail 页非 ALTER 警告加 enable_gh_ost 守卫 (双层防护)
+
+业务: 9/17 业务方实测 wf#4848 - 工单没勾 gh-ost 时, 详情页还显示"工单含 1 条非 ALTER 语句"警告
+预期: 只有勾 gh-ost 才该警告, 否则是无关场景, UX 误导
+
+根因 (DBA-bug-9.5b 实战新发现):
+- views.py detail 视图无条件计算 non_alter_stmts (DBA-bug-9.5 阶段加的)
+- detail.html `{% if non_alter_stmts %}` 也没看 enable_gh_ost
+- 后果: 业务方先含 CREATE+ALTER 提交, 后删 ALTER 只剩 CREATE, enable_gh_ost=False, 警告还显示
+
+修法 (双层防护):
+- sql/views.py: detail 视图条件加 `and getattr(workflow_detail, "enable_gh_ost", False)`
+  - enable_gh_ost=False 时, non_alter_stmts = [] (跳过 _detect_non_alter 调用, perf 友好)
+- sql/templates/detail.html: `{% if workflow_detail.enable_gh_ost and non_alter_stmts %}`
+  - 双层防护, 即使 view 漏了, template 也挡住
+
+附带发现 + 修复 (部署教训):
+- 110 prod 部署 v0 阶段 2 时, 漏推 sql/models.py (commit 7ca2866 加了 gh_ost_mode + native_alter_results 字段)
+- 后果: 110 prod SqlWorkflow 模型没这些字段, ORM 访问 AttributeError; 但 db 字段通过手动 ALTER 已加
+- 修法: 推 sql/models.py 到 110 prod + reload master (业务中断 ~10 秒)
+- 教训: 跨环境部署跨 commit 的改动时, 必查 git diff 7ca2866 HEAD --stat, 列全所有 modified 文件
+
+验证 (134 dev + 110 prod):
+- wf#4848 (用户截图工单): enable_gh_ost=False + sql 是 CREATE TABLE → [NEW logic] non_alter_stmts=[] 警告块不渲染 ✅
+- wf#4841 (DBA-bug-9 实战工单): enable_gh_ost=True + 4 CREATE → non_alter=4 警告继续显示 ✅
+- enable_gh_ost=True 工单 wf#4846 non_alter=1, wf#4847 non_alter=0 ✅
+
+CHANGELOG: docs/changelogs/2026-09-17_dba-bug-9.5b-detail-alert-gate.md (新增)
+关联 commit: 4b1e415 (DBA-bug-9.5 阶段 1) + d3264eb (v0 智能模式阶段 2)
+关联实战接龙: 9/11-9/17 19 事件
+关联事件: 业务方实测 wf#4848 (9/17 13:00 反馈 UX 误导)
+
+实战新发现 (2 条, 跨项目可复用):
+1. **detail 页警告块必加 enable_gh_ost 守卫** (DBA-bug-9.5b, 跨项目 UX bug):
+   跨项目写工作流/SQL 平台时, detail 视图的"模式不支持"警告必须看实际 mode 标志,
+   不能只看 SQL 内容 — 否则 UX 误导 (业务方以为系统有问题, 实际没勾)
+   修法: 双层防护 — views.py 跳过计算 + template {% if workflow_detail.enable_xxx %}
+2. **跨 commit 部署必查 git diff --stat** (跨环境部署教训):
+   跨项目部署 commit A 后的 commit B 改动时, 必查 `git diff A..B --stat` 列全所有 modified 文件,
+   漏 1 个文件就可能让生产环境 AttributeError (Python 模型跟 db 字段不一致)
+
+@ 2026-09-17 13:10 @ mavis
