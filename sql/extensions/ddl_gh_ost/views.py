@@ -83,16 +83,26 @@ _FIRST_ALTER_RE = re.compile(
     r"(?P<table>[^`\s(]+)`?",
     re.IGNORECASE | re.DOTALL,
 )
+# DBA-bug-10: CREATE INDEX 走单独 regex (跳过 idx_name + USING, 抓 ON 后面 table)
+_FIRST_CREATE_INDEX_RE = re.compile(
+    r"^\s*CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX\s+`?[^`\s]+`?\s+"
+    r"(?:USING\s+\w+\s+)?ON\s+"
+    r"`?(?P<schema>[^`\s.()]+(?:\.`?[^`\s.()]+`?)?`?\.)?`?"
+    r"(?P<table>[^`\s(]+)`?",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _parse_first_alter(sql_content: str) -> Optional[dict]:
-    """提取 SQL 文本里的第一条 ALTER TABLE，兼容 ``db.table`` 写法。
+    """提取 SQL 文本里的第一条 ALTER TABLE / CREATE INDEX（MySQL 等价 ALTER ADD INDEX）, 兼容 ``db.table`` 写法。
 
     返回 {"db": "db1", "table": "t1", "full": "ALTER TABLE ..."}，解析失败返回 None。
 
     ## CUSTOM-MODIFIED: DBA-bug-9 deprecated, 保留兼容老代码 @ 2026-09-16 @ mavis
     ## 新逻辑用 _parse_all_statements 扫所有 statement
     ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
+    ## CUSTOM-MODIFIED: 9/17 DBA-bug-10 加 CREATE INDEX 识别 @ 2026-09-17 @ mavis
+    ## 关联: docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md
     """
     all_stmts = _parse_all_statements(sql_content)
     for s in all_stmts:
@@ -105,6 +115,8 @@ def _parse_first_alter(sql_content: str) -> Optional[dict]:
 ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
 ## 根因 (9/16 wf#4841): 旧 _parse_first_alter 只解第一条 ALTER, 后续语句丢失
 ## 改法: 扫所有 statement, 返回 list[dict], 每条带 stmt_type + db + table + full
+## CUSTOM-MODIFIED: 9/17 DBA-bug-10 CREATE INDEX 归 ALTER 类 (db/table 也解) @ 2026-09-17 @ mavis
+## 关联: docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md
 def _parse_all_statements(sql_content: str) -> List[dict]:
     """提取 SQL 文本里的所有 statement。
 
@@ -117,6 +129,9 @@ def _parse_all_statements(sql_content: str) -> List[dict]:
                 "full": str,
             }
         空 SQL 返回 []
+
+    CREATE INDEX 走 _FIRST_ALTER_RE (兼容 CREATE UNIQUE/FULLTEXT/SPATIAL INDEX),
+    归 stmt_type=ALTER, db/table 都解出来.
     """
     if not sql_content:
         return []
@@ -136,8 +151,21 @@ def _parse_all_statements(sql_content: str) -> List[dict]:
         if not cleaned:
             continue
 
-        # 先试 ALTER (复用现有 regex)
+        # 先试 ALTER / CREATE INDEX (复用现有 regex, 9/17 DBA-bug-10 加 CREATE INDEX)
         m = _FIRST_ALTER_RE.match(cleaned)
+        if m:
+            schema = (m.group("schema") or "").rstrip(".").strip("`")
+            table = (m.group("table") or "").strip("`")
+            statements.append({
+                "stmt_type": "ALTER",
+                "db": schema or None,
+                "table": table,
+                "full": cleaned,
+            })
+            continue
+
+        # DBA-bug-10: CREATE INDEX 走单独 regex, 归 ALTER 类 (等价 ALTER TABLE ADD INDEX)
+        m = _FIRST_CREATE_INDEX_RE.match(cleaned)
         if m:
             schema = (m.group("schema") or "").rstrip(".").strip("`")
             table = (m.group("table") or "").strip("`")

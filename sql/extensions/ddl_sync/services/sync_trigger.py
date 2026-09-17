@@ -56,6 +56,10 @@ class TargetGroupNotConfiguredError(Exception):
 ## CUSTOM-MODIFIED: 9/12 DBA-bug-5a regex 跟 views.py 对齐 (支持反引号 schema) @ 2026-09-12 @ mavis
 ## 关联: docs/changelogs/2026-09-12_dba-bug-5a-sync-trigger-regex-blacklist.md
 ## 根因 (9/12 11:35): 老 regex 漏修反引号 schema, 业务方 `` ALTER TABLE `hly_billing`.`consume_flow` ADD INDEX ``
+## CUSTOM-MODIFIED: 9/17 DBA-bug-10 加 CREATE INDEX 识别 (等价 ALTER ADD INDEX) @ 2026-09-17 @ mavis
+## 关联: docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md
+## 根因 (9/17 16:59 wf#4849 实战): 业务方用 CREATE INDEX ... ON 业务表 (170万行) 绕过 ALTER 检测
+##       镜像工单没触发 (CREATE INDEX 不匹配 _ALTER_PATTERN)
 ##                  → _extract_table_name 错返 'hly_billing' (不是 'consume_flow')
 ##                  → _should_sync 黑名单 miss (黑名单是 'consume_flow' 不是 'hly_billing')
 ##                  → 镜像工单 wf#4808 误生成, 业务方在历史库走 gh-ost 预检发现表不存在
@@ -66,6 +70,14 @@ class TargetGroupNotConfiguredError(Exception):
 ## 实战新发现 (跨项目可复用): regex 跨文件一致性, 改一个 regex 修一个 bug 时, 必 grep 全代码库找同款
 _ALTER_PATTERN = re.compile(
     r"^\s*ALTER\s+TABLE\s+`?(?P<schema>[^`\s.()]+(?:\.`?[^`\s.()]+`?)?`?\.)?`?"
+    r"(?P<table>[^`\s(]+)`?",
+    re.IGNORECASE | re.DOTALL,
+)
+# DBA-bug-10: CREATE INDEX 走单独 regex (跳过 idx_name + USING, 抓 ON 后面 table)
+_CREATE_INDEX_PATTERN = re.compile(
+    r"^\s*CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX\s+`?[^`\s]+`?\s+"
+    r"(?:USING\s+\w+\s+)?ON\s+"
+    r"`?(?P<schema>[^`\s.()]+(?:\.`?[^`\s.()]+`?)?`?\.)?`?"
     r"(?P<table>[^`\s(]+)`?",
     re.IGNORECASE | re.DOTALL,
 )
@@ -105,6 +117,9 @@ def _extract_all_alters(sql_content: str) -> list:
         if not cleaned:
             continue
         m = _ALTER_PATTERN.match(cleaned)
+        if not m:
+            # DBA-bug-10: CREATE INDEX 走单独 regex (等价 ALTER TABLE ADD INDEX)
+            m = _CREATE_INDEX_PATTERN.match(cleaned)
         if not m:
             continue
         # db: schema 反引号里就是 schema 名字; table: 主表名

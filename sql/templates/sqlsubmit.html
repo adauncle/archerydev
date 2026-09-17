@@ -858,8 +858,11 @@
             // CUSTOM-MODIFIED: D28 字段 diff 弹窗化 @ 2026-09-03 @ mavis
             // 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d28-column-diff-modal.md
             var $box = $("#column-diff-result");
-            // 只对 ALTER TABLE 触发 (避免 SELECT/INSERT/UPDATE 等不必要检测)
-            if (!/\bALTER\s+TABLE\b/i.test(sqlContent || "")) {
+            // CUSTOM-MODIFIED: 9/17 DBA-bug-10 也识别 CREATE INDEX @ 2026-09-17 @ mavis
+            // 关联: docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md
+            // 根因: 业务方 wf#4849 用 CREATE INDEX 绕过字段 diff 弹窗
+            // 修法: ALTER TABLE 或 CREATE INDEX 都触发字段 diff (CREATE INDEX 在 MySQL 等价 ALTER TABLE ADD INDEX)
+            if (!/\b(?:ALTER\s+TABLE|CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX)\b/i.test(sqlContent || "")) {
                 $box.hide().empty();
                 $("#column-diff-inline").hide();
                 $("#column-diff-modal-body").empty();

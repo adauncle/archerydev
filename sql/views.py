@@ -268,6 +268,15 @@ def _parse_first_alter(sql_content: str) -> dict:
     修法: regex schema 段 `\`?[^`\s.()]+\`?` 跟 column_diff.py:402-405 / :756-758 保持一致.
     关联: docs/changelogs/2026-09-11_dba-bug-2-big-table-alert-backtick-schema.md
     @ 2026-09-11 @ mavis
+
+    ## CUSTOM-MODIFIED: 9/17 DBA-bug-10 加 CREATE INDEX 识别 (等价 ALTER) @ 2026-09-17 @ mavis
+    ## 关联: docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md
+    ## 根因 (9/17 16:59 wf#4849 实战): 业务方用 CREATE INDEX ... ON 业务方表 (170万行)
+    ##       绕过 _parse_first_alter → 大表 alert / gh-ost 检测 / 字段 diff 全部失效
+    ##       DBA 审核时没看到 170万行表锁表风险 (CREATE INDEX 在大表上会锁表 5-10 分钟)
+    ## 修法: CREATE INDEX ... ON tbl ... 在 MySQL 等价于 ALTER TABLE ADD INDEX
+    ##       同样属于表结构变更, 应走 ALTER 路径 (大表 alert + gh-ost)
+    ##       关联 schema CREATE TABLE / VIEW / DATABASE 等还是归 _detect_non_alter
     """
     import re
     if not sql_content:
@@ -285,16 +294,28 @@ def _parse_first_alter(sql_content: str) -> dict:
     # CUSTOM-MODIFIED: 9/11 DBA-bug-2 schema 段支持反引号 (跟 column_diff.py:402-405 保持一致)
     # 实战踩坑: 业务方 MySQL 客户端默认输出 `schema`.`table`, 老 regex [^`\s.()]+ 不接受反引号
     #          会把 `hly_billing` 当 table, consume_flow 丢了, 大表 alert 不触发
+    # DBA-bug-10: ALTER TABLE / CREATE INDEX 分 2 个 regex, CREATE INDEX 跳过 idx_name + USING
+    # 语法: ALTER TABLE tbl / CREATE [UNIQUE|FULLTEXT|SPATIAL] INDEX idx_name [USING type] ON tbl (col)
     m = re.match(
-        r"^\s*ALTER\s+TABLE\s+(?:(?P<schema>`?[^`\s.()]+`?)\.)?`?(?P<table>[^`\s(]+)`?",
+        r"^\s*ALTER\s+TABLE\s+`?(?P<schema>`?[^`\s.()]+`?\.)?`?(?P<table>[^`\s(]+)`?",
         cleaned,
         re.IGNORECASE,
     )
     if not m:
+        # CREATE INDEX 跳过 idx_name + USING, 抓 ON 后面 table
+        m = re.match(
+            r"^\s*CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX\s+`?[^`\s]+`?\s+"
+            r"(?:USING\s+\w+\s+)?ON\s+"
+            r"`?(?P<schema>`?[^`\s.()]+`?\.)?`?(?P<table>[^`\s(]+)`?",
+            cleaned,
+            re.IGNORECASE,
+        )
+    if not m:
         return None
-    schema = (m.group("schema") or "").strip("`")
+    # DBA-bug-10: rstrip(".") 去掉 schema 段尾点 (regex 含 `\`?\.)` 抓了尾点)
+    schema = (m.group("schema") or "").rstrip(".").strip("`")
     table = (m.group("table") or "").strip("`")
-    return {"db": schema or None, "table": table or None, "full": m.group(0)}
+    return {"db": schema or None, "table": table or None, "full": cleaned}
 
 
 ## CUSTOM-MODIFIED: DBA-bug-9.5 加 _parse_all_alters 扫所有 ALTER @ 2026-09-16 @ mavis
@@ -302,12 +323,14 @@ def _parse_first_alter(sql_content: str) -> dict:
 ## 根因: 业务方实测 wf#4841 类似工单 4 张大表, 但 _parse_first_alter 只解第一张,
 ##       big_table_alert 只检测第一张, 其他 3 张没大表提示
 ## 改法: 加 _parse_all_alters 扫所有 ALTER, 返回 list[{"db", "table", "full"}]
+## CUSTOM-MODIFIED: 9/17 DBA-bug-10 加 CREATE INDEX 识别 @ 2026-09-17 @ mavis
+## 关联: docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md
 def _parse_all_alters(sql_content: str) -> list:
-    """扫 SQL 内容里的所有 ALTER TABLE (兼容 db.table / 反引号 / use + 注释前缀).
+    """扫 SQL 内容里的所有 ALTER TABLE / CREATE INDEX (兼容 db.table / 反引号 / use + 注释前缀).
 
     Returns:
         list of {"db": str|None, "table": str|None, "full": str}
-        空 SQL / 没 ALTER 返 []
+        空 SQL / 没 ALTER 或 CREATE INDEX 返 []
     """
     import re
     if not sql_content:
@@ -327,13 +350,22 @@ def _parse_all_alters(sql_content: str) -> list:
         if not cleaned:
             continue
         # 复用 _parse_first_alter 的 regex
+        # DBA-bug-10: ALTER TABLE / CREATE INDEX 分 2 个 regex (CREATE INDEX 跳过 idx_name)
         m = re.match(
-            r"^\s*ALTER\s+TABLE\s+(?:(?P<schema>`?[^`\s.()]+`?)\.)?`?(?P<table>[^`\s(]+)`?",
+            r"^\s*ALTER\s+TABLE\s+`?(?P<schema>`?[^`\s.()]+`?\.)?`?(?P<table>[^`\s(]+)`?",
             cleaned,
             re.IGNORECASE,
         )
+        if not m:
+            m = re.match(
+                r"^\s*CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX\s+`?[^`\s]+`?\s+"
+                r"(?:USING\s+\w+\s+)?ON\s+"
+                r"`?(?P<schema>`?[^`\s.()]+`?\.)?`?(?P<table>[^`\s(]+)`?",
+                cleaned,
+                re.IGNORECASE,
+            )
         if m:
-            schema = (m.group("schema") or "").strip("`")
+            schema = (m.group("schema") or "").rstrip(".").strip("`")
             table = (m.group("table") or "").strip("`")
             result.append({
                 "db": schema or None,
@@ -348,12 +380,16 @@ def _parse_all_alters(sql_content: str) -> list:
 ## 根因: 业务方实测工单含 CREATE TABLE + ALTER, backend 拒绝, 但前端 SQL 检测弹窗没显示
 ##       "请拆分独立工单" 提示
 ## 改法: 加 _detect_non_alter 扫 SQL 返回所有非 ALTER 类型 (CREATE/INSERT/UPDATE/DELETE)
+## CUSTOM-MODIFIED: 9/17 DBA-bug-10 CREATE INDEX 不归 CREATE (等价 ALTER) @ 2026-09-17 @ mavis
+## 关联: docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md
 def _detect_non_alter(sql_content: str) -> list:
-    """扫 SQL 内容里所有非 ALTER TABLE 语句 (CREATE/INSERT/UPDATE/DELETE/USE).
+    """扫 SQL 内容里所有非 ALTER TABLE 语句 (CREATE TABLE/VIEW/DB + INSERT/UPDATE/DELETE/USE).
+
+    CREATE INDEX 视为 ALTER 类 (等价 ALTER TABLE ADD INDEX), 不归入 non_alter.
 
     Returns:
         list of {"stmt_type": "CREATE"|"INSERT"|"UPDATE"|"DELETE", "full": str (前 200 字符)}
-        空 SQL / 全是 ALTER/USE 返 []
+        空 SQL / 全是 ALTER/CREATE INDEX/USE 返 []
     """
     import re
     if not sql_content:
@@ -371,7 +407,17 @@ def _detect_non_alter(sql_content: str) -> list:
             continue
         # 取首 token
         first_word = cleaned.split()[0].upper() if cleaned.split() else ""
-        if first_word in ("CREATE", "INSERT", "UPDATE", "DELETE"):
+        if first_word == "CREATE":
+            # DBA-bug-10: CREATE INDEX 等价 ALTER, 不归 CREATE 类
+            # CREATE TABLE/VIEW/DATABASE/FUNCTION/PROCEDURE/TRIGGER 等才是真正的非 ALTER
+            if re.match(r"^\s*CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX\b",
+                        cleaned, re.IGNORECASE):
+                continue  # 跳过, 不归入 non_alter
+            result.append({
+                "stmt_type": "CREATE",
+                "full": cleaned[:200] + ("..." if len(cleaned) > 200 else ""),
+            })
+        elif first_word in ("INSERT", "UPDATE", "DELETE"):
             result.append({
                 "stmt_type": first_word,
                 "full": cleaned[:200] + ("..." if len(cleaned) > 200 else ""),
@@ -386,8 +432,12 @@ def _detect_non_alter(sql_content: str) -> list:
 ## 修法: 检测到混合 DDL (CREATE/INSERT/UPDATE/DELETE + ALTER) → return ok=False, 前端 disable 提交
 ##       + 后端 WorkflowList.post() 兜底 reject, 不让混合 DDL 工单提交
 ## 适用: 所有工单 (不限于 gh-ost, 普通工单也禁)
+## CUSTOM-MODIFIED: 9/17 DBA-bug-10 CREATE INDEX 归 ALTER 类 (不算混合) @ 2026-09-17 @ mavis
+## 关联: docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md
 def _check_mixed_ddl(sql_content: str) -> dict:
-    """扫 SQL 内容检测是否含混合 DDL (CREATE/INSERT/UPDATE/DELETE + ALTER).
+    """扫 SQL 内容检测是否含混合 DDL (CREATE TABLE/VIEW/DB + INSERT/UPDATE/DELETE + ALTER).
+
+    CREATE INDEX 视为 ALTER 类 (等价 ALTER TABLE ADD INDEX), 不算混合.
 
     Returns:
         {"ok": True} 全 ALTER 或全 CREATE/INSERT/UPDATE/DELETE (单类) → 允许
@@ -408,7 +458,17 @@ def _check_mixed_ddl(sql_content: str) -> dict:
         if not cleaned:
             continue
         first_word = cleaned.split()[0].upper() if cleaned.split() else ""
-        if first_word in ("ALTER", "CREATE", "INSERT", "UPDATE", "DELETE"):
+        if first_word == "ALTER":
+            types_seen.add("ALTER")
+        elif first_word == "CREATE":
+            # DBA-bug-10: CREATE INDEX 等价 ALTER, 归 ALTER 类 (不算混合)
+            import re as _re
+            if _re.match(r"^\s*CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX\b",
+                         cleaned, _re.IGNORECASE):
+                types_seen.add("ALTER")
+            else:
+                types_seen.add("CREATE")
+        elif first_word in ("INSERT", "UPDATE", "DELETE"):
             types_seen.add(first_word)
     has_alter = "ALTER" in types_seen
     has_other = bool(types_seen - {"ALTER"})  # CREATE / INSERT / UPDATE / DELETE
