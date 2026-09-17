@@ -191,19 +191,19 @@ class DdlGhostTask(models.Model):
     #       rebuilt_alter_full 存"实际用的 alter", 列表页 truncated 显示.
     rebuilt_charset = models.CharField(
         "原表 CHARSET", max_length=32, blank=True, null=True,
-        help_text="rebuild 场景: 原表 DEFAULT CHARSET (utf8mb4 等), 记录用 (排查原表字符集用)",
+        help_text="rebuild 场景: 原表 DEFAULT CHARSET (utf8mb4 等), 记录用",
     )
     rebuilt_row_format = models.CharField(
         "原表 ROW_FORMAT", max_length=16, blank=True, null=True,
-        help_text="rebuild 场景: 原表 ROW_FORMAT (Dynamic/Compact 等), 记录用 (排查原表 row_format 用)",
+        help_text="rebuild 场景: 原表 ROW_FORMAT (Dynamic/Compact 等), 记录用",
     )
     rebuilt_collation = models.CharField(
         "原表 COLLATION", max_length=64, blank=True, null=True,
-        help_text="rebuild 场景: 原表 DEFAULT COLLATION (utf8mb4_general_ci 等), 记录用 (排查原表 collation 用)",
+        help_text="rebuild 场景: 原表 DEFAULT COLLATION (utf8mb4_general_ci 等), 记录用",
     )
     rebuilt_alter_full = models.TextField(
         "rebuild 用的完整 alter 子句", blank=True,
-        help_text="rebuild 场景: 8/25 简化后只 ENGINE=InnoDB (不带 ALTER TABLE t 前缀), 列表页 truncated 显示",
+        help_text="rebuild 场景: 完整 alter 子句 (不带 ALTER TABLE t 前缀), 列表页 truncated 显示",
     )
     rebuilt_at = models.DateTimeField(
         "rebuild 完成时间", null=True, blank=True,

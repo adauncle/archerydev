@@ -9,9 +9,10 @@
 #   5. wf.status 控制: poller 统一 (全部 ghost task 终态 + 小表 ALTER 完成)
 #
 # 改造:
-# - SqlWorkflow 加 gh_ost_mode 字段 (smart/all_ghost/all_native)
-# - SqlWorkflow 加 native_alter_results JSONField (smart 模式小表 ALTER 结果)
 # - DdlGhostTask 加 depends_on ForeignKey (串行依赖链)
+#
+# 注: SqlWorkflow 加 gh_ost_mode + native_alter_results 字段在 sql migration 里
+#     (0001_v0_gh_ost_smart.py 由 makemigrations 自动生成)
 
 from django.db import migrations, models
 
@@ -19,38 +20,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
+        # DdlGhostTask 加 depends_on 字段前要先有 DdlGhostTask 表本身
         ("ddl_gh_ost", "0005_dba_bug_9_ghost_multi_statement"),
+        # SqlWorkflow 字段 (gh_ost_mode + native_alter_results) 在 sql migration
+        ("sql", "0002_v0_gh_ost_smart"),
     ]
 
     operations = [
-        # SqlWorkflow 加 gh_ost_mode 字段
-        migrations.AddField(
-            model_name="sqlworkflow",
-            name="gh_ost_mode",
-            field=models.CharField(
-                choices=[
-                    ("smart", "智能 (默认: 大表 gh-ost + 小表原生 ALTER)"),
-                    ("all_ghost", "全部 gh-ost (强制所有 ALTER 走 gh-ost)"),
-                    ("all_native", "全部原生 ALTER (强制所有 ALTER 走原生)"),
-                ],
-                db_index=True,
-                default="smart",
-                help_text="smart=默认智能分流;all_ghost=全部 gh-ost;all_native=全部原生",
-                max_length=16,
-                verbose_name="gh-ost 模式",
-            ),
-        ),
-        # SqlWorkflow 加 native_alter_results JSONField
-        migrations.AddField(
-            model_name="sqlworkflow",
-            name="native_alter_results",
-            field=models.JSONField(
-                blank=True,
-                default=list,
-                help_text="smart 模式下小表原生 ALTER 的执行结果",
-                verbose_name="小表原生 ALTER 结果",
-            ),
-        ),
         # DdlGhostTask 加 depends_on ForeignKey
         migrations.AddField(
             model_name="ddlghosttask",

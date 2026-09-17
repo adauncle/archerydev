@@ -208,6 +208,14 @@
             <span class="badge" style="margin-left:6px;background:{% if ghost_task_is_terminal %}#909399{% else %}#67C23A{% endif %};">
                 {% if ghost_task_is_terminal %}全部已结束{% else %}{{ active_ghost_tasks|length }} 个执行中{% endif %}
             </span>
+            <!-- CUSTOM-MODIFIED: v0 gh-ost 智能模式显示 gh_ost_mode @ 2026-09-17 @ mavis
+                 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+                 拍板: 9/16 21:42 阿达叔叔 同意 5A -->
+            {% if workflow_detail.gh_ost_mode %}
+            <span class="badge" style="margin-left:6px;background:#909399;color:white;">
+                模式: {{ workflow_detail.get_gh_ost_mode_display }}
+            </span>
+            {% endif %}
         </div>
         <div class="panel-body" style="padding:0;">
             <!-- CUSTOM-MODIFIED: DBA-bug-9 多 task 列表 @ 2026-09-16 @ mavis
@@ -220,6 +228,8 @@
                         <tr>
                             <th style="width:50px;">序号</th>
                             <th style="width:80px;">task #</th>
+                            <!-- CUSTOM-MODIFIED: v0 加依赖 task # 列 (depends_on) @ 2026-09-17 @ mavis -->
+                            <th style="width:80px;">依赖 #</th>
                             <th style="width:200px;">表</th>
                             <th>ALTER 子句</th>
                             <th style="width:100px;">状态</th>
@@ -233,6 +243,14 @@
                         <tr>
                             <td>{{ t.statement_index }}</td>
                             <td>#{{ t.id }}</td>
+                            <!-- CUSTOM-MODIFIED: v0 显示依赖 task # @ 2026-09-17 @ mavis -->
+                            <td>
+                                {% if t.depends_on %}
+                                <span style="color:#909399;">⤴ #{{ t.depends_on.id }}</span>
+                                {% else %}
+                                <span style="color:#67C23A;">(无依赖)</span>
+                                {% endif %}
+                            </td>
                             <td><code>{{ t.db_name }}.{{ t.table_name }}</code></td>
                             <td><code style="font-size:12px;">{{ t.alter_statement|truncatechars:80 }}</code></td>
                             <td>
@@ -258,6 +276,59 @@
                     </tbody>
                 </table>
             </div>
+            <!-- CUSTOM-MODIFIED: v0 gh-ost 智能模式小表原生 ALTER 结果渲染 @ 2026-09-17 @ mavis
+                 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+                 业务: smart/all_native 模式下小表走原生 mysql.execute() ALTER, 这里显示每条结果
+                      让 DBA 看到每条小表 ALTER 的状态 (success/failed/skipped) -->
+            {% if workflow_detail.native_alter_results %}
+            <div style="padding:16px 24px;background:#f9f9f9;border-top:1px solid #e9e3d6;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+                    <i class="fa fa-bolt" style="color:#5a8c6e;"></i>
+                    <strong style="font-size:14px;">小表原生 ALTER 执行结果 (smart / all_native 模式)</strong>
+                    <span class="badge" style="background:#5a8c6e;color:white;">
+                        {{ workflow_detail.native_alter_results|length }} 条
+                    </span>
+                </div>
+                <table class="table table-condensed" style="margin-bottom:8px;">
+                    <thead>
+                        <tr style="background:#fafafa;">
+                            <th style="width:50px;">序号</th>
+                            <th style="width:200px;">表</th>
+                            <th>ALTER 子句</th>
+                            <th style="width:100px;">状态</th>
+                            <th style="width:140px;">开始</th>
+                            <th style="width:140px;">结束</th>
+                            <th>错误信息</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for nr in workflow_detail.native_alter_results %}
+                        <tr>
+                            <td>{{ nr.statement_index }}</td>
+                            <td><code>{{ nr.db }}.{{ nr.table }}</code></td>
+                            <td><code style="font-size:12px;">{{ nr.alter|truncatechars:80 }}</code></td>
+                            <td>
+                                {% if nr.status == "success" %}
+                                    <font color="green"><i class="fa fa-check-circle"></i> 成功</font>
+                                {% elif nr.status == "failed" %}
+                                    <font color="red"><i class="fa fa-times-circle"></i> 失败</font>
+                                {% elif nr.status == "skipped" %}
+                                    <font color="#909399"><i class="fa fa-ban"></i> 跳过</font>
+                                {% elif nr.status == "running" %}
+                                    <font color="#67C23A"><i class="fa fa-spinner"></i> 运行中</font>
+                                {% else %}
+                                    <font color="#E6A23C"><i class="fa fa-clock-o"></i> 待执行</font>
+                                {% endif %}
+                            </td>
+                            <td><small>{{ nr.started_at|default:"-" }}</small></td>
+                            <td><small>{{ nr.finished_at|default:"-" }}</small></td>
+                            <td><small style="color:red;">{{ nr.errormessage|default:"" }}</small></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
             {% if not ghost_task_is_terminal and ghost_tasks|length == 1 %}
             <!-- 单 task active: 保留 iframe 进度面板 -->
             <iframe src="/gh_ost/progress/{{ workflow_detail.id }}/"

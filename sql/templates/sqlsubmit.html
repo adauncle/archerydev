@@ -98,6 +98,22 @@
                                     </span>
                                 </label>
                             </div>
+                            <!-- CUSTOM-MODIFIED: v0 gh-ost 智能模式加 gh_ost_mode 下拉框 @ 2026-09-17 @ mavis
+                                 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+                                 业务: 单工单多 ALTER 大小表混合时, 业务方可选智能/全部 gh-ost/全部原生
+                                 默认 smart (智能分流: 大表 gh-ost + 小表原生 ALTER)
+                                 9/17 阿达叔叔拍板 5A -->
+                            <div id="div-gh-ost-mode" class="form-group" style="display: none; margin-top: -8px; padding: 8px 12px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px;">
+                                <label style="margin: 0; font-weight: 600;">gh-ost 模式:</label>
+                                <select id="gh_ost_mode" name="gh_ost_mode" class="form-control" style="margin-top: 4px; width: 100%;">
+                                    <option value="smart" selected>智能 (默认: 大表 gh-ost + 小表原生 ALTER)</option>
+                                    <option value="all_ghost">全部 gh-ost (强制所有 ALTER 走 gh-ost)</option>
+                                    <option value="all_native">全部原生 ALTER (强制所有 ALTER 走原生)</option>
+                                </select>
+                                <small style="color: #909399; font-size: 12px;">
+                                    smart 模式按表大小自动分流; 阈值: 10w 行 / 100 MB
+                                </small>
+                            </div>
                             {% endif %}
                             <!--可执行范围时间-->
                             <div class='form-group'>
@@ -1336,6 +1352,10 @@
                         // CUSTOM-MODIFIED: v0.3.0-beta 提交页"启用 gh-ost"勾选联动
                         // @ 2026-08-10 @ mavis
                         enable_ghost: $("#enable_ghost").is(':checked') || false,
+                        // CUSTOM-MODIFIED: v0 gh-ost 智能模式 gh_ost_mode 字段 @ 2026-09-17 @ mavis
+                        // 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+                        // 拍板: 9/16 21:42 阿达叔叔 同意 5A
+                        gh_ost_mode: $("#gh_ost_mode").val() || "smart",
                     }
                 ),
                 beforeSend: function (xhr) {
@@ -1439,6 +1459,18 @@
             // 关联: docs/changelogs/2026-09-03_ddl-sync-w2-d28-column-diff-modal.md
             $("#btn-show-column-diff-modal").click(function () {
                 $('#columnDiffModal').modal('show');
+            });
+
+            // CUSTOM-MODIFIED: v0 gh-ost 智能模式联动 @ 2026-09-17 @ mavis
+            // 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+            // 业务: 业务方勾选"启用 gh-ost" 时, 显示 gh_ost_mode 下拉框;
+            //                    不勾时, 隐藏 (默认值仍提交, 但后端默认 smart)
+            $("#enable_ghost").on("change", function () {
+                if ($(this).is(":checked")) {
+                    $("#div-gh-ost-mode").show();
+                } else {
+                    $("#div-gh-ost-mode").hide();
+                }
             });
 
             // 初始化上传控件

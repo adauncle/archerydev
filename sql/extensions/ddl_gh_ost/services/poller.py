@@ -182,6 +182,13 @@ _WORKFLOW_STATUS_MAP = {
 ##   2. 任一 task failed/cancelled/rolled_back → wf.status = workflow_exception (而非 workflow_finish)
 ##   3. 全部 task success → wf.status = workflow_finish
 ##   4. 任务级 (task) 与工单级 (wf) 状态解耦, 多 ALTER 工单支持
+##
+## CUSTOM-MODIFIED: v0 gh-ost 智能模式 wf.status 控制 @ 2026-09-17 @ mavis
+## 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+## 拍板: 9/16 21:42 阿达叔叔 同意 5A 拍板 #5 (wf.status 控制: poller 统一)
+## 业务: smart/all_native 模式下, wf.status 还要等 wf.native_alter_results 全部完成才改
+##       任一 task failed 或 native_alter failed → wf.status = workflow_exception
+##       同时 task success 后调 _start_next_ghost_task 触发依赖链下一个 task
 def _sync_workflow_status(task, new_status: str):
     """CUSTOM: gh-ost 终态时同步 SqlWorkflow.status。
 
@@ -190,11 +197,26 @@ def _sync_workflow_status(task, new_status: str):
       - 仅在工单处于"待执行/执行中"语义时覆盖，避免打乱 manreviewing 等上游状态
       - **DBA-bug-9**: 全部 ghost task 都终态 → 才同步 wf.status;
         任一 failed/cancelled/rolled_back → workflow_exception, 全 success → workflow_finish
+      - **v0**: 还要等 wf.native_alter_results 全部完成;
+              任一 failed → wf=workflow_exception
+      - **v0**: task success 后调 _start_next_ghost_task 触发依赖链下一个
     """
     if task.task_type != "ghost":
         return  # rebuild 任务无关联工单
     if not task.workflow_id:
         return  # 没挂工单
+
+    # v0: 当前 task success 时, 自动起依赖链上下一个 queued task
+    ## 业务: 多 ghost task 串行, 不阻塞 wf.status 检查
+    if new_status == "success":
+        try:
+            from sql.models import SqlWorkflow
+            from sql.extensions.ddl_gh_ost.views import _start_next_ghost_task as _auto_next
+            wf_for_auto = SqlWorkflow.objects.get(pk=task.workflow_id)
+            _auto_next(wf_for_auto)
+        except Exception:  # noqa: BLE001
+            logger.exception("v0 _start_next_ghost_task 异常 (task=%s wf=%s)",
+                             task.id, task.workflow_id)
 
     # DBA-bug-9: 检查该工单所有 ghost task 是否都已终态
     all_terminal, total, finished = _all_tasks_terminal(task.workflow_id)
@@ -206,7 +228,7 @@ def _sync_workflow_status(task, new_status: str):
         )
         return  # 还有 task 没结束, 暂不同步 wf.status
 
-    # 全部终态 → 计算 wf.status
+    # 全部 ghost task 终态 → 还要检查 wf.native_alter_results 是否全部完成
     from sql.models import SqlWorkflow
     try:
         wf = SqlWorkflow.objects.get(pk=task.workflow_id)
@@ -214,13 +236,30 @@ def _sync_workflow_status(task, new_status: str):
         logger.warning("_sync_workflow_status: workflow %s not found", task.workflow_id)
         return
 
-    # DBA-bug-9: 任一 task 失败 → wf=workflow_exception; 全部 success → wf=workflow_finish
+    native_results = wf.native_alter_results or []
+    if native_results:
+        # v0: smart/all_native 模式下, 还有小表原生 ALTER 没完成
+        all_native_done = all(
+            item.get("status") in ("success", "failed", "skipped")
+            for item in native_results
+        )
+        if not all_native_done:
+            logger.info(
+                "_sync_workflow_status: defer wf=%s (ghost tasks 全终, %s 条小表原生 ALTER 还在跑)",
+                task.workflow_id, len(native_results),
+            )
+            return  # 小表 ALTER 还在跑, 等下次
+
+    # v0: 计算 wf.status (任一 task failed 或 native failed → exception)
     failed_tasks_qs = DdlGhostTask.objects.filter(
         workflow_id=task.workflow_id,
         task_type="ghost",
         status__in=("failed", "cancelled", "rolled_back"),
     )
-    if failed_tasks_qs.exists():
+    failed_native = any(
+        item.get("status") in ("failed", "skipped") for item in native_results
+    )
+    if failed_tasks_qs.exists() or failed_native:
         target = "workflow_exception"
         failed_count = failed_tasks_qs.count()
         logger.info(

@@ -201,8 +201,22 @@ class WorkflowList(generics.ListAPIView):
             try:
                 wf = workflow_content.workflow
                 wf.enable_gh_ost = True
-                wf.save(update_fields=["enable_gh_ost"])
-                ghost_result = {"ok": True, "pending_approval": True, "summary": "已记录 gh-ost 申请，等审批通过后自动启用"}
+                ## CUSTOM-MODIFIED: v0 gh-ost 智能模式存 gh_ost_mode 字段 @ 2026-09-17 @ mavis
+                ## 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+                ## 拍板: 9/16 21:42 阿达叔叔 同意 5A
+                ## 业务: 业务方提交时选 smart/all_ghost/all_native, 存到 SqlWorkflow.gh_ost_mode
+                gh_ost_mode_input = request.data.get("gh_ost_mode", "smart")
+                valid_modes = {"smart", "all_ghost", "all_native"}
+                if gh_ost_mode_input not in valid_modes:
+                    gh_ost_mode_input = "smart"  # fallback 默认值
+                wf.gh_ost_mode = gh_ost_mode_input
+                wf.save(update_fields=["enable_gh_ost", "gh_ost_mode"])
+                ghost_result = {
+                    "ok": True,
+                    "pending_approval": True,
+                    "summary": f"已记录 gh-ost 申请 (模式={gh_ost_mode_input})，等审批通过后自动启用",
+                    "gh_ost_mode": gh_ost_mode_input,
+                }
             except Exception as exc:  # noqa: BLE001
                 ghost_result = {"ok": False, "error": f"保存 gh-ost 申请异常: {exc}"}
             # 不阻塞主流程，把结果塞进 response data 让前端展示

@@ -1,0 +1,48 @@
+WIP: v0 gh-ost 智能模式 - 阶段 2/4 完整落地 (5A 拍板 9/16 21:42)
+
+业务: 单工单多 ALTER 大小表混合时, 业务方可选 gh_ost_mode:
+  - smart (默认): 大表走 gh-ost task, 小表走原生 ALTER
+  - all_ghost: 全部走 gh-ost (强制)
+  - all_native: 全部走原生 ALTER (强制)
+
+拍板: 9/16 21:42 阿达叔叔 同意 5A
+  1. 大表阈值: 复用 10w 行 / 100MB
+  2. 小表路径: mysql.execute() 原生连接数据库直连 ALTER
+  3. task 串行依赖链 (depends_on ForeignKey self)
+  4. gh_ost_mode 选法: 工单页下拉框
+  5. wf.status 控制: poller 统一 (全部 ghost task 终态 + 小表 ALTER 完成)
+
+本 commit (阶段 2/4, 接 7ca2866 阶段 1):
+- 跨 app migration 拆分 (SqlWorkflow 字段 → sql migration, DdlGhostTask.depends_on → ddl_gh_ost migration)
+- sql/0001_initial.py (新建): SeparateDatabaseAndState stub (5 个 CreateModel 让 lazy reference 能 resolve)
+- sql/0002_v0_gh_ost_smart.py (新建): SqlWorkflow 加 gh_ost_mode + native_alter_results
+- ddl_gh_ost/0006 拆分: dependencies 加 0005 (修 conflict)
+- sql_api/api_workflow.py: 工单提交接收 gh_ost_mode 字段
+- sql/extensions/ddl_gh_ost/views.py: _enable_ghost_for_workflow 智能分流 + 依赖链 + _trigger_native_alters + _start_next_ghost_task
+- sql/extensions/ddl_gh_ost/services/poller.py: v0 改造 wf.status 控制 (全部 ghost task 终态 + native 完成 才改)
+- sql/extensions/ddl_gh_ost/models.py: rebuilt_* help_text 修正 (跟 0004 migration 一致)
+- sql/templates/sqlsubmit.html: gh_ost_mode 下拉框 + JS change handler
+- sql/templates/detail.html: gh_ost_mode badge + 依赖 # 列 + native_alter_results 渲染块
+- scripts/_w3_v0_smart_drill.py: 7 case 演练脚本 (patch.object Manager + transaction.atomic 回滚)
+
+实战新发现 (4 条, 跨项目可复用):
+1. 跨 app migration 必须拆开, 不能一锅端 (SqlWorkflow 字段不能放 ddl_gh_ost app migration)
+2. 空 stub migration + lazy reference 解析失败 (SeparateDatabaseAndState 加 CreateModel 修)
+3. _workflow_sql_text 加 mock-friendly fallback (演练 MagicMock 友好)
+4. patch.object(_default_manager, ...) patch Django Manager (普通 patch Model 不行)
+
+部署:
+- 134 dev: 推 9 文件 + migrate OK + systemctl restart (master 50430 → 61881, 业务中断 ~10 秒) + HTTP 200 + 7 case 演练 PASS (archery_dev.accesscard_black_detail 238k 行)
+- 110 prod: 推 10 文件 + migrate OK (--fake sql 0002) + 手动 ALTER TABLE 加字段 + reload master (80828 → 67671, 业务中断 ~10 秒) + HTTP 200 + 7 case 演练 PASS (hly_accesscard.accesscard_dynamicaccountinfo 1.5 亿行 / 154 GB 真实生产大表)
+
+CHANGELOG: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md (11.6KB)
+关联 commit: 7ca2866 (阶段 1 设计稿) + c4ca623 (DBA-bug-9) + 4b1e415 (DBA-bug-9.5)
+关联实战接龙: 9/11-9/17 18 事件
+关联 5A 拍板: 9/16 21:42 阿达叔叔
+
+待办:
+- 业务方通知
+- v1 禁止提工单 (建表+ALTER 混合 → 禁止提交)
+- 月度宣讲更新 (v0 智能模式)
+
+@ 2026-09-17 10:30 @ mavis

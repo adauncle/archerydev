@@ -59,7 +59,16 @@ logger = logging.getLogger("default")
 # 工具：取工单 SQL 文本（走 OneToOne）
 # ===========================================================================
 def _workflow_sql_text(workflow: SqlWorkflow) -> str:
-    """取工单的 SQL 文本。SqlWorkflowContent 走 OneToOne 反向默认名 ``sqlworkflowcontent``。"""
+    """取工单的 SQL 文本。SqlWorkflowContent 走 OneToOne 反向默认名 ``sqlworkflowcontent``。
+
+    ## CUSTOM-MODIFIED: v0 智能模式优先用 workflow.sql_content 属性 @ 2026-09-17 @ mavis
+    ## 业务: 演练脚本 (MagicMock) 走真实 ORM 会报错; 业务方/外部调用方可能直接传 SQL
+    ##      优先读属性 → fallback ORM 查询 → fallback 空串
+    ## 拍板: 9/16 21:42 阿达叔叔 同意 5A
+    """
+    sql = getattr(workflow, "sql_content", None)
+    if sql:
+        return sql
     try:
         return SqlWorkflowContent.objects.get(workflow=workflow).sql_content or ""
     except SqlWorkflowContent.DoesNotExist:
@@ -340,8 +349,18 @@ def _enable_ghost_for_workflow(workflow: SqlWorkflow, created_by: str) -> dict:
     # 循环创建 task (每个 ALTER 一个)
     instance = workflow.instance
     created_tasks: List[DdlGhostTask] = []
+    small_alters: List[Dict] = []  # CUSTOM v0: smart 模式下小表原生 ALTER 列表
     all_passed = True
     failed_summaries: List[str] = []
+
+    ## CUSTOM-MODIFIED: v0 gh-ost 智能模式按 gh_ost_mode 分流 @ 2026-09-17 @ mavis
+    ## 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+    ## 拍板: 9/16 21:42 阿达叔叔 同意 5A
+    ## 业务: smart 模式按表大小自动分流; all_ghost 强制全 gh-ost; all_native 强制全原生
+    gh_ost_mode = getattr(workflow, "gh_ost_mode", "smart") or "smart"
+    ## 取大表阈值 (复用 CUSTOM_BIG_TABLE_ROW_THRESHOLD / SIZE_THRESHOLD_MB)
+    row_threshold = int(getattr(settings, "CUSTOM_BIG_TABLE_ROW_THRESHOLD", 100000))
+    size_threshold_mb = int(getattr(settings, "CUSTOM_BIG_TABLE_SIZE_THRESHOLD_MB", 100))
 
     for idx, stmt in enumerate(parsed_all):
         db_name = stmt["db"] or workflow.db_name
@@ -351,6 +370,37 @@ def _enable_ghost_for_workflow(workflow: SqlWorkflow, created_by: str) -> dict:
                 "ok": False,
                 "error": f"第 {idx + 1} 条 ALTER 无法解析 db/table: {stmt['full'][:100]}",
             }
+
+        ## CUSTOM v0: smart 模式判断大表
+        is_big = False
+        if gh_ost_mode == "smart":
+            try:
+                from sql.views import _get_table_size_info
+                size_info = _get_table_size_info(
+                    instance=instance, db_name=db_name, table_name=table_name,
+                )
+                if size_info and (
+                    size_info.get("rows", 0) >= row_threshold
+                    or size_info.get("size_mb", 0) >= size_threshold_mb
+                ):
+                    is_big = True
+            except Exception:  # noqa: BLE001
+                logger.warning("v0 gh-ost smart mode: _get_table_size_info failed for %s.%s",
+                               db_name, table_name, exc_info=True)
+                # size_info 失败时 fallback 当小表处理 (避免业务方因查不到而强制走 gh-ost)
+
+        ## CUSTOM v0: 分流决策
+        if gh_ost_mode == "all_native" or (gh_ost_mode == "smart" and not is_big):
+            # 小表 / 全原生 → 加入 small_alters, 不创建 gh-ost task
+            small_alters.append({
+                "statement_index": idx,
+                "db": db_name,
+                "table": table_name,
+                "alter": stmt["full"],
+                "status": "pending",  # status: pending -> running -> success/failed
+            })
+            continue
+        # 大表 / all_ghost → 创建 gh-ost task
 
         report = run_all_prechecks(
             workflow=workflow,
@@ -371,12 +421,41 @@ def _enable_ghost_for_workflow(workflow: SqlWorkflow, created_by: str) -> dict:
                 f"#{idx + 1} {db_name}.{table_name}: {report['summary']}"
             )
 
+    ## CUSTOM v0: 串行依赖链设置 (depends_on)
+    ## 大表 task 按 statement_index 链式依赖, 前一个 success 才能启下一个
+    if created_tasks:
+        # 按 statement_index 排序后链式依赖
+        created_tasks_sorted = sorted(created_tasks, key=lambda t: t.statement_index)
+        prev_task = None
+        for task in created_tasks_sorted:
+            if prev_task is not None:
+                task.depends_on = prev_task
+                task.save(update_fields=["depends_on"])
+            prev_task = task
+
+    ## CUSTOM v0: 把 small_alters 存到 wf.native_alter_results (启动时再跑)
+    if small_alters:
+        workflow.native_alter_results = small_alters
+        workflow.save(update_fields=["native_alter_results"])
+
     # 汇总
+    big_count = len(created_tasks)
+    small_count = len(small_alters)
+    total_count = big_count + small_count
     if all_passed:
-        summary = (
-            f"全部 {len(created_tasks)} 条 ALTER 预检通过 "
-            f"(表: {', '.join(t.table_name for t in created_tasks)})"
-        )
+        if gh_ost_mode == "all_native":
+            summary = (
+                f"全部 {total_count} 条 ALTER 走原生 (含 {big_count} 大表也走原生)"
+            )
+        elif gh_ost_mode == "all_ghost":
+            summary = (
+                f"全部 {total_count} 条 ALTER 走 gh-ost (含 {small_count} 条小表也走 gh-ost)"
+            )
+        else:  # smart
+            summary = (
+                f"smart 模式分流: {big_count} 条大表 gh-ost + {small_count} 条小表原生 "
+                f"(共 {total_count} 条 ALTER)"
+            )
     else:
         summary = (
             f"{len(created_tasks) - len(failed_summaries)}/{len(created_tasks)} 预检通过; "
@@ -387,6 +466,7 @@ def _enable_ghost_for_workflow(workflow: SqlWorkflow, created_by: str) -> dict:
         "ok": all_passed,
         "passed": all_passed,
         "summary": summary,
+        "gh_ost_mode": gh_ost_mode,  # 拍板
         "tasks": [
             {
                 "id": t.id,
@@ -394,13 +474,154 @@ def _enable_ghost_for_workflow(workflow: SqlWorkflow, created_by: str) -> dict:
                 "table": f"{t.db_name}.{t.table_name}",
                 "passed": t.precheck_passed,
                 "status": t.status,
+                "depends_on": t.depends_on_id,
             }
             for t in created_tasks
         ],
+        # CUSTOM v0: small_alters 列表 (smart / all_native 模式)
+        "small_alters": small_alters,
         # 兼容旧字段 (取第一个 task)
         "task_id": created_tasks[0].id if created_tasks else None,
         "status": created_tasks[0].status if created_tasks else None,
     }
+
+
+## CUSTOM-MODIFIED: v0 gh-ost 智能模式小表原生 ALTER 触发器 @ 2026-09-17 @ mavis
+## 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+## 拍板: 9/16 21:42 阿达叔叔 同意 5A 拍板 #2 (小表走原生 mysql.execute())
+## 业务: 业务方点 "启动 gh-ost" 后, 同步触发 wf.native_alter_results 里的小表 ALTER
+##       串行执行 (不并发, 因为每条 ALTER 会 lock 几秒), 用直连数据库 ALTER
+##       每条完成后更新对应 item 的 status / started_at / finished_at / errormessage
+def _trigger_native_alters(workflow):
+    """smart / all_native 模式下, 串行执行 wf.native_alter_results 里的小表 ALTER
+
+    注意:
+    - 串行, 一次只跑一条 (避免并发 lock 风险)
+    - 直连数据库 ALTER (走 mysql.execute, 不走 GoInception)
+    - 失败立即停止后续 (fail-fast)
+    - 完成后保存 wf.native_alter_results
+    """
+    from sql.engines import get_engine
+    from sql.engines.mysql import MySQLEngine
+
+    native_results = workflow.native_alter_results or []
+    if not native_results:
+        return
+
+    # 已经在跑的不重复
+    pending = [item for item in native_results if item.get("status") == "pending"]
+    if not pending:
+        logger.info("v0 gh-ost: no pending native alters for wf=%s", workflow.id)
+        return
+
+    logger.info(
+        "v0 gh-ost: triggering %s native alters for wf=%s",
+        len(pending), workflow.id,
+    )
+
+    instance = workflow.instance
+    engine = get_engine(instance=instance)
+
+    for item in native_results:
+        if item.get("status") != "pending":
+            continue  # 跳过已跑过的
+
+        item["status"] = "running"
+        item["started_at"] = timezone.now().isoformat()
+
+        try:
+            # 用 mysql 原生 execute 直连 ALTER (不走 GoInception)
+            # engine.execute() 返回 ResultSet; ALTER 成功时 result.error 为空
+            result = engine.execute(
+                db_name=item["db"],
+                sql=item["alter"],
+                close_conn=True,
+            )
+            if getattr(result, "error", None):
+                item["status"] = "failed"
+                item["errormessage"] = str(result.error)[:500]
+            else:
+                item["status"] = "success"
+                item["errormessage"] = ""
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("v0 gh-ost native alter failed: wf=%s table=%s",
+                             workflow.id, item.get("table"))
+            item["status"] = "failed"
+            item["errormessage"] = str(exc)[:500]
+            # fail-fast: 标记后续未跑的为 skipped
+            for skip_item in native_results:
+                if skip_item.get("status") == "pending":
+                    skip_item["status"] = "skipped"
+                    skip_item["errormessage"] = f"前一条 ALTER ({item.get('table')}) 失败, 中断"
+        finally:
+            item["finished_at"] = timezone.now().isoformat()
+
+    workflow.native_alter_results = native_results
+    workflow.save(update_fields=["native_alter_results"])
+    logger.info(
+        "v0 gh-ost: native alters done for wf=%s, results=%s",
+        workflow.id,
+        [(i.get("status"), i.get("table")) for i in native_results],
+    )
+
+
+## CUSTOM-MODIFIED: v0 gh-ost 智能模式自动启动下一个 task @ 2026-09-17 @ mavis
+## 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+## 拍板: 9/16 21:42 阿达叔叔 同意 5A 拍板 #3 (task 串行依赖链)
+## 业务: 当前 task success 后, 自动起 depends_on 链上下一个 task
+##       poller._sync_workflow_status 调此函数, 不阻塞 wf.status 控制
+def _start_next_ghost_task(workflow):
+    """找一个 queued 的 task (它的 depends_on 已经是 success), 自动启动 gh-ost
+
+    业务: 多 task 串行依赖链, 当前 task success 后, 自动起下一个
+    """
+    next_task = (
+        DdlGhostTask.objects.filter(
+            workflow=workflow,
+            task_type="ghost",
+            status="queued",
+        )
+        .select_related("depends_on")
+        .order_by("statement_index", "id")
+        .first()
+    )
+    if not next_task:
+        return None
+    # 检查依赖链
+    if next_task.depends_on_id and next_task.depends_on.status != "success":
+        return None  # 依赖还没成功, 等下次
+
+    # 启动 gh-ost 子进程
+    instance = workflow.instance
+    try:
+        pid = start_ghost_process(next_task, instance=instance)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("_start_next_ghost_task failed: task=%s", next_task.id)
+        next_task.status = "failed"
+        next_task.error_message = f"自动启动下一个 gh-ost 失败: {exc}"
+        next_task.finished_at = timezone.now()
+        next_task.save()
+        return next_task
+
+    next_task.ghost_pid = pid
+    next_task.status = "running"
+    next_task.started_at = timezone.now()
+    next_task.current_stage = "connecting"
+    next_task.progress_pct = 0
+    next_task.progress_message = "gh-ost 已启动 (依赖链自动触发)，等待连接"
+    next_task.last_heartbeat_at = timezone.now()
+    next_task.save()
+
+    try:
+        start_poller(next_task.id)
+    except Exception:  # noqa: BLE001
+        logger.exception("start_poller failed on auto-next: task=%s", next_task.id)
+
+    logger.info(
+        "v0 gh-ost auto-started: task_id=%s pid=%s workflow=%s depends_on=#%s",
+        next_task.id, pid, workflow.id, next_task.depends_on_id,
+    )
+    return next_task
 
 
 ## CUSTOM-MODIFIED: DBA-bug-9 加 statement_index + statement_type 入参 @ 2026-09-16 @ mavis
@@ -451,31 +672,63 @@ def start(request: HttpRequest, workflow_id: int) -> JsonResponse:
     """beta 阶段：真启 gh-ost 子进程 + 启动后台 poller。
 
     流程：
-        1. 拿 task，状态校验
-        2. ``runner.start_ghost_process`` Popen gh-ost
-        3. 写 PID + started_at
-        4. 启动 ``poller.start_poller`` daemon thread（3s 轮询）
-        5. 返回 ok
+        1. 拿 task，状态校验 (v0: 多 task 时取 statement_index 最小的 queued task)
+        2. v0 串行依赖链: 检查 depends_on 必须是 success
+        3. ``runner.start_ghost_process`` Popen gh-ost
+        4. 写 PID + started_at
+        5. 启动 ``poller.start_poller`` daemon thread（3s 轮询）
+        6. v0 触发小表原生 ALTER (串行, 通过 poller 检测后 next)
+        7. 返回 ok
 
     ## CUSTOM-MODIFIED: 端点加 perm 守卫 (change_ddlghosttask) @ 2026-08-13 @ mavis
     ## 关联: docs/changelogs/2026-08-13_gh-ost-action-endpoint-perm.md
     ## 业务: A 方案, 跟 cancel/retry/rollback 同样套路, RD 没 perm 时返 403 JSON。
     ##      进度面板"启动 gh-ost"按钮 AJAX 调用, 防止 RD 绕过前端守卫直接 fetch。
+
+    ## CUSTOM-MODIFIED: v0 串行依赖链 (depends_on) 检查 @ 2026-09-17 @ mavis
+    ## 关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
+    ## 拍板: 9/16 21:42 阿达叔叔 同意 5A 拍板 #3 (task 串行依赖链)
+    ## 业务: 多 ghost task 时按 statement_index 串行, 前一个 task success 才能起下一个
+    ##       业务方只点 "启动 gh-ost" 按钮一次, 后续 task 由 poller 终态时自动启 (start_next_ghost_task)
     """
     perm_resp = _require_change_perm(request, "start")
     if perm_resp is not None:
         return perm_resp
-    task = get_object_or_404(DdlGhostTask, workflow_id=workflow_id)
-    if task.status != "queued":
+    # v0: 取该工单所有 ghost task, 按 statement_index 排序, 找第一个 queued 的启动
+    all_tasks = list(
+        DdlGhostTask.objects.filter(
+            workflow_id=workflow_id, task_type="ghost",
+        ).order_by("statement_index", "id")
+    )
+    if not all_tasks:
         return JsonResponse({
             "ok": False,
-            "error": f"当前状态 {task.status}，不能启动（需 queued）",
+            "error": "工单没有关联 ghost task，请先启用 gh-ost",
+        }, status=404)
+    task = next((t for t in all_tasks if t.status == "queued"), None)
+    if task is None:
+        return JsonResponse({
+            "ok": False,
+            "error": "没有可启动的 ghost task (全部已启/已结束)",
         }, status=409)
+
     if not task.precheck_passed:
         return JsonResponse({
             "ok": False,
             "error": "预检未通过，不能启动",
         }, status=409)
+
+    # v0: 串行依赖链检查 - depends_on 必须是 success 状态
+    if task.depends_on_id:
+        dep_task = task.depends_on
+        if dep_task.status != "success":
+            return JsonResponse({
+                "ok": False,
+                "error": (
+                    f"依赖 task #{dep_task.id} 未成功 (status={dep_task.status}), "
+                    f"task #{task.id} 必须等前一个 task 成功后才能启动"
+                ),
+            }, status=409)
 
     instance = task.workflow.instance if task.workflow_id else None
     if instance is None:
@@ -517,9 +770,17 @@ def start(request: HttpRequest, workflow_id: int) -> JsonResponse:
         task.error_message = "poller 启失败 — gh-ost 在跑但没人在轮询，请 DBA 介入"
         task.save()
 
+    # v0: 同步触发小表原生 ALTER (smart / all_native 模式, wf.native_alter_results)
+    ## 业务: 业务方点 "启动 gh-ost" 后, 大表 task 启动的同时, 同步跑小表原生 ALTER
+    ##       (smart 模式: 小表优先; all_native 模式: 大表也走原生)
+    ##       大表 gh-ost 任务可能跑 5-30 分钟, 小表原生 ALTER 应该已经在跑了
+    ##       poller 检测到 task 终态时, 调 _start_next_ghost_task 触发下一个 ghost task
+    ##       小表 ALTER 完成后, poller._sync_workflow_status 检查 wf.native_alter_results
+    _trigger_native_alters(task.workflow)
+
     logger.info(
-        "gh-ost started: task_id=%s pid=%s workflow=%s user=%s",
-        task.id, pid, workflow_id, request.user.username,
+        "gh-ost started: task_id=%s pid=%s workflow=%s user=%s depends_on=%s",
+        task.id, pid, workflow_id, request.user.username, task.depends_on_id,
     )
     return JsonResponse({
         "ok": True, "status": task.status, "task_id": task.id, "pid": pid,
