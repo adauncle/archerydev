@@ -938,9 +938,15 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
     #       直接 return ok=False 跳过表大小检查, 业务方实战 consume_flow 5M+ 行 ADD INDEX
     #       完全错过大表 alert. 修法: 提前解析 table_name, not changes 时也查大表 alert.
     # 关联: docs/changelogs/2026-09-11_dba-bug-3-big-table-alert-add-index-drop-index.md
+    ## CUSTOM-MODIFIED: 9/17 DBA-bug-10 加 CREATE INDEX 识别 (等价 ALTER TABLE ADD INDEX) @ 2026-09-17 @ mavis
+    ## 关联: docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md
+    ## 根因: 业务方 CREATE INDEX ... ON tbl 在 MySQL 等价 ALTER TABLE ADD INDEX,
+    ##       但本函数老 regex 只识别 ALTER TABLE, CREATE INDEX 解析不到表名 → big_table_alert=None
+    ##       业务方 wf#4849 实战 CREATE INDEX ON 170万行表 完全错过大表 alert
     table_name = force_table_name
     if not table_name:
         # CUSTOM: D35 修复 backticks schema 解析 (与 _parse_alter_column_changes 保持一致)
+        # DBA-bug-10: ALTER TABLE / CREATE INDEX 分 2 个 regex (CREATE INDEX 跳过 idx_name + USING)
         m = re.match(
             r"^\s*ALTER\s+TABLE\s+"
             r"(?:(?P<schema>`?[^`\s.()]+`?)\.)?`?(?P<table>[^`\s(]+)`?",
@@ -948,8 +954,18 @@ def _diff_single_table(instance, db_name: str, alter_sql: str, force_table_name:
             re.IGNORECASE,
         )
         if not m:
+            m = re.match(
+                r"^\s*CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX\s+`?[^`\s]+`?\s+"
+                r"(?:USING\s+\w+\s+)?ON\s+"
+                r"(?:(?P<schema>`?[^`\s.()]+`?)\.)?`?(?P<table>[^`\s(]+)`?",
+                alter_sql.strip(),
+                re.IGNORECASE,
+            )
+        if not m:
             return {"ok": False, "error": "解析不到表名"}
-        table_name = m.group("table").strip("`")
+        # DBA-bug-10: schema 段 rstrip(".") 去掉尾点
+        schema = (m.group("schema") or "").rstrip(".").strip("`")
+        table_name = (m.group("table") or "").strip("`")
 
     # 0.5 大表 alert 检查 (DBA-bug-3: 提前到 changes 解析之前, 让 not changes 时也能触发)
     size_info = _fetch_table_size(instance, db_name, table_name)
@@ -1528,14 +1544,19 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
             "hint": str,
         }
     """
-    # 1. 拆 SQL, 收集所有 ALTER TABLE statements
+    # 1. 拆 SQL, 收集所有 ALTER TABLE / CREATE INDEX statements
     # CUSTOM-MODIFIED: 8/24 兼容 use `xxx` 前缀 @ 2026-08-24 @ mavis
     # CUSTOM-MODIFIED: 9/2 17:35 实战多表 DDL 收集所有 ALTER, 不再 break @ 2026-09-02 @ mavis
+    ## CUSTOM-MODIFIED: 9/17 DBA-bug-10 加 CREATE INDEX 识别 (等价 ALTER TABLE ADD INDEX) @ 2026-09-17 @ mavis
+    ## 关联: docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md
+    ## 业务: 业务方用 CREATE INDEX ... ON tbl 操作大表, 完全绕过字段 diff 端点, 大表 alert 不显示
+    ## 修法: column_diff_full 也识别 CREATE INDEX, 让 _diff_single_table 跑大表 alert 路径
     alter_sqls = []
     statements = [s for s in sqlparse.split(sql_content) if s.strip()]
     for stmt in statements:
-        # 在每段内找 ALTER TABLE 起始位置 (可能有 use 前缀)
-        m = re.search(r"\bALTER\s+TABLE\b", stmt, re.IGNORECASE)
+        # 在每段内找 ALTER TABLE 或 CREATE INDEX 起始位置
+        m = re.search(r"\b(?:ALTER\s+TABLE|CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX)\b",
+                      stmt, re.IGNORECASE)
         if m:
             alter_sql = stmt[m.start():].strip().rstrip(";").strip()
             alter_sqls.append(alter_sql)
@@ -1543,8 +1564,8 @@ def column_diff_full(instance, db_name: str, sql_content: str, table_name: str =
     if not alter_sqls:
         return {
             "ok": False,
-            "error": "SQL 不是 ALTER TABLE 或不包含 MODIFY/ADD/DROP COLUMN",
-            "hint": "只支持 ALTER TABLE ... MODIFY/ADD/DROP COLUMN",
+            "error": "SQL 不是 ALTER TABLE 或 CREATE INDEX 或不包含 MODIFY/ADD/DROP COLUMN",
+            "hint": "只支持 ALTER TABLE ... MODIFY/ADD/DROP COLUMN + CREATE INDEX",
         }
 
     # 2. 遍历每条 ALTER, 单独 diff

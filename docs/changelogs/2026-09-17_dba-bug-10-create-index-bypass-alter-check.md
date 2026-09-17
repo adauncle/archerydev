@@ -45,7 +45,7 @@ CREATE INDEX test USING BTREE ON hly_accesscard.accesscard_channel_task (req_url
 
 所以应该跟 `ALTER TABLE ADD/DROP INDEX` 走同一路径。
 
-## 实施 (4 文件 + 1 演练脚本)
+## 实施 (5 文件 + 2 演练脚本)
 
 ### 1. `sql/views.py` (detail 页大表 alert + 字段 diff + 混合 DDL 检测)
 
@@ -156,9 +156,47 @@ if (!/\bALTER\s+TABLE\b/i.test(sqlContent || "")) { ... }
 if (!/\b(?:ALTER\s+TABLE|CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX)\b/i.test(sqlContent || "")) { ... }
 ```
 
+### 5. `sql/extensions/ddl_gh_ost/services/column_diff.py` (字段 diff 端点大表 alert)
+
+#### 5.1 `_diff_single_table` 表名解析兼容 CREATE INDEX
+
+```python
+m = re.match(
+    r"^\s*ALTER\s+TABLE\s+"
+    r"(?:(?P<schema>`?[^`\s.()]+`?)\.)?`?(?P<table>[^`\s(]+)`?",
+    alter_sql.strip(),
+    re.IGNORECASE,
+)
+if not m:
+    # DBA-bug-10: CREATE INDEX 跳过 idx_name + USING
+    m = re.match(
+        r"^\s*CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX\s+`?[^`\s]+`?\s+"
+        r"(?:USING\s+\w+\s+)?ON\s+"
+        r"(?:(?P<schema>`?[^`\s.()]+`?)\.)?`?(?P<table>[^`\s(]+)`?",
+        alter_sql.strip(),
+        re.IGNORECASE,
+    )
+if not m:
+    return {"ok": False, "error": "解析不到表名"}
+# DBA-bug-10: schema 段 rstrip(".") 去掉尾点
+schema = (m.group("schema") or "").rstrip(".").strip("`")
+table_name = (m.group("table") or "").strip("`")
+```
+
+#### 5.2 `column_diff_full` 收集 CREATE INDEX
+
+```python
+# 老: 只识别 ALTER TABLE
+m = re.search(r"\bALTER\s+TABLE\b", stmt, re.IGNORECASE)
+
+# 新: 兼容 CREATE INDEX
+m = re.search(r"\b(?:ALTER\s+TABLE|CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX)\b",
+              stmt, re.IGNORECASE)
+```
+
 ## 演练 (134 dev + 110 prod 双向 PASS)
 
-**脚本**：`scripts/_w3_dba_bug10_verify.py` (10 个 case)
+**脚本 1**：`scripts/_w3_dba_bug10_verify.py` (10 个 case SQL 解析)
 
 | Case | 输入 | 期望 | 134 dev | 110 prod |
 |------|------|------|---------|----------|
@@ -172,6 +210,41 @@ if (!/\b(?:ALTER\s+TABLE|CREATE\s+(?:UNIQUE\s+|FULLTEXT\s+|SPATIAL\s+)?INDEX)\b/
 | 8 | wf#4849 实战工单 (use + CREATE TABLE + CREATE INDEX) | all_alters=1, non_alter=1 (CREATE TABLE) | ✅ | ✅ |
 | 9 | wf#4841 实战 4 ALTER + CREATE INDEX | all_alters=2 | ✅ | ✅ |
 | 10 | CREATE INDEX 不带 USING | table/db 都解 | ✅ | ✅ |
+
+**脚本 2**：`scripts/_w3_dba_bug10_column_diff.py` (column_diff 端点大表 alert)
+
+| 实例 | 输入 | 期望 | 实际 |
+|------|------|------|------|
+| 110 prod instance=5 (hly_accesscard) | `CREATE INDEX test USING BTREE ON hly_accesscard.accesscard_channel_task (req_url);` | big_table_alert 触发, rows=1707167, size_mb=865.4 | ✅ |
+
+输出摘要：
+```json
+{
+  "ok": false,
+  "error": "所有 ALTER 涉及表都不存在或查不到列定义",
+  "tables": [{
+    "ok": false,
+    "table_name": "accesscard_channel_task",
+    "table_exists": true,
+    "big_table_alert": {
+      "table_name": "accesscard_channel_task",
+      "rows": 1707167,
+      "size_mb": 865.4,
+      "row_threshold": 100000,
+      "size_threshold_mb": 100
+    }
+  }],
+  "big_table_alert": {
+    "table_name": "accesscard_channel_task",
+    "rows": 1707167,
+    "size_mb": 865.4
+  }
+}
+```
+
+**前端 banner 渲染**：
+- `sqlsubmit.html:919` 检测 `!data.ok && data.big_table_alert` 走 `renderBigTableAlertOnly()` 渲染大表 alert modal + `renderBigTableBanner()` 渲染主页面 banner
+- 实战验证：110 prod `accesscard_channel_task` 170 万行 / 865 MB，超阈值 10w/100MB，触发 banner + modal
 
 ## 部署 (DBA 一条龙, 不动生产任何数据和表结构)
 
@@ -228,6 +301,23 @@ ALTER TABLE / CREATE INDEX regex 里 schema 段是 `(?P<schema>\`?[^`\s.()]+\`?\
 - 9/17 DBA-bug-10 改 4 个文件 (sql/views.py + ddl_gh_ost/views.py + ddl_sync/sync_trigger.py + sqlsubmit.html), 全部一起改
 - 实战新发现: 跨项目多文件 regex 一致性, 改一个 regex 必 grep 全代码库找同款, 漏 1 个就出 bug
 
+### 7. column_diff 端点也要识别 CREATE INDEX (DBA-bug-10 实战新发现, 9/17 17:52)
+跨项目写字段 diff / 大表 alert 端点时, 不能只识别 ALTER TABLE, CREATE INDEX 也必须识别:
+- 老逻辑: `column_diff_full` 第 1538 行 `re.search(r"\bALTER\s+TABLE\b", stmt)` 只匹配 ALTER, CREATE INDEX 走不到 `alter_sqls`, 直接 return `{"ok": False, "error": "SQL 不是 ALTER TABLE..."}`, 前端 banner 渲染依赖 `ok=False + big_table_alert` 同时存在, 但 `big_table_alert` 也没填 (因为没 `_diff_single_table` 走, 也没 `size_info`)
+- 实战踩坑: 9/17 17:52 阿达叔叔截图 110 prod 提交页 CREATE INDEX 测, 大表 alert 不显示
+- 根因: `column_diff.py` 第 1538 行只识别 `ALTER TABLE`
+- 修法:
+  1. `column_diff_full` 第 1538 行 regex 加 `CREATE\s+(?:UNIQUE|FULLTEXT|SPATIAL)?\s+INDEX`
+  2. `_diff_single_table` 第 944 行表名解析也兼容 CREATE INDEX (2 个 regex)
+- 验证: 110 prod instance=5 + `CREATE INDEX test USING BTREE ON hly_accesscard.accesscard_channel_task (req_url)` → `big_table_alert` 含 `rows=1707167, size_mb=865.4`, 触发前端 banner
+- 实战新发现: 跨项目 SQL 审核端点 (column_diff / table_size / 等) 必须支持所有语法等价写法, 不只是常规 ALTER, 否则 UX 漏洞
+
+### 8. 详情页大表 alert 已自动支持 CREATE INDEX (DBA-bug-9.5 + DBA-bug-10 复用)
+跨项目 detail 页 big_table_alert 走 `_parse_all_alters` 扫所有 ALTER, 加 CREATE INDEX 识别后自动含 CREATE INDEX 目标表 (DBA-bug-9.5 9/16 实战改的):
+- `sql/views.py:594` detail 视图用 `_parse_all_alters(sql_text)` 循环查每张表大小
+- 实战: 9/17 wf#4849 工单 CREATE INDEX ON accesscard_channel_task 走 detail 时, 170 万行表 big_table_alert 自动触发
+- 实战新发现: 跨项目 detail 页大表 alert 用扫所有 statement 的辅助函数 (不是只第一条), regex 加 CREATE INDEX 后整页 UX 一致
+
 ## commit
 
 ```bash
@@ -235,6 +325,8 @@ ALTER TABLE / CREATE INDEX regex 里 schema 段是 `(?P<schema>\`?[^`\s.()]+\`?\
 # M: sql/extensions/ddl_gh_ost/views.py (+19 lines, _FIRST_CREATE_INDEX_RE + _parse_all_statements CREATE INDEX 路径)
 # M: sql/extensions/ddl_sync/services/sync_trigger.py (+9 lines, _CREATE_INDEX_PATTERN + _extract_all_alters)
 # M: sql/templates/sqlsubmit.html (+5 lines, fetchColumnDiff 触发条件兼容 CREATE INDEX)
+# M: sql/extensions/ddl_gh_ost/services/column_diff.py (+12 lines, column_diff_full + _diff_single_table 兼容 CREATE INDEX)
 # A: scripts/_w3_dba_bug10_verify.py (10 case 演练脚本)
+# A: scripts/_w3_dba_bug10_column_diff.py (column_diff 端点大表 alert 演练)
 # A: docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md (本文件)
 ```
