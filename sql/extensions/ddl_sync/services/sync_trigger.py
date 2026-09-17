@@ -71,8 +71,62 @@ _ALTER_PATTERN = re.compile(
 )
 
 
+## CUSTOM-MODIFIED: 9/17 DDL-Sync-Bug-A 加 _extract_all_alters 扫所有 ALTER @ 2026-09-17 @ mavis
+## 关联: docs/changelogs/2026-09-17_ddl-sync-multi-alter-mixed-blacklist.md
+## 根因 (9/17 13:58 阿达叔叔确认): 老 _extract_table_name 只返第一个 ALTER, 多 ALTER 工单
+##       (9/16 wf#4841 形态) 只看第一个
+##       - blacklist 模式: 第一表在黑名单 → 整个工单不触发 (其他表也丢)
+##       - whitelist 模式: 第一表不在白名单 → 整个工单不触发
+##       即使触发, 镜像工单 ddl_text 是 sql_content 全文 (不过滤)
+## 修法: 加 _extract_all_alters 返 list[{db, table, full}], workflow_passed_handler 循环每个 ALTER
+##       独立判定白/黑名单, skipped ALTER 写 history (sync_status='skipped')
+##       kept ALTER 拼新 sql_content 创建镜像工单 (只包含 kept 的 ALTER)
+def _extract_all_alters(sql_content: str) -> list:
+    """提取 SQL 里所有 ALTER TABLE 的 table_name + 完整语句 (扫所有, 不只是第一个).
+
+    Returns:
+        list of {"db": str|None, "table": str|None, "full": str}
+        空 SQL / 没 ALTER 返 []
+    """
+    if not sql_content:
+        return []
+    result = []
+    for raw_stmt in sql_content.split(";"):
+        cleaned_lines = []
+        for line in raw_stmt.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("--"):
+                continue
+            # 跳过 use xxx; 这种前缀 (DBA-bug-1 实战踩坑, 9/11 17:55 修过)
+            if re.match(r"^\s*use\s+", stripped, re.IGNORECASE):
+                continue
+            cleaned_lines.append(stripped)
+        cleaned = "\n".join(cleaned_lines).strip()
+        if not cleaned:
+            continue
+        m = _ALTER_PATTERN.match(cleaned)
+        if not m:
+            continue
+        # db: schema 反引号里就是 schema 名字; table: 主表名
+        # 9/17 fix: 先去掉所有反引号, 再 split (老 strip("\") 处理 (.` 边界不彻底)
+        db_raw = (m.group("schema") or "").replace("`", "").rstrip(".")
+        # db 可能是 "schema.table" 这种 (虽然 regex 不太可能), 提取真正的 schema
+        db_name = None
+        if "." in db_raw:
+            db_name = db_raw.split(".")[0]
+        elif db_raw:
+            db_name = db_raw
+        table_name = (m.group("table") or "").strip("`")
+        result.append({
+            "db": db_name,
+            "table": table_name,
+            "full": cleaned + ";",  # 完整语句 (含 ; 结尾)
+        })
+    return result
+
+
 def _extract_table_name(sql_content: str) -> str:
-    """提取 ALTER TABLE 的 table_name.
+    """提取 ALTER TABLE 的 table_name (DEPRECATED, 保留兼容老代码).
 
     只认 ALTER TABLE 开头, 其他 DDL (CREATE/DROP/RENAME) 暂时不触发 (Phase 2 加).
     返回 table_name (str), 解析失败返 "".
@@ -86,28 +140,13 @@ def _extract_table_name(sql_content: str) -> str:
     ##       先 splitlines 跳过 use/-- 注释/空行, 再 re.match
     ## 实战新发现 (跨项目可复用): regex 跨文件一致性, 改一个 regex 修一个 bug 时,
     ##       必看配套的 use/注释预处理函数是不是也漏了
+    ##
+    ## CUSTOM-MODIFIED: 9/17 DDL-Sync-Bug-A deprecated, 改用 _extract_all_alters @ 2026-09-17 @ mavis
+    ## 老逻辑只返第一个 ALTER, 多 ALTER 工单 (9/16 wf#4841 形态) 漏判定
+    ## 保留函数兼容老测试代码 + 9/17 之前的脚本
     """
-    if not sql_content:
-        return ""
-    # 9/12 修: 跟 views.py _parse_first_alter 同款预处理 (跳过 use/注释/空行)
-    cleaned_lines = []
-    for line in sql_content.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("--"):
-            continue
-        # 跳过 use xxx; 这种前缀 (DBA-bug-1 实战踩坑, 9/11 17:55 修过)
-        if re.match(r"^\s*use\s+", stripped, re.IGNORECASE):
-            continue
-        cleaned_lines.append(stripped)
-    cleaned = "\n".join(cleaned_lines).strip()
-    if not cleaned:
-        return ""
-    m = _ALTER_PATTERN.match(cleaned)
-    if not m:
-        return ""
-    return (m.group("table") or "").strip("`")
-
-
+    alt = _extract_all_alters(sql_content)
+    return alt[0]["table"] if alt else ""
 # ===== 白/黑名单判定 =====
 
 def _should_sync(pair: DdlSyncPair, table_name: str) -> bool:
@@ -283,64 +322,85 @@ def workflow_passed_handler(sender, instance, created, **kwargs):
         if not pairs.exists():
             return
 
-        # 4. 提取 table_name
-        table_name = _extract_table_name(sql_content)
-        if not table_name:
-            return  # 不是 ALTER TABLE, Phase 2 加 CREATE/DROP/RENAME
+        # 4. CUSTOM-MODIFIED: 9/17 DDL-Sync-Bug-A 提取所有 ALTER (不只第一个) @ 2026-09-17 @ mavis
+        # 关联: docs/changelogs/2026-09-17_ddl-sync-multi-alter-mixed-blacklist.md
+        # 老逻辑: table_name = _extract_table_name(sql_content) 只返第一个 ALTER
+        # 新逻辑: 扫所有 ALTER, 每个独立判定白/黑名单
+        all_alters = _extract_all_alters(sql_content)
+        if not all_alters:
+            return  # 没 ALTER, 不触发 (Phase 2 加 CREATE/DROP/RENAME)
 
-        # 5. 对每个匹配库对触发同步
+        # 5. 对每个匹配库对触发同步 (循环每个 pair, 每个 ALTER 独立判定)
         for pair in pairs:
-            # 5.1 白/黑名单判定
-            if not _should_sync(pair, table_name):
-                # skipped 记录
+            kept_alters = []       # 通过 _should_sync 的 ALTER
+            skipped_alters = []    # 没通过的 ALTER (DBA 排查)
+
+            # 5.1 对每个 ALTER 独立判定白/黑名单
+            for alter in all_alters:
+                if _should_sync(pair, alter["table"]):
+                    kept_alters.append(alter)
+                else:
+                    skipped_alters.append(alter)
+
+            # 5.2 写 skipped history (每个 skipped ALTER 一条, DBA 排查用)
+            for alter in skipped_alters:
                 DdlSyncHistory.objects.create(
                     pair=pair,
                     source_workflow=instance,
-                    table_name=table_name,
-                    ddl_text=sql_content,
+                    table_name=alter["table"],
+                    ddl_text=alter["full"],
                     sync_status="skipped",
-                    error_message="白/黑名单不匹配 (orphan)",
+                    error_message="白/黑名单不匹配 (orphan) - 9/17 DDL-Sync-Bug-A 多 ALTER split",
                     finished_at=timezone.now(),
                 )
+
+            # 5.3 没 kept ALTER → 不创建镜像工单 (但已写 skipped history, 给 DBA 排查)
+            if not kept_alters:
                 continue
 
-            # 5.2 应用 transform_rule
-            transformed_ddl = _apply_transform_rule(sql_content, pair, table_name)
+            # 5.4 拼 kept 的 sql_content (只含通过名单的 ALTER, 不是全文)
+            kept_sql = "\n".join([alter["full"] for alter in kept_alters])
 
-            # 5.3 创建镜像工单 + 走 audit_setting
+            # 5.5 应用 transform_rule (Phase 1-2 简化: 原样返回)
+            transformed_ddl = _apply_transform_rule(kept_sql, pair, kept_alters[0]["table"])
+
+            # 5.6 创建镜像工单 + 走 audit_setting
             try:
                 target_workflow = create_target_workflow(instance, pair, transformed_ddl)
             except Exception as e:
                 # 镜像工单创建失败 (FK/group/audit 错), 标 failed 不阻塞主流程
                 logger.exception(
-                    "ddl_sync.workflow_passed_handler: create_target_workflow 失败 pair=%s table=%s",
-                    pair.id, table_name,
+                    "ddl_sync.workflow_passed_handler: create_target_workflow 失败 pair=%s kept_count=%s",
+                    pair.id, len(kept_alters),
                 )
+                # failed 记录 (每个 kept 一条)
+                for alter in kept_alters:
+                    DdlSyncHistory.objects.create(
+                        pair=pair,
+                        source_workflow=instance,
+                        table_name=alter["table"],
+                        ddl_text=alter["full"],
+                        transformed_ddl_text=transformed_ddl,
+                        sync_status="failed",
+                        error_message=f"创建镜像工单失败: {e}",
+                        finished_at=timezone.now(),
+                    )
+                continue
+
+            # 5.7 写 syncing history (每个 kept 一条, target_workflow 共享)
+            for alter in kept_alters:
                 DdlSyncHistory.objects.create(
                     pair=pair,
                     source_workflow=instance,
-                    table_name=table_name,
-                    ddl_text=sql_content,
+                    target_workflow=target_workflow,
+                    table_name=alter["table"],
+                    ddl_text=alter["full"],
                     transformed_ddl_text=transformed_ddl,
-                    sync_status="failed",
-                    error_message=f"创建镜像工单失败: {e}",
-                    finished_at=timezone.now(),
+                    sync_status="syncing",
                 )
-                continue
-
-            # 5.4 写 history (syncing 状态, 等 target_workflow 执行完切 synced/failed)
-            DdlSyncHistory.objects.create(
-                pair=pair,
-                source_workflow=instance,
-                target_workflow=target_workflow,
-                table_name=table_name,
-                ddl_text=sql_content,
-                transformed_ddl_text=transformed_ddl,
-                sync_status="syncing",
-            )
             logger.info(
-                "ddl_sync.workflow_passed_handler: 镜像工单创建成功 pair=%s table=%s target_wf=%s",
-                pair.id, table_name, target_workflow.id,
+                "ddl_sync.workflow_passed_handler: 镜像工单创建成功 pair=%s kept_count=%s skipped_count=%s target_wf=%s",
+                pair.id, len(kept_alters), len(skipped_alters), target_workflow.id,
             )
     except Exception as e:
         # 9/1 W1-D3 §9.3 实战 1: 整个 try/except 兜底, 异常不能阻塞业务库 DDL 主流程
