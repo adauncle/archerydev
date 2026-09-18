@@ -1,0 +1,34 @@
+docs: 9/18 daily-recap (7 commit / 12 文件 / 60 条 MEMORY 累计)
+
+今天 3 条主线:
+1. 月度宣讲 5 迭代 (V2 6 大功能 → V3 4 场景 → V4 步骤版 → V5 动画版)
+2. 动画版事实修正 (commit 881392b 4 处"系统自动勾选 gh-ost" 跟实际不符)
+3. 大表自动勾选 gh-ost 新功能 (commit a2c6ab6 业务方可手动取消)
+
+文件变更 (12):
+- docs/changelogs/2026-09-18_animated-facts-fix.md
+- docs/changelogs/2026-09-18_auto-check-ghost-big-table.md
+- docs/changelogs/2026-09-18_daily-recap.md (本文件)
+- docs/reports/2026-09-18_月度DBA宣讲_6大新功能_*.{md,html}
+- docs/reports/2026-09-18_开发实战指南_4场景_*.{md,html}
+- docs/reports/2026-09-18_6功能实战指南_操作步骤版_*.{md,html}
+- docs/reports/2026-09-18_6功能实战指南_动画版.html
+- sql/templates/sqlsubmit.html (新功能)
+- scripts/_w3_v0_auto_check_ghost_verify.py (10/10 静态 + 5/5 mock JS 演练)
+- scripts/_reload_110_auto_check_ghost.sh (110 prod gunicorn reload)
+
+实战新发现 (4 条入 MEMORY, 累计 60 条):
+1. docs 事实陈述不能为"好看"而简化, 业务流程描述要严格对应真实代码逻辑
+2. 大表 DDL 防呆产品设计迭代: 强烈建议 → 自动勾选
+3. 前端自动勾 checkbox + trigger('change') 让联动下拉框显示
+4. has_non_alter 边界: 混合 DDL 不自动勾
+
+跨日累计 (9/11-9/18):
+- 32 事件, 26 commit, 80+ files, +14768/-688 行
+- 月度宣讲定稿: V5 动画版
+- 134 dev + 110 prod reload 各 5 次, 0 事故
+
+关联:
+- 9/17 daily-recap commit ad61b3b
+- 9/16 月度宣讲 V1 commit (5 大功能老版)
+- 9/17 7 commit 实战接龙 (v0 + v1 + DDL-Sync-Bug-A + DBA-bug-10)
