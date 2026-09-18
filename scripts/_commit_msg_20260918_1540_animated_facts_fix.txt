@@ -1,0 +1,24 @@
+fix(docs): 动画版修正 4 处"系统自动勾选 gh-ost"事实错误
+
+背景 (9/18 15:35 阿达叔叔截图反馈):
+- 110 prod 实测截图显示: 大表 DDL 弹窗明确写"强烈建议在上方勾选'启用 gh-ost 无锁变更'"
+  但 checkbox 实际是空, 业务方要自己手动勾
+- 动画版 4 处写"系统自动勾选 gh-ost" / "smart 自动选中", 跟实际行为不符
+
+根因:
+- 9/18 commit 0fe77bf / 102fdeb 写动画时, 把"弹窗强烈建议"和"业务方手动勾选"两个动作合并叙述为"系统自动勾选"
+- 实际代码 (sqlsubmit.html:1388) enable_ghost 是业务方 :checked 状态, 没有自动勾选逻辑
+- smart 默认值是 gh_ost_mode 字段默认值 + 下拉框默认, 不是"自动选中"
+
+修复 (4 处全改, 不动功能):
+- Slide 2 (字段 diff 弹窗) step 3: "💡 弹窗强烈建议, 业务方手动勾选"
+- Slide 3 (v0 智能) title/subtitle/step 2/step 3: "业务方勾 gh-ost → smart 默认" + "✓ 业务方手动勾选 gh-ost" + "smart 是字段默认值"
+- Slide 8 (CREATE INDEX) subtitle/step 2: "业务方手动勾 gh-ost" + "✓ 业务方手动勾选 gh-ost"
+
+实战新发现 (1 条, 跨项目通用):
+- 事实陈述不能为"好看"而简化, 业务流程描述要严格对应真实代码逻辑
+  改法: docs/reports 里的"系统自动" / "无需操作" 这种词, 必须 grep 业务代码确认真有自动逻辑
+
+关联: 9/18 commit 0fe77bf (动画版初版) / 102fdeb (修 resetSlide_2 反模式)
+文件: docs/reports/2026-09-18_6功能实战指南_动画版.html (1 文件, 4 处修改)
+CHANGELOG: docs/changelogs/2026-09-18_animated-facts-fix.md

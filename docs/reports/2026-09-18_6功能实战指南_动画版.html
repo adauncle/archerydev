@@ -569,8 +569,8 @@
 <section class="slide" id="slide-3">
   <div class="slide-num">03 / 9</div>
   <div class="slide-tag green">功能 ②</div>
-  <h1 class="slide-title">② 大表无锁 + v0 智能 — 勾 gh-ost → smart 自动选</h1>
-  <div class="slide-subtitle">你的表是 170 万行 / 865 MB，系统自动帮你勾 gh-ost + 默认 smart 模式</div>
+  <h1 class="slide-title">② 大表无锁 + v0 智能 — 业务方勾 gh-ost → smart 默认</h1>
+  <div class="slide-subtitle">你的表是 170 万行 / 865 MB，业务方手动勾 "启用 gh-ost" → 模式默认 smart</div>
   <div class="slide-body">
     <div class="archery-mockup">
       <div class="am-titlebar">SQL 在线</div>
@@ -774,7 +774,7 @@
   <div class="slide-num">08 / 9</div>
   <div class="slide-tag purple">功能 ⑥ B</div>
   <h1 class="slide-title">⑥ DBA-bug-10 CREATE INDEX 等价 ALTER — 大表自动识别</h1>
-  <div class="slide-subtitle">CREATE INDEX 大表 → 自动弹大表 alert + 自动勾 gh-ost</div>
+  <div class="slide-subtitle">CREATE INDEX 大表 → 自动弹大表 alert，业务方手动勾 gh-ost</div>
   <div class="slide-body">
     <div class="archery-mockup">
       <div class="am-titlebar">SQL 在线</div>
@@ -923,7 +923,7 @@ function step2Action() {
     setProgress(2, 2, 3);
     s2step++;
   } else if (s2step === 2) {
-    addPanel(area, '<div class="feedback-step">第 3 步</div><div class="panel-title">💡 系统自动勾选 gh-ost</div><div class="panel-body">系统帮你自动勾选 <code>☑ 启用 gh-ost 无锁变更</code>，你什么都不用动。<br>现在你可以直接点 <code>SQL提交</code>，走 gh-ost 切流 0-30 秒。</div>', 'green');
+    addPanel(area, '<div class="feedback-step">第 3 步</div><div class="panel-title">💡 弹窗强烈建议，业务方手动勾选</div><div class="panel-body">弹窗里明确写"<strong>强烈建议在上方勾选'启用 gh-ost 无锁变更'</strong>"，但<strong>checkbox 是业务方自己勾的</strong>（系统不替业务方决定）。<br>勾上后再点 <code>SQL提交</code>，走 gh-ost 切流 0-30 秒。</div>', 'green');
     setProgress(2, 3, 3);
     s2step++;
   }
@@ -945,16 +945,16 @@ function step3Action() {
     setProgress(3, 1, 3);
     s3step++;
   } else if (s3step === 1) {
-    // Step 2: 系统自动勾选 gh-ost checkbox
+    // Step 2: 业务方手动勾选 gh-ost checkbox
     document.getElementById('sl3-check').classList.add('visible', 'checked');
     document.getElementById('sl3-cb').textContent = '✓';
-    addPanel(area, '<div class="feedback-step">第 2 步</div><div class="panel-title">✓ 系统自动勾选 gh-ost</div><div class="panel-body">左侧 UI 模拟：<code>☑ 启用 gh-ost 无锁变更</code> 已经被系统勾上了（你看到左边 UI 变化）</div>', 'green');
+    addPanel(area, '<div class="feedback-step">第 2 步</div><div class="panel-title">✓ 业务方手动勾选 gh-ost</div><div class="panel-body">左侧 UI 模拟：业务方看到大表警告后，<strong>自己点</strong> <code>☑ 启用 gh-ost 无锁变更</code>（checkbox 是业务方的责任,系统不替勾）</div>', 'green');
     setProgress(3, 2, 3);
     s3step++;
   } else if (s3step === 2) {
-    // Step 3: 出现模式选择器，smart 自动选中
+    // Step 3: 出现模式选择器，smart 是字段默认值
     document.getElementById('sl3-mode').classList.add('visible');
-    addPanel(area, '<div class="feedback-step">第 3 步</div><div class="panel-title">🎯 gh-ost 模式：smart（默认）</div><div class="panel-body">左侧 UI 模拟：模式选择器滑出，<strong>smart 自动选中</strong>。<br>多 ALTER 大小表混合工单自动分流（大表 gh-ost + 小表原生 ALTER）。</div>', 'green');
+    addPanel(area, '<div class="feedback-step">第 3 步</div><div class="panel-title">🎯 gh-ost 模式：smart（字段默认值）</div><div class="panel-body">左侧 UI 模拟：勾上 checkbox 后模式选择器才滑出，<strong>smart 是默认值</strong>（业务方可改 all_ghost / all_native）。<br>多 ALTER 大小表混合工单自动分流（大表 gh-ost + 小表原生 ALTER）。</div>', 'green');
     setProgress(3, 3, 3);
     s3step++;
   }
@@ -1113,7 +1113,7 @@ function step8Action() {
   } else if (s8step === 1) {
     document.getElementById('sl8-check').classList.add('visible', 'checked');
     document.getElementById('sl8-cb').textContent = '✓';
-    addPanel(area, '<div class="feedback-step">第 2 步</div><div class="panel-title">✓ 系统自动勾选 gh-ost</div><div class="panel-body">左侧 UI 模拟：<code>☑ 启用 gh-ost 无锁变更</code> 已经被系统勾上。<br>你直接点 <code>SQL提交</code>，走 gh-ost 切流 0-30 秒（170 万行表不锁表）</div>', 'green');
+    addPanel(area, '<div class="feedback-step">第 2 步</div><div class="panel-title">✓ 业务方手动勾选 gh-ost</div><div class="panel-body">左侧 UI 模拟：业务方看到大表警告后，<strong>自己点</strong> <code>☑ 启用 gh-ost 无锁变更</code>。<br>勾上后再点 <code>SQL提交</code>，走 gh-ost 切流 0-30 秒（170 万行表不锁表）</div>', 'green');
     setProgress(8, 2, 2);
     s8step++;
   }
