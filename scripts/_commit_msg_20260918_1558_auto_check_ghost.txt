@@ -1,0 +1,37 @@
+feat(sqlsubmit): 大表 DDL 自动勾选 gh-ost (业务方可手动取消)
+
+背景 (9/18 15:35 阿达叔叔截图反馈):
+- 提交页大表 DDL 弹窗明确写"强烈建议在上方勾选'启用 gh-ost 无锁变更'"
+- 但 checkbox 默认未勾, 业务方实战漏勾率高:
+  - 9/16 wf#4841 (DBA-bug-9): 4 CREATE + 4 ALTER 大表混合, 漏勾走原路径锁表
+  - 9/17 wf#4849 (DBA-bug-10): CREATE INDEX 170 万行表, 没注意 checkbox
+- 9/18 15:50 阿达叔叔要求: "检测到大表自动选中 ghost"
+
+修复 (1 文件 sql/templates/sqlsubmit.html):
+1. 新增 autoCheckGhostCheckbox(data) 函数:
+   - 触发: 检测到大表 (bigTables.length > 0) + 工单全 ALTER 类 (has_non_alter=false)
+   - 不触发: has_non_alter=true (混合 DDL, gh-ost 必拒, 自动勾会被拒更困惑)
+   - 不触发: 业务方已勾上 (避免重复触发)
+   - trigger('change') 联动 gh_ost_mode 下拉框显示 (v0 智能模式联动, line 1502 handler)
+2. 改 3 处文案 (line 822 / 846 / 1031):
+   - "强烈建议在上方勾选" → "已自动勾选 '启用 gh-ost 无锁变更' (业务方可手动取消)"
+3. doFetchColumnDiff success 加 2 处调用 (line 952 + 965)
+
+边界 (产品拍板 9/18 15:51):
+- 大表 + 全 ALTER (含 CREATE INDEX) → 自动勾
+- 大表 + 含 CREATE/INSERT/UPDATE/DELETE → 不勾 (大表警告仍弹, 但建议拆单)
+- 大小表混合 → 自动勾 (smart 模式后端自动分流)
+- 没大表 → 不动
+- 业务方手动取消 → 不重复勾上
+
+演练 (10/10 静态 + 5/5 mock JS, scripts/_w3_v0_auto_check_ghost_verify.py):
+- 134 dev: systemctl restart archery-prod-gunicorn.service + HTTP 200 + grep "已自动勾选" × 3 ✅
+- 110 prod: pkill gunicorn + --daemon --pid /tmp/gunicorn_110.pid + source .env + CAS 占位 + HTTP 200 + grep "已自动勾选" × 3 ✅
+
+实战新发现 (3 条入 MEMORY, 跨项目可复用):
+1. 大表 DDL 防呆产品设计迭代: "强烈建议" → "自动勾选 (业务方可手动取消)"
+2. 前端自动勾 checkbox + trigger('change') 让联动下拉框显示
+3. has_non_alter 边界: 混合 DDL 不自动勾 (gh-ost 必拒场景)
+
+CHANGELOG: docs/changelogs/2026-09-18_auto-check-ghost-big-table.md
+关联: 9/16 v0 智能模式 + 9/17 DBA-bug-10 CREATE INDEX 识别 + 9/18 动画版事实修正
