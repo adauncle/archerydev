@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>月度 DBA 宣讲 — 6 大新功能 · DBA 一条龙</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  body {
+    background: #0f0f1e;
+    color: #e8e8f0;
+    line-height: 1.6;
+    scroll-behavior: smooth;
+  }
+
+  /* 顶部导航 */
+  .nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 48px;
+    background: rgba(15, 15, 30, 0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid #2a2a3e;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    z-index: 1000;
+    font-size: 14px;
+  }
+  .nav-title { font-weight: 600; color: #ff6b35; }
+  .nav-controls { display: flex; gap: 12px; align-items: center; }
+  .nav-btn { background: #2a2a3e; color: #e8e8f0; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .nav-btn:hover { background: #ff6b35; color: #fff; }
+  .nav-page { color: #888; font-variant-numeric: tabular-nums; }
+
+  /* slide 主样式 */
+  .slide {
+    width: 100vw;
+    height: 100vh;
+    padding: 80px 96px;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+  .slide-num {
+    position: absolute;
+    top: 24px; right: 32px;
+    font-size: 14px;
+    color: #555;
+    font-variant-numeric: tabular-nums;
+  }
+  .slide-tag {
+    display: inline-block;
+    background: #ff6b35;
+    color: #fff;
+    padding: 4px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+  .slide-tag.blue { background: #5b9dd9; }
+  .slide-tag.purple { background: #a855f7; }
+  .slide-title {
+    font-size: 52px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 20px;
+    background: linear-gradient(135deg, #fff 0%, #b0b0d0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .slide-subtitle {
+    font-size: 20px;
+    color: #8888a0;
+    margin-bottom: 40px;
+  }
+  .slide-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
+
+  /* KPI 卡 */
+  .kpi-row { display: flex; gap: 24px; }
+  .kpi {
+    background: linear-gradient(135deg, #1a1a2e 0%, #2a1a1e 100%);
+    border: 1px solid #3a3a4e;
+    border-left: 4px solid #ff6b35;
+    padding: 24px 28px;
+    border-radius: 8px;
+    flex: 1;
+  }
+  .kpi-value { font-size: 56px; font-weight: 800; color: #ff6b35; line-height: 1.1; }
+  .kpi-label { font-size: 16px; color: #aaa; margin-top: 8px; }
+
+  /* box 通用 */
+  .box { background: rgba(255, 107, 53, 0.08); border-left: 4px solid #ff6b35; padding: 20px 24px; border-radius: 6px; }
+  .box.blue { background: rgba(91, 157, 217, 0.08); border-left-color: #5b9dd9; }
+  .box-label { font-size: 13px; color: #ff6b35; text-transform: uppercase; font-weight: 700; letter-spacing: 1px; margin-bottom: 10px; }
+  .box.blue .box-label { color: #5b9dd9; }
+  .box-content { font-size: 18px; line-height: 1.6; }
+  .box-content strong { color: #fff; }
+
+  /* 痛点/优势/使用三段式 */
+  .tri-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  .tri-cell {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    padding: 22px 24px;
+    border-radius: 8px;
+  }
+  .tri-icon { font-size: 28px; margin-bottom: 10px; }
+  .tri-title { font-size: 16px; font-weight: 700; color: #ff6b35; margin-bottom: 10px; }
+  .tri-text { font-size: 14px; color: #ccc; line-height: 1.6; }
+
+  /* 案例卡 */
+  .case { background: #1a1a2e; border: 1px solid #2a2a3e; border-left: 3px solid #5b9dd9; padding: 18px 22px; border-radius: 6px; }
+  .case-title { font-size: 14px; font-weight: 700; color: #5b9dd9; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .case-text { font-size: 15px; color: #ddd; }
+
+  /* 矩阵网格（总览 / 联动）*/
+  .grid6 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid6-cell {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    padding: 22px;
+    border-radius: 8px;
+    text-align: left;
+    position: relative;
+  }
+  .grid6-cell.feature {
+    border-left: 3px solid #ff6b35;
+  }
+  .grid6-cell.feature.new {
+    border-left: 3px solid #5b9dd9;
+    background: linear-gradient(135deg, #1a1a2e 0%, #1a2233 100%);
+  }
+  .grid6-cell.feature.hot {
+    border-left: 3px solid #a855f7;
+    background: linear-gradient(135deg, #1a1a2e 0%, #231a2e 100%);
+  }
+  .grid6-icon { font-size: 26px; margin-bottom: 10px; }
+  .grid6-name { font-size: 18px; font-weight: 700; margin-bottom: 6px; display: inline-block; }
+  .grid6-new { display: inline-block; background: #5b9dd9; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 8px; margin-left: 8px; }
+  .grid6-hot { display: inline-block; background: #a855f7; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 8px; margin-left: 8px; }
+  .grid6-when { font-size: 12px; color: #888; margin-bottom: 12px; }
+  .grid6-desc { font-size: 14px; color: #ccc; line-height: 1.5; }
+  .grid6-effect { font-size: 13px; color: #ff6b35; margin-top: 12px; padding-top: 12px; border-top: 1px solid #2a2a3e; }
+
+  /* 时间线（开场定调）*/
+  .timeline-bar {
+    display: flex;
+    align-items: stretch;
+    height: 90px;
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 24px 0;
+    border: 1px solid #2a2a3e;
+  }
+  .timeline-seg {
+    flex: 1;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    border-right: 1px solid #2a2a3e;
+  }
+  .timeline-seg:last-child { border-right: none; }
+  .timeline-month { font-size: 13px; color: #ff6b35; font-weight: 700; margin-bottom: 4px; }
+  .timeline-feat { font-size: 11px; color: #ccc; line-height: 1.4; }
+  .timeline-seg.bg-1 { background: rgba(255, 107, 53, 0.06); }
+  .timeline-seg.bg-2 { background: rgba(91, 157, 217, 0.10); }
+  .timeline-seg.bg-3 { background: rgba(168, 85, 247, 0.10); }
+
+  /* 联动保护链 */
+  .chain {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+  }
+  .chain-stage {
+    background: #1a1a2e;
+    border: 2px solid #2a2a3e;
+    padding: 16px;
+    border-radius: 8px;
+    text-align: center;
+    position: relative;
+  }
+  .chain-stage::after {
+    content: "→";
+    position: absolute;
+    right: -16px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 24px;
+    color: #ff6b35;
+    font-weight: 800;
+  }
+  .chain-stage:last-child::after { content: ""; }
+  .chain-stage-time { font-size: 11px; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+  .chain-stage-icon { font-size: 30px; margin-bottom: 8px; }
+  .chain-stage-title { font-size: 13px; font-weight: 700; color: #ff6b35; margin-bottom: 6px; line-height: 1.3; }
+  .chain-stage-func { font-size: 11px; color: #ccc; line-height: 1.4; }
+  .chain-stage-block { font-size: 11px; color: #5b9dd9; margin-top: 6px; font-weight: 700; }
+
+  /* 子功能对（A/B）— 仅 ⑥ 滑块 */
+  .dual-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+  /* 收尾页 */
+  .closing { text-align: center; justify-content: center; align-items: center; }
+  .closing-title { font-size: 96px; font-weight: 900; margin-bottom: 32px; }
+  .closing-subtitle { font-size: 28px; color: #888; margin-bottom: 64px; }
+
+  /* 强调 */
+  .hl { color: #ff6b35; font-weight: 700; }
+  .hl-blue { color: #5b9dd9; font-weight: 700; }
+  .hl-purple { color: #a855f7; font-weight: 700; }
+
+  /* 打印 */
+  @media print {
+    .nav { display: none; }
+    .slide { height: auto; min-height: 100vh; page-break-after: always; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-title">月度 DBA 宣讲 · 6 大新功能</div>
+  <div class="nav-controls">
+    <span class="nav-page"><span id="current">1</span> / 11</span>
+    <button class="nav-btn" onclick="prevSlide()">← Prev</button>
+    <button class="nav-btn" onclick="nextSlide()">Next →</button>
+    <button class="nav-btn" onclick="toggleFullscreen()">⛶ Full</button>
+  </div>
+</nav>
+
+<!-- ============ Slide 1: 标题页 ============ -->
+<section class="slide" id="slide-1">
+  <div class="slide-num">01 / 11</div>
+  <div class="slide-tag">DBA 月度宣讲 · 2026 年 9 月</div>
+  <h1 class="slide-title">6 大新功能<br>DBA 一条龙实战成果</h1>
+  <div class="slide-subtitle">从"手工盯"到"系统拦截"——SQL 上线全生命周期覆盖</div>
+  <div class="slide-body">
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-value">8 天</div>
+        <div class="kpi-label">9/11 - 9/18 实战接龙</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">6 大</div>
+        <div class="kpi-label">新功能全部上线 110 prod</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">3 大</div>
+        <div class="kpi-label">本月新（W3 跨库/PK + v0 智能 + v1 禁止 + DBA-bug-10）</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">0</div>
+        <div class="kpi-label">生产事故 / 0 数据改动</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 2: 开场定调（8 天 19 commit 时间线）============ -->
+<section class="slide" id="slide-2">
+  <div class="slide-num">02 / 11</div>
+  <div class="slide-tag">开场定调</div>
+  <h1 class="slide-title">8 天 19 commit，6 大功能 0 生产事故</h1>
+  <div class="slide-subtitle">9/11 - 9/18 · DBA 一条龙实战接龙 · 全部三段式演练（134 dev + 110 prod + 业务方实测）</div>
+  <div class="slide-body">
+    <div class="timeline-bar">
+      <div class="timeline-seg bg-1">
+        <div class="timeline-month">9/11</div>
+        <div class="timeline-feat">DBA-bug-1/2/3<br>DBA 一条龙实战接龙开篇</div>
+      </div>
+      <div class="timeline-seg">
+        <div class="timeline-month">9/12</div>
+        <div class="timeline-feat">DBA-bug-5a<br>sync_trigger 反引号</div>
+      </div>
+      <div class="timeline-seg">
+        <div class="timeline-month">9/15</div>
+        <div class="timeline-feat">DBA-bug-6/7<br>镜像工单 UX 修复</div>
+      </div>
+      <div class="timeline-seg bg-2">
+        <div class="timeline-month">9/16</div>
+        <div class="timeline-feat">W3 跨库 + PK ⭐<br>v0 智能模式设计 ⭐</div>
+      </div>
+      <div class="timeline-seg bg-3">
+        <div class="timeline-month">9/17</div>
+        <div class="timeline-feat">v0 阶段 2 ⭐ + v1 禁止 ⭐<br>DDL-Sync-Bug-A ⭐ + DBA-bug-10 ⭐</div>
+      </div>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-value">19</div>
+        <div class="kpi-label">commit 数（9/11-9/18）</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">7</div>
+        <div class="kpi-label">业务方工单闭环（含 wf#4841/4848/4849）</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">50+</div>
+        <div class="kpi-label">演练 case PASS</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">110 prod</div>
+        <div class="kpi-label">全功能已部署 + 大表演练</div>
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-label">一句话总结</div>
+      <div class="box-content">从 8 月到 9 月，DBA 团队把 Archery SQL 审核平台从<span class="hl">"事后救火"</span>升级到<span class="hl">"事前拦截 + 事中阻断 + 事后追溯"</span>。业务方提交工单时，系统自动拦截 6 类风险，<strong>DBA 不再 24 小时盯审核</strong>。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 3: 6 大功能全景 ============ -->
+<section class="slide" id="slide-3">
+  <div class="slide-num">03 / 11</div>
+  <div class="slide-tag">全景</div>
+  <h1 class="slide-title">6 大功能全景</h1>
+  <div class="slide-subtitle">覆盖 SQL 上线全生命周期 · 从事前 / 事中 / 事后三大节点卡风险</div>
+  <div class="slide-body">
+    <div class="grid6">
+      <div class="grid6-cell feature">
+        <div class="grid6-icon">🔍</div>
+        <div class="grid6-name">① 字段 diff 弹窗</div>
+        <div class="grid6-when">9/11 上线</div>
+        <div class="grid6-desc">改表前自动弹出本次 DDL 影响的所有列和索引，业务方一目了然，不用等 DBA 人工审。</div>
+        <div class="grid6-effect">📈 提交即看 diff，DBA 审核时长从 5 分钟/单降至 0。</div>
+      </div>
+      <div class="grid6-cell feature new">
+        <div class="grid6-icon">🚀</div>
+        <div class="grid6-name">② 大表无锁变更 + v0 智能模式</div>
+        <span class="grid6-new">⭐9/17</span>
+        <div class="grid6-when">8 月上线，9/17 加 v0 智能分流</div>
+        <div class="grid6-desc">大表（100MB 或 10 万行）走 gh-ost 无锁切流；v0 智能模式自动分流大小表，业务方不用手动选。</div>
+        <div class="grid6-effect">📈 切流 5-30 分 → 0-30 秒。智能分流自动选最优策略。</div>
+      </div>
+      <div class="grid6-cell feature">
+        <div class="grid6-icon">🔄</div>
+        <div class="grid6-name">③ 历史库同步 + Bug-A</div>
+        <div class="grid6-when">9 月初上线，9/17 加多 ALTER 支持</div>
+        <div class="grid6-desc">主库 DDL 自动同步，每条 ALTER 独立判定白/黑名单，skipped ALTER 单独写 history 给 DBA 排查。</div>
+        <div class="grid6-effect">📈 历史库同步自动化 + 多 ALTER 工单零丢失。</div>
+      </div>
+      <div class="grid6-cell feature new">
+        <div class="grid6-icon">🛡️</div>
+        <div class="grid6-name">④ 限制单库</div>
+        <span class="grid6-new">⭐9/16</span>
+        <div class="grid6-when">9/16 上线</div>
+        <div class="grid6-desc">一个工单只能改一个库。跨库 SQL 提交时直接拒绝，业务方第一眼看到红框 alert。</div>
+        <div class="grid6-effect">📈 跨库误操作从"上线后发现"提前到"提交时拦截"。</div>
+      </div>
+      <div class="grid6-cell feature new">
+        <div class="grid6-icon">🔑</div>
+        <div class="grid6-name">⑤ PK 冲突检测</div>
+        <span class="grid6-new">⭐9/16</span>
+        <div class="grid6-when">9/16 上线</div>
+        <div class="grid6-desc">INSERT 主键冲突时，提交时就拒绝。不再等执行到第 N 条才发现 Duplicate entry。</div>
+        <div class="grid6-effect">📈 PK 冲突从"执行报错返工"提前到"提交时拒绝"。</div>
+      </div>
+      <div class="grid6-cell feature hot">
+        <div class="grid6-icon">🆕</div>
+        <div class="grid6-name">⑥ v1 + DBA-bug-10</div>
+        <span class="grid6-hot">🔥9/17 双重大事故</span>
+        <div class="grid6-when">9/17 上线</div>
+        <div class="grid6-desc">v1 禁止 CREATE+ALTER 混合工单；DBA-bug-10 让 CREATE INDEX 等价 ALTER，5 文件统一识别大表风险。</div>
+        <div class="grid6-effect">📈 wf#4841 7/8 失败 → 0；wf#4849 170 万行表大表 alert 自动弹。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 4: ① 字段 diff 弹窗 ============ -->
+<section class="slide" id="slide-4">
+  <div class="slide-num">04 / 11</div>
+  <div class="slide-tag">功能 ①</div>
+  <h1 class="slide-title">字段 diff 弹窗</h1>
+  <div class="slide-subtitle">改一个列，告诉你动了哪些</div>
+  <div class="slide-body">
+    <div class="tri-row">
+      <div class="tri-cell">
+        <div class="tri-icon">😰</div>
+        <div class="tri-title">痛点</div>
+        <div class="tri-text">业务方提交 <code>ALTER TABLE</code>，Inception 只说"语法 OK"，但<span class="hl">没说"动了哪些列、丢了哪些索引"</span>。上线后才发现改动影响范围超出预期。</div>
+      </div>
+      <div class="tri-cell">
+        <div class="tri-icon">✨</div>
+        <div class="tri-title">优势</div>
+        <div class="tri-text">改表前自动弹出本次 DDL 影响的所有列和索引，<strong>新增/修改/删除</strong>三色高亮，业务方一眼看清改动。</div>
+      </div>
+      <div class="tri-cell">
+        <div class="tri-icon">📖</div>
+        <div class="tri-title">怎么用</div>
+        <div class="tri-text">业务方在 SQL 编辑框提交后，<strong>弹窗自动展开</strong>，无需任何额外操作。点击"对比"还能看 before/after。</div>
+      </div>
+    </div>
+    <div class="case">
+      <div class="case-title">📌 实战案例（DBA-bug-1 + DBA-bug-8）</div>
+      <div class="case-text">业务方提交 <code>ALTER TABLE ... ADD INDEX idx_owner_name (owner_name)</code>，弹窗立刻显示<span class="hl">"索引 idx_owner_name 已存在"</span>，业务方才知道这是重复索引（9/16 DBA-bug-8 实战新增）。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 5: ② 大表无锁变更 + v0 智能模式 ⭐9/17 新增 ============ -->
+<section class="slide" id="slide-5">
+  <div class="slide-num">05 / 11</div>
+  <div class="slide-tag blue">功能 ② ⭐9/17 加 v0 智能模式</div>
+  <h1 class="slide-title">大表无锁变更 + v0 智能模式</h1>
+  <div class="slide-subtitle">业务方 0 感知 · 智能分流大小表 · DBA 不蹲守</div>
+  <div class="slide-body">
+    <div class="tri-row">
+      <div class="tri-cell">
+        <div class="tri-icon">😰</div>
+        <div class="tri-title">痛点</div>
+        <div class="tri-text">大表 ALTER 默认<span class="hl">InnoDB 锁表 5-30 分钟</span>，业务方写入全阻塞；多 ALTER 大小表混合工单业务方必须手动选 gh-ost/原生。</div>
+      </div>
+      <div class="tri-cell">
+        <div class="tri-icon">✨</div>
+        <div class="tri-title">优势</div>
+        <div class="tri-text">gh-ost 通过 binlog + 影子表实现无锁 DDL，<span class="hl-blue">v0 智能模式</span>自动分流（大表 gh-ost + 小表原生 ALTER），业务方<span class="hl-blue">什么都不用选</span>。</div>
+      </div>
+      <div class="tri-cell">
+        <div class="tri-icon">📖</div>
+        <div class="tri-title">怎么用</div>
+        <div class="tri-text">业务方勾选"启用 gh-ost 无锁变更"（自动判断：<strong>100MB 或 10 万行</strong>），多 ALTER 工单选 <code>smart</code> 模式即可，<span class="hl">系统自动分流</span>。</div>
+      </div>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-value">5-30 分</div>
+        <div class="kpi-label">原锁表时间</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">→</div>
+        <div class="kpi-label">变为</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">0-30 秒</div>
+        <div class="kpi-label">cut-over 切流</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">154 GB</div>
+        <div class="kpi-label">110 prod 实演练大表 (v0 智能分流)</div>
+      </div>
+    </div>
+    <div class="case">
+      <div class="case-title">📌 实战案例（v0 智能模式 + wf#4841）</div>
+      <div class="case-text">业务方工单含 4 张大表 + 1 张小表（accesscard_dynamicaccountinfo 154GB 等），业务方选 <code>smart</code> 模式提交，系统<span class="hl">自动分流</span>：4 大表走 gh-ost（每条一个 task）+ 1 小表走原生 ALTER。演练 7/7 case PASS。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 6: ③ 历史库同步 + DDL-Sync-Bug-A ⭐9/17 新增 ============ -->
+<section class="slide" id="slide-6">
+  <div class="slide-num">06 / 11</div>
+  <div class="slide-tag blue">功能 ③ ⭐9/17 加多 ALTER 支持</div>
+  <h1 class="slide-title">历史库自动同步 + 多 ALTER 黑/白名单</h1>
+  <div class="slide-subtitle">改了主库不用改历史库 · 多 ALTER 零丢失</div>
+  <div class="slide-body">
+    <div class="tri-row">
+      <div class="tri-cell">
+        <div class="tri-icon">😰</div>
+        <div class="tri-title">痛点</div>
+        <div class="tri-text">改了主库忘改历史库 → 3 个月后查历史库发现表结构对不上；多 ALTER 工单白名单/黑名单<span class="hl">只判定第一张表</span>，其他表被丢掉。</div>
+      </div>
+      <div class="tri-cell">
+        <div class="tri-icon">✨</div>
+        <div class="tri-title">优势</div>
+        <div class="tri-text">主库 DDL 自动同步到历史库镜像工单。<span class="hl-blue">9/17 新增</span>每条 ALTER 独立判定白/黑名单，<strong>skipped ALTER 写 history</strong>，kept ALTER 拼新 SQL 创建镜像工单。</div>
+      </div>
+      <div class="tri-cell">
+        <div class="tri-icon">📖</div>
+        <div class="tri-title">怎么用</div>
+        <div class="tri-text">业务方<strong>什么都不用做</strong>——主库改完后 Archery 自动开历史库镜像工单，DBA 审批即可。即使 8 条 SQL 混合工单也零丢失。</div>
+      </div>
+    </div>
+    <div class="case">
+      <div class="case-title">📌 实战案例（wf#4841 形态 + 9/17 e2e）</div>
+      <div class="case-text">业务方工单含 8 条 SQL（4 CREATE + 4 ALTER），黑白名单混合。<span class="hl-blue">DDL-Sync-Bug-A 修后</span>：黑名单的 2 条 ALTER 写 <code>DdlSyncHistory(skipped)</code>，白名单的 2 条 ALTER 拼成镜像工单（只含这 2 条，不带黑名单）。110 prod 镜像工单 #4859 实战验证。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 7: ④ 限制单库 ⭐本月新 ============ -->
+<section class="slide" id="slide-7">
+  <div class="slide-num">07 / 11</div>
+  <div class="slide-tag blue">功能 ④ ⭐本月新</div>
+  <h1 class="slide-title">跨库直接拒绝</h1>
+  <div class="slide-subtitle">一个工单只能改一个库 · 提交时拦截</div>
+  <div class="slide-body">
+    <div class="tri-row">
+      <div class="tri-cell">
+        <div class="tri-icon">😰</div>
+        <div class="tri-title">痛点</div>
+        <div class="tri-text">业务方 select A 库，SQL 写了 B 库的表——Inception <span class="hl">只检测语法不判定库归属</span>。上线后才发现改错库，紧急回滚。</div>
+      </div>
+      <div class="tri-cell">
+        <div class="tri-icon">✨</div>
+        <div class="tri-title">优势</div>
+        <div class="tri-text">检测到跨库 SQL →<span class="hl">红框 alert + 提交按钮 disabled + 文案"请先修复跨库"</span>，业务方第一眼就知道改错了。</div>
+      </div>
+      <div class="tri-cell">
+        <div class="tri-icon">📖</div>
+        <div class="tri-title">怎么用</div>
+        <div class="tri-text">业务方照常提交工单即可，<strong>系统自动检测</strong>。如果跨库，弹红框 + 按钮变灰，改对 SQL 后按钮自动恢复。</div>
+      </div>
+    </div>
+    <div class="case">
+      <div class="case-title">📌 实战案例（9/16 业务方实测 wf#4821）</div>
+      <div class="case-text">业务方提交 SQL 混合了两条：<code>ALTER hly_accesscard.t1</code> + <code>ALTER hly_usercenter.t2</code>。Archery 立刻弹红框"<span class="hl">SQL 涉及库 ['hly_usercenter'] 跟您选的库 hly_accesscard 不一致</span>"，按钮变灰。改对后正常提交。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 8: ⑤ PK 冲突检测 ⭐本月新 ============ -->
+<section class="slide" id="slide-8">
+  <div class="slide-num">08 / 11</div>
+  <div class="slide-tag blue">功能 ⑤ ⭐本月新</div>
+  <h1 class="slide-title">INSERT 重复 PK？提交时就告诉你</h1>
+  <div class="slide-subtitle">主键冲突预检 · 不再等报错返工</div>
+  <div class="slide-body">
+    <div class="tri-row">
+      <div class="tri-cell">
+        <div class="tri-icon">😰</div>
+        <div class="tri-title">痛点</div>
+        <div class="tri-text">业务方 INSERT 15 条，其中 6 条 PK 跟前面重复。Inception <span class="hl">不查 DB 现有 PK 值</span>，等执行到第 N 条才发现 Duplicate entry，浪费 14 条 approve 工单流。</div>
+      </div>
+      <div class="tri-cell">
+        <div class="tri-icon">✨</div>
+        <div class="tri-title">优势</div>
+        <div class="tri-text">提交时直接查 DB 现有 PK 值，发现重复 →<span class="hl">红框 alert + 提交按钮 disabled</span>，列出具体冲突的 PK 值和行号。</div>
+      </div>
+      <div class="tri-cell">
+        <div class="tri-icon">📖</div>
+        <div class="tri-title">怎么用</div>
+        <div class="tri-text">业务方照常提交即可。如果有 PK 冲突，<strong>弹窗显示具体哪些值冲突</strong>，业务方改 SQL 后按钮自动恢复。</div>
+      </div>
+    </div>
+    <div class="case">
+      <div class="case-title">📌 实战案例（9/16 业务方实测 wf#4834）</div>
+      <div class="case-text">业务方 INSERT id 302-311 共 15 条，其中 306/307/308/309 重复。Archery 弹红框"<span class="hl">PK 值 [306, 307, 308, 309] 在 output_fee_config 表中已存在</span>"，按钮变灰。业务方改对后再提交。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 9: ⑥ v1 + DBA-bug-10 🔥9/17 双重大事故闭环 ============ -->
+<section class="slide" id="slide-9">
+  <div class="slide-num">09 / 11</div>
+  <div class="slide-tag purple">功能 ⑥ 🔥9/17 双重大事故闭环</div>
+  <h1 class="slide-title">v1 混合 DDL 禁止 + DBA-bug-10 CREATE INDEX</h1>
+  <div class="slide-subtitle">两个子功能组合 · 0 误报 0 漏报 · wf#4841/wf#4849 实战闭环</div>
+  <div class="slide-body">
+    <div class="dual-row">
+      <div class="tri-cell">
+        <div class="tri-icon">🆔</div>
+        <div class="tri-title">子功能 A — v1 混合 DDL 禁止提交</div>
+        <div class="tri-text">
+          <strong>痛点（wf#4841）</strong>：业务方工单含 4 CREATE + 4 ALTER，旧"提醒"模式无效，业务方无视 banner 继续提交，工单显示"成功"但<span class="hl">实际 7/8 失败</span>（CREATE 全部丢失）。<br><br>
+          <strong>修法（前后端双层防护）</strong>：<br>
+          • 前端：检测回调加 <code>mixed_ddl</code> 红框 + 提交按钮 disable<br>
+          • 后端：<code>WorkflowContentSerializer.create()</code> 第一步 raise ValidationError<br>
+          • 错误优先级：mixed_ddl > cross_db > pk_conflict<br><br>
+          <strong>演练</strong>：8/8 case PASS（含 wf#4841 实战），134 dev + 110 prod 双向验证
+        </div>
+      </div>
+      <div class="tri-cell">
+        <div class="tri-icon">⚡</div>
+        <div class="tri-title">子功能 B — DBA-bug-10 CREATE INDEX 等价 ALTER</div>
+        <div class="tri-text">
+          <strong>痛点（wf#4849）</strong>：业务方 <code>CREATE INDEX test USING BTREE ON hly_accesscard.accesscard_channel_task (req_url)</code> 操作<span class="hl">170 万行表</span>，绕过所有 ALTER 检测（大表 alert / gh-ost / 字段 diff / 镜像工单）。<br><br>
+          <strong>修法（5 文件统一）</strong>：<br>
+          • <code>sql/views.py</code> + <code>ddl_gh_ost/views.py</code> + <code>ddl_sync/sync_trigger.py</code> + <code>sqlsubmit.html</code> + <code>column_diff.py</code><br>
+          • CREATE INDEX ⇔ ALTER TABLE ADD INDEX，统一识别<br><br>
+          <strong>演练</strong>：10/10 case PASS + 110 prod 大表演练 rows=1707167 / size_mb=865.4
+        </div>
+      </div>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-value">0</div>
+        <div class="kpi-label">CREATE 丢失（修后 wf#4841 闭环）</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">865 MB</div>
+        <div class="kpi-label">110 prod 大表 alert 自动弹（修后 wf#4849）</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">2 起</div>
+        <div class="kpi-label">9/17 重大事故 1 天内全部闭环</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">5 文件</div>
+        <div class="kpi-label">一次改完（端点必须支持语法等价）</div>
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-label">一句话价值</div>
+      <div class="box-content">业务方不管用 <span class="hl">ALTER 还是 CREATE INDEX 语法</span>，DBA 都能看到大表风险；不管 CREATE 跟 ALTER 混不混，<span class="hl">都能拦住</span>。<strong>前-事阻断 + 后-事拦截双管齐下</strong>。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 10: 6 大功能联动保护链 ============ -->
+<section class="slide" id="slide-10">
+  <div class="slide-num">10 / 11</div>
+  <div class="slide-tag">联动</div>
+  <h1 class="slide-title">6 大功能联动：提交 → 检测 → 上线 → 同步 全流程保护</h1>
+  <div class="slide-subtitle">业务方一个工单，DBA 一条龙自动盯</div>
+  <div class="slide-body">
+    <div class="chain">
+      <div class="chain-stage">
+        <div class="chain-stage-time">提交前</div>
+        <div class="chain-stage-icon">✍️</div>
+        <div class="chain-stage-title">SQL 编辑</div>
+        <div class="chain-stage-func">业务方写 SQL</div>
+      </div>
+      <div class="chain-stage">
+        <div class="chain-stage-time">提交时</div>
+        <div class="chain-stage-icon">🔍</div>
+        <div class="chain-stage-title">①字段 diff<br>+ ⑥CREATE INDEX 兼容</div>
+        <div class="chain-stage-func">弹窗显示改动影响</div>
+      </div>
+      <div class="chain-stage">
+        <div class="chain-stage-time">检测时</div>
+        <div class="chain-stage-icon">🛡️</div>
+        <div class="chain-stage-title">④跨库拦截<br>⑤PK 冲突</div>
+        <div class="chain-stage-block">⭐本月新</div>
+      </div>
+      <div class="chain-stage">
+        <div class="chain-stage-time">上线时</div>
+        <div class="chain-stage-icon">🚀</div>
+        <div class="chain-stage-title">②大表无锁 + v0 智能<br>⑥v1 禁止混合 DDL</div>
+        <div class="chain-stage-block">⭐9/17</div>
+      </div>
+      <div class="chain-stage">
+        <div class="chain-stage-time">上线后</div>
+        <div class="chain-stage-icon">🔄</div>
+        <div class="chain-stage-title">③历史库同步 + Bug-A</div>
+        <div class="chain-stage-func">镜像工单自动开（多 ALTER 零丢失）</div>
+      </div>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-value">6 类风险</div>
+        <div class="kpi-label">从手工救火 → 系统自动拦截</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">0 秒</div>
+        <div class="kpi-label">业务方感知延迟</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">0 事故</div>
+        <div class="kpi-label">上线后回归 PASS</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">全场景</div>
+        <div class="kpi-label">业务方 + 开发 + DBA 都受益</div>
+      </div>
+    </div>
+    <div class="box blue">
+      <div class="box-label">一句话价值</div>
+      <div class="box-content">业务方<span class="hl-blue">提交即知风险</span>，开发<span class="hl-blue">不用手写同步历史库</span>，DBA<span class="hl-blue">不用 24 小时盯审核</span>。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 11: 收尾 + 路线图 + 拍板 + Q&A ============ -->
+<section class="slide" id="slide-11">
+  <div class="slide-num">11 / 11</div>
+  <div class="slide-tag">收尾</div>
+  <h1 class="slide-title">下月路线图 + 3 件事拍板</h1>
+  <div class="slide-subtitle">6 大功能只是开始，DBA 一条龙继续</div>
+  <div class="slide-body">
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-value">gh-ost</div>
+        <div class="kpi-label">v0.3.0 灰度上 110 prod（先 1 实例跑 1 周）</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">Doris</div>
+        <div class="kpi-label">BI / 数据仓库场景演练</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">OpLog</div>
+        <div class="kpi-label">操作日志高级筛选 + 关联同步工单</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">Archery 8.0</div>
+        <div class="kpi-label">上游升级兼容改造</div>
+      </div>
+    </div>
+    <div class="box blue">
+      <div class="box-label">需要领导拍板 3 件事</div>
+      <div class="box-content">
+        <strong>①</strong> gh-ost v0.3.0 灰度策略：1 个实例先跑 1 周还是全量直接上？<br>
+        <strong>②</strong> Doris 测试实例：是否申请新机器（DB 团队 + DBA 联合评审）？<br>
+        <strong>③</strong> 宣讲频次：每月一次固定（建议每月最后一个周五下午 30 分钟）？
+      </div>
+    </div>
+    <div style="text-align: center; font-size: 18px; color: #888; margin-top: 32px;">
+      📎 配套资料：<code>docs/changelogs/2026-09-17_daily-recap.md</code> + <code>docs/designs/</code><br>
+      📞 业务方反馈：马克群吼一声即可
+    </div>
+  </div>
+</section>
+
+<script>
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') nextSlide();
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') prevSlide();
+    else if (e.key === 'Home') goToSlide(1);
+    else if (e.key === 'End') goToSlide(11);
+    else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+  });
+
+  function nextSlide() {
+    const current = parseInt(document.getElementById('current').textContent);
+    if (current < 11) goToSlide(current + 1);
+  }
+  function prevSlide() {
+    const current = parseInt(document.getElementById('current').textContent);
+    if (current > 1) goToSlide(current - 1);
+  }
+  function goToSlide(n) {
+    document.getElementById('current').textContent = n;
+    const target = document.getElementById('slide-' + n);
+    if (target) target.scrollIntoView({ behavior: 'smooth' });
+  }
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  }
+</script>
+
+</body>
+</html>
