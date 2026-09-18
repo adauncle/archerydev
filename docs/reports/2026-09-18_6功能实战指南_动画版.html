@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>6 大功能实战指南 — 操作动画版</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  body {
+    background: #0f0f1e;
+    color: #e8e8f0;
+    line-height: 1.6;
+    scroll-behavior: smooth;
+  }
+
+  /* 顶部导航 */
+  .nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 48px;
+    background: rgba(15, 15, 30, 0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid #2a2a3e;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    z-index: 1000;
+    font-size: 14px;
+  }
+  .nav-title { font-weight: 600; color: #ff6b35; }
+  .nav-controls { display: flex; gap: 12px; align-items: center; }
+  .nav-btn { background: #2a2a3e; color: #e8e8f0; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .nav-btn:hover { background: #ff6b35; color: #fff; }
+  .nav-page { color: #888; font-variant-numeric: tabular-nums; }
+
+  /* slide 主样式 */
+  .slide {
+    width: 100vw;
+    height: 100vh;
+    padding: 60px 80px;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+  .slide-num {
+    position: absolute;
+    top: 16px; right: 24px;
+    font-size: 12px;
+    color: #555;
+    font-variant-numeric: tabular-nums;
+  }
+  .slide-tag {
+    display: inline-block;
+    background: #ff6b35;
+    color: #fff;
+    padding: 3px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .slide-tag.blue { background: #5b9dd9; }
+  .slide-tag.green { background: #10b981; }
+  .slide-tag.purple { background: #a855f7; }
+  .slide-tag.yellow { background: #f59e0b; }
+  .slide-title {
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 6px;
+    background: linear-gradient(135deg, #fff 0%, #b0b0d0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .slide-subtitle {
+    font-size: 14px;
+    color: #8888a0;
+    margin-bottom: 16px;
+  }
+  .slide-body { flex: 1; display: flex; gap: 24px; min-height: 0; }
+
+  /* ============ Archery UI mockup（左侧）============ */
+  .archery-mockup {
+    flex: 1;
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: 12px;
+  }
+  .am-titlebar {
+    background: #0f0f1e;
+    padding: 8px 14px;
+    border-bottom: 1px solid #2a2a3e;
+    font-size: 12px;
+    color: #aaa;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .am-titlebar::before {
+    content: "●";
+    color: #ff6b35;
+    font-size: 16px;
+  }
+  .am-form {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 14px;
+    gap: 10px;
+    min-height: 0;
+  }
+  .am-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .am-label {
+    color: #aaa;
+    font-size: 11px;
+    min-width: 60px;
+  }
+  .am-select {
+    background: #2a2a3e;
+    color: #e8e8f0;
+    border: 1px solid #3a3a4e;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    flex: 1;
+  }
+  .am-editor {
+    flex: 1;
+    background: #0a0a1a;
+    border: 1px solid #2a2a3e;
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+    font-size: 11px;
+    color: #b0b0d0;
+    line-height: 1.5;
+    white-space: pre;
+    overflow-y: auto;
+    min-height: 80px;
+  }
+  .am-editor .sql-keyword { color: #5b9dd9; }
+  .am-editor .sql-string { color: #10b981; }
+  .am-editor .sql-number { color: #f59e0b; }
+  .am-editor .sql-comment { color: #555; font-style: italic; }
+  .am-check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: rgba(91, 157, 217, 0.10);
+    border: 1px solid #5b9dd9;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.4s ease;
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  .am-check-row.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .am-check-row.checked { background: rgba(16, 185, 129, 0.15); border-color: #10b981; }
+  .am-checkbox {
+    width: 16px; height: 16px;
+    border: 2px solid #5b9dd9;
+    border-radius: 3px;
+    background: #0f0f1e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #fff;
+    font-weight: 700;
+  }
+  .am-check-row.checked .am-checkbox { background: #10b981; border-color: #10b981; }
+  .am-check-row .label { color: #5b9dd9; font-weight: 600; }
+  .am-check-row.checked .label { color: #10b981; }
+  .am-check-row .hint { color: #aaa; font-size: 11px; }
+  .am-mode-select {
+    display: none;
+    background: rgba(91, 157, 217, 0.10);
+    border: 1px solid #5b9dd9;
+    border-radius: 4px;
+    padding: 10px 12px;
+    transition: all 0.4s ease;
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  .am-mode-select.visible { display: block; opacity: 1; transform: translateY(0); }
+  .am-mode-label { color: #5b9dd9; font-weight: 600; font-size: 12px; margin-bottom: 6px; }
+  .am-mode-options { display: flex; gap: 6px; }
+  .am-mode-option {
+    flex: 1;
+    background: #0f0f1e;
+    border: 2px solid #2a2a3e;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 11px;
+    color: #aaa;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-align: center;
+  }
+  .am-mode-option.selected {
+    border-color: #10b981;
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    font-weight: 700;
+  }
+  .am-mode-option.recommended::after {
+    content: " ⭐";
+    color: #10b981;
+  }
+  .am-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 4px;
+  }
+  .am-btn {
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  .am-btn-primary {
+    background: #d9534f;
+    color: #fff;
+  }
+  .am-btn-primary:hover { background: #c9302c; }
+  .am-btn-success {
+    background: #5cb85c;
+    color: #fff;
+  }
+  .am-btn-success:hover { background: #4cae4c; }
+  .am-btn-success.disabled {
+    background: #555;
+    color: #888;
+    cursor: not-allowed;
+  }
+  .am-btn-blocked {
+    background: #555 !important;
+    color: #888 !important;
+    cursor: not-allowed;
+  }
+
+  /* ============ 反馈区（右侧）============ */
+  .feedback-area {
+    flex: 1;
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    border-radius: 8px;
+    padding: 16px;
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .feedback-empty {
+    color: #555;
+    text-align: center;
+    margin-top: 100px;
+    font-size: 14px;
+  }
+  .feedback-step {
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .feedback-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 12px;
+  }
+  .feedback-panel {
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border-radius: 6px;
+    border-left: 3px solid #5b9dd9;
+    background: rgba(91, 157, 217, 0.10);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all 0.4s ease;
+  }
+  .feedback-panel.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .feedback-panel.red {
+    border-left-color: #ff6b35;
+    background: rgba(255, 107, 53, 0.15);
+  }
+  .feedback-panel.green {
+    border-left-color: #10b981;
+    background: rgba(16, 185, 129, 0.12);
+  }
+  .feedback-panel.purple {
+    border-left-color: #a855f7;
+    background: rgba(168, 85, 247, 0.12);
+  }
+  .feedback-panel.yellow {
+    border-left-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.15);
+  }
+  .feedback-panel .panel-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+  }
+  .feedback-panel.red .panel-title { color: #ff6b35; }
+  .feedback-panel.green .panel-title { color: #10b981; }
+  .feedback-panel.purple .panel-title { color: #a855f7; }
+  .feedback-panel.yellow .panel-title { color: #f59e0b; }
+  .feedback-panel .panel-body { font-size: 12px; color: #ccc; line-height: 1.6; }
+  .feedback-panel .panel-body code { background: #0f0f1e; padding: 1px 6px; border-radius: 3px; color: #b0b0d0; font-family: "JetBrains Mono", monospace; }
+
+  /* diff 表格 */
+  .diff-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+  .diff-table td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #2a2a3e;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .diff-table tr:last-child td { border-bottom: none; }
+  .diff-add { color: #10b981; }
+  .diff-add td:first-child::before { content: "+ "; font-weight: 700; }
+  .diff-mod { color: #f59e0b; }
+  .diff-mod td:first-child::before { content: "~ "; font-weight: 700; }
+  .diff-del { color: #ff6b35; }
+  .diff-del td:first-child::before { content: "- "; font-weight: 700; }
+
+  /* 镜像工单卡片 */
+  .mirror-wf {
+    background: #0f0f1e;
+    border: 1px solid #a855f7;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 6px;
+    opacity: 0;
+    transform: translateX(-20px);
+    transition: all 0.4s ease;
+  }
+  .mirror-wf.visible { opacity: 1; transform: translateX(0); }
+  .mirror-wf-tag { display: inline-block; background: #a855f7; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 8px; margin-right: 6px; }
+  .mirror-wf-title { color: #fff; font-weight: 600; font-size: 12px; }
+  .mirror-wf-meta { color: #888; font-size: 11px; margin-top: 4px; }
+
+  /* 步骤控制按钮 */
+  .step-control {
+    position: absolute;
+    bottom: 30px;
+    right: 100px;
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+  }
+  .step-btn {
+    background: #2a2a3e;
+    color: #fff;
+    border: 1px solid #3a3a4e;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .step-btn:hover { background: #ff6b35; border-color: #ff6b35; }
+  .step-btn.primary { background: #ff6b35; border-color: #ff6b35; }
+  .step-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .step-progress {
+    position: absolute;
+    bottom: 36px;
+    right: 32px;
+    color: #888;
+    font-size: 12px;
+  }
+
+  /* 全景 slide (01) */
+  .scenarios-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .sc-cell {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    border-left: 3px solid #ff6b35;
+    padding: 14px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .sc-cell:hover { transform: translateY(-2px); border-color: #ff6b35; }
+  .sc-cell.b { border-left-color: #5b9dd9; }
+  .sc-cell.c { border-left-color: #10b981; }
+  .sc-cell.d { border-left-color: #a855f7; }
+  .sc-cell.e { border-left-color: #f59e0b; }
+  .sc-cell.f { border-left-color: #ff6b35; background: linear-gradient(135deg, #1a1a2e 0%, #231a1e 100%); }
+  .sc-letter {
+    display: inline-block;
+    width: 24px; height: 24px;
+    background: #ff6b35;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    border-radius: 50%;
+    line-height: 24px;
+    text-align: center;
+    margin-right: 6px;
+  }
+  .sc-cell.b .sc-letter { background: #5b9dd9; }
+  .sc-cell.c .sc-letter { background: #10b981; }
+  .sc-cell.d .sc-letter { background: #a855f7; }
+  .sc-cell.e .sc-letter { background: #f59e0b; }
+  .sc-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; display: inline-block; vertical-align: middle; }
+  .sc-trigger { font-size: 11px; color: #ccc; }
+
+  /* slide 9 收尾 */
+  .closing-kpis { display: flex; gap: 8px; }
+  .closing-kpi {
+    flex: 1;
+    background: linear-gradient(135deg, #1a1a2e 0%, #2a1a1e 100%);
+    border: 1px solid #3a3a4e;
+    border-left: 3px solid #ff6b35;
+    padding: 14px;
+    border-radius: 6px;
+    text-align: center;
+  }
+  .closing-kpi-num { font-size: 24px; font-weight: 800; color: #ff6b35; }
+  .closing-kpi-label { font-size: 11px; color: #aaa; margin-top: 2px; }
+  .roadmap-box {
+    background: rgba(255, 107, 53, 0.08);
+    border-left: 4px solid #ff6b35;
+    padding: 14px 18px;
+    border-radius: 6px;
+    margin-top: 8px;
+  }
+  .roadmap-box.blue { background: rgba(91, 157, 217, 0.08); border-left-color: #5b9dd9; }
+  .roadmap-title { font-size: 12px; color: #ff6b35; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; }
+  .roadmap-box.blue .roadmap-title { color: #5b9dd9; }
+  .roadmap-content { font-size: 12px; color: #ccc; line-height: 1.5; }
+
+  /* 打印 */
+  @media print {
+    .nav, .step-control, .step-progress { display: none; }
+    .slide { height: auto; min-height: 100vh; page-break-after: always; }
+    .feedback-panel { opacity: 1 !important; transform: none !important; }
+    .am-check-row { opacity: 1 !important; transform: none !important; }
+    .am-mode-select { display: block !important; opacity: 1 !important; transform: none !important; }
+    .mirror-wf { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-title">6 大功能实战指南 · 操作动画版</div>
+  <div class="nav-controls">
+    <span class="nav-page"><span id="current">1</span> / 9</span>
+    <button class="nav-btn" onclick="prevSlide()">← Prev</button>
+    <button class="nav-btn" onclick="nextSlide()">Next →</button>
+    <button class="nav-btn" onclick="toggleFullscreen()">⛶ Full</button>
+  </div>
+</nav>
+
+<!-- ============ Slide 1: 6 大功能全景 ============ -->
+<section class="slide" id="slide-1">
+  <div class="slide-num">01 / 9</div>
+  <div class="slide-tag">开发实战指南 · 2026 年 9 月</div>
+  <h1 class="slide-title">6 大功能实战指南 · 含操作动画</h1>
+  <div class="slide-subtitle">点开发看实际能用的 — 每个功能配真实场景 + Archery UI mockup + 步骤演示动画</div>
+  <div class="slide-body">
+    <div class="scenarios-grid">
+      <div class="sc-cell">
+        <div class="sc-letter">①</div>
+        <div class="sc-name">字段 diff 弹窗</div>
+        <div class="sc-trigger">场景：改表前看影响 · 入口：SQL检测</div>
+      </div>
+      <div class="sc-cell c">
+        <div class="sc-letter">②</div>
+        <div class="sc-name">大表无锁 + v0 智能</div>
+        <div class="sc-trigger">场景：大表不锁表 · 入口：勾 gh-ost + smart</div>
+      </div>
+      <div class="sc-cell b">
+        <div class="sc-letter">③</div>
+        <div class="sc-name">历史库自动同步</div>
+        <div class="sc-trigger">场景：主库改了历史库跟 · 入口：开发侧 0 操作</div>
+      </div>
+      <div class="sc-cell e">
+        <div class="sc-letter">④</div>
+        <div class="sc-name">限制单库</div>
+        <div class="sc-trigger">场景：跨库 SQL · 入口：选对库名</div>
+      </div>
+      <div class="sc-cell b">
+        <div class="sc-letter">⑤</div>
+        <div class="sc-name">PK 冲突检测</div>
+        <div class="sc-trigger">场景：INSERT 重复 PK · 入口：改对 PK</div>
+      </div>
+      <div class="sc-cell f">
+        <div class="sc-letter">⑥</div>
+        <div class="sc-name">v1 + DBA-bug-10</div>
+        <div class="sc-trigger">场景：混合 DDL / 大表 CREATE INDEX · 入口：拆单</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 2: ① 字段 diff 弹窗动画 ============ -->
+<section class="slide" id="slide-2">
+  <div class="slide-num">02 / 9</div>
+  <div class="slide-tag">功能 ①</div>
+  <h1 class="slide-title">① 字段 diff 弹窗 — 写完 SQL → 看影响</h1>
+  <div class="slide-subtitle">点 🔴 SQL检测 → 系统自动弹字段 diff + 大表 alert</div>
+  <div class="slide-body">
+    <!-- 左侧 Archery mockup -->
+    <div class="archery-mockup">
+      <div class="am-titlebar">SQL 在线</div>
+      <div class="am-form">
+        <div class="am-row">
+          <span class="am-label">实例</span>
+          <div class="am-select">prod-archery (172.20.2.110)</div>
+        </div>
+        <div class="am-row">
+          <span class="am-label">数据库</span>
+          <div class="am-select">hly_accesscard</div>
+        </div>
+        <div class="am-editor"><span class="sql-keyword">ALTER TABLE</span> hly_accesscard.accesscard_licensefront_info
+  <span class="sql-keyword">ADD COLUMN</span> owner_name <span class="sql-keyword">VARCHAR</span>(64) <span class="sql-keyword">DEFAULT</span> <span class="sql-keyword">NULL</span> <span class="sql-keyword">COMMENT</span> <span class="sql-string">'车主姓名'</span>;</div>
+        <div class="am-actions">
+          <button class="am-btn am-btn-primary" onclick="step2Action()">SQL检测</button>
+          <button class="am-btn am-btn-success">SQL提交</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧反馈区 -->
+    <div class="feedback-area" id="fb-2">
+      <div class="feedback-empty" id="fb-2-empty">⏳ 等开发点 "SQL检测"...</div>
+    </div>
+  </div>
+  <div class="step-progress" id="sp-2">步骤 0 / 3</div>
+  <div class="step-control">
+    <button class="step-btn" onclick="resetSlide(2)">↺ 重播</button>
+    <button class="step-btn primary" onclick="step2Action()">▶ 下一步</button>
+  </div>
+</section>
+
+<!-- ============ Slide 3: ② 大表无锁 + v0 智能动画 ============ -->
+<section class="slide" id="slide-3">
+  <div class="slide-num">03 / 9</div>
+  <div class="slide-tag green">功能 ②</div>
+  <h1 class="slide-title">② 大表无锁 + v0 智能 — 勾 gh-ost → smart 自动选</h1>
+  <div class="slide-subtitle">你的表是 170 万行 / 865 MB，系统自动帮你勾 gh-ost + 默认 smart 模式</div>
+  <div class="slide-body">
+    <div class="archery-mockup">
+      <div class="am-titlebar">SQL 在线</div>
+      <div class="am-form">
+        <div class="am-row">
+          <span class="am-label">实例</span>
+          <div class="am-select">prod-archery (172.20.2.110)</div>
+        </div>
+        <div class="am-row">
+          <span class="am-label">数据库</span>
+          <div class="am-select">hly_accesscard</div>
+        </div>
+        <div class="am-editor"><span class="sql-keyword">CREATE INDEX</span> test <span class="sql-keyword">USING BTREE</span> <span class="sql-keyword">ON</span> hly_accesscard.accesscard_channel_task (req_url);</div>
+        <div class="am-check-row" id="sl3-check">
+          <div class="am-checkbox" id="sl3-cb"></div>
+          <div>
+            <div class="label">启用 gh-ost 无锁变更</div>
+            <div class="hint">· 大表 ALTER TABLE 不锁表，提交后自动跑 5 道预检</div>
+          </div>
+        </div>
+        <div class="am-mode-select" id="sl3-mode">
+          <div class="am-mode-label">gh-ost 模式:</div>
+          <div class="am-mode-options">
+            <div class="am-mode-option recommended selected" id="sl3-opt1">smart<br>智能 (大表 gh-ost + 小表原生 ALTER)</div>
+            <div class="am-mode-option" id="sl3-opt2">all_ghost<br>全部 gh-ost</div>
+            <div class="am-mode-option" id="sl3-opt3">all_native<br>全部原生</div>
+          </div>
+        </div>
+        <div class="am-actions">
+          <button class="am-btn am-btn-primary" onclick="step3Action()">SQL检测</button>
+          <button class="am-btn am-btn-success">SQL提交</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="feedback-area" id="fb-3">
+      <div class="feedback-empty" id="fb-3-empty">⏳ 等开发点 "SQL检测"...</div>
+    </div>
+  </div>
+  <div class="step-progress" id="sp-3">步骤 0 / 3</div>
+  <div class="step-control">
+    <button class="step-btn" onclick="resetSlide(3)">↺ 重播</button>
+    <button class="step-btn primary" onclick="step3Action()">▶ 下一步</button>
+  </div>
+</section>
+
+<!-- ============ Slide 4: ③ 历史库自动同步动画 ============ -->
+<section class="slide" id="slide-4">
+  <div class="slide-num">04 / 9</div>
+  <div class="slide-tag">功能 ③</div>
+  <h1 class="slide-title">③ 历史库自动同步 — 主库 DDL PASSED → 镜像工单自动生成</h1>
+  <div class="slide-subtitle">开发侧什么都不用做，Archery 自动开历史库镜像工单</div>
+  <div class="slide-body">
+    <div class="archery-mockup">
+      <div class="am-titlebar">主库工单审批流</div>
+      <div class="am-form">
+        <div class="am-editor"><span class="sql-comment">-- 主库工单 wf#4900</span>
+<span class="sql-keyword">ALTER TABLE</span> hly_accesscard.accesscard_xxx <span class="sql-keyword">ADD COLUMN</span> col1 <span class="sql-keyword">int</span>;
+<span class="sql-keyword">ALTER TABLE</span> hly_accesscard.accesscard_yyy <span class="sql-keyword">ADD COLUMN</span> col2 <span class="sql-keyword">int</span>;</div>
+        <div class="am-actions">
+          <div style="font-size: 11px; color: #888;">状态：<span style="color: #10b981; font-weight: 700;">workflow_review_pass</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feedback-area" id="fb-4">
+      <div class="feedback-empty" id="fb-4-empty">⏳ 等主库工单 PASSED...</div>
+    </div>
+  </div>
+  <div class="step-progress" id="sp-4">步骤 0 / 3</div>
+  <div class="step-control">
+    <button class="step-btn" onclick="resetSlide(4)">↺ 重播</button>
+    <button class="step-btn primary" onclick="step4Action()">▶ 下一步</button>
+  </div>
+</section>
+
+<!-- ============ Slide 5: ④ 限制单库动画 ============ -->
+<section class="slide" id="slide-5">
+  <div class="slide-num">05 / 9</div>
+  <div class="slide-tag yellow">功能 ④</div>
+  <h1 class="slide-title">④ 限制单库 — 跨库 SQL 怎么拦截</h1>
+  <div class="slide-subtitle">检测到跨库 → 弹红框 + 按钮变灰 + 修对 SQL 后按钮恢复</div>
+  <div class="slide-body">
+    <div class="archery-mockup">
+      <div class="am-titlebar">SQL 在线</div>
+      <div class="am-form">
+        <div class="am-row">
+          <span class="am-label">实例</span>
+          <div class="am-select">prod-archery</div>
+        </div>
+        <div class="am-row">
+          <span class="am-label">数据库</span>
+          <div class="am-select" id="sl5-db">hly_accesscard</div>
+        </div>
+        <div class="am-editor" id="sl5-sql"><span class="sql-keyword">use</span> <span class="sql-string">'hly_accesscard'</span>;
+<span class="sql-keyword">ALTER TABLE</span> accesscard_vehicle_change <span class="sql-keyword">ADD COLUMN</span> col1 <span class="sql-keyword">int</span>;
+<span class="sql-keyword">ALTER TABLE</span> hly_usercenter.accesscard_user_vehicle_change <span class="sql-keyword">ADD COLUMN</span> col2 <span class="sql-keyword">int</span>;  <span class="sql-comment">-- 跨库！</span></div>
+        <div class="am-actions">
+          <button class="am-btn am-btn-primary" onclick="step5Detect()">SQL检测</button>
+          <button class="am-btn am-btn-success" id="sl5-submit">SQL提交</button>
+          <button class="am-btn am-btn-blocked" id="sl5-fix" style="display:none;" onclick="step5Fix()">✓ 修对 SQL（演示按钮）</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="feedback-area" id="fb-5">
+      <div class="feedback-empty" id="fb-5-empty">⏳ 等开发点 "SQL检测"...</div>
+    </div>
+  </div>
+  <div class="step-progress" id="sp-5">步骤 0 / 3</div>
+  <div class="step-control">
+    <button class="step-btn" onclick="resetSlide(5)">↺ 重播</button>
+    <button class="step-btn primary" onclick="step5Action()">▶ 下一步</button>
+  </div>
+</section>
+
+<!-- ============ Slide 6: ⑤ PK 冲突检测动画 ============ -->
+<section class="slide" id="slide-6">
+  <div class="slide-num">06 / 9</div>
+  <div class="slide-tag blue">功能 ⑤</div>
+  <h1 class="slide-title">⑤ PK 冲突检测 — INSERT 重复 PK 怎么拦截</h1>
+  <div class="slide-subtitle">查 information_schema.statistics → 列出冲突 PK 值</div>
+  <div class="slide-body">
+    <div class="archery-mockup">
+      <div class="am-titlebar">SQL 在线</div>
+      <div class="am-form">
+        <div class="am-row">
+          <span class="am-label">实例</span>
+          <div class="am-select">prod-archery</div>
+        </div>
+        <div class="am-row">
+          <span class="am-label">数据库</span>
+          <div class="am-select">hly_datacenter_mod</div>
+        </div>
+        <div class="am-editor" id="sl6-sql"><span class="sql-keyword">INSERT INTO</span> <span class="sql-string">'hly_datacenter_mod'</span>.<span class="sql-string">'output_fee_config'</span> (id, name) <span class="sql-keyword">VALUES</span>
+  (302, <span class="sql-string">'fee_a'</span>),
+  (303, <span class="sql-string">'fee_b'</span>),
+  (304, <span class="sql-string">'fee_c'</span>),
+  ...
+  (306, <span class="sql-string">'fee_d'</span>),  <span class="sql-comment">-- DB 里 306 已存在！</span></div>
+        <div class="am-actions">
+          <button class="am-btn am-btn-primary" onclick="step6Detect()">SQL检测</button>
+          <button class="am-btn am-btn-success" id="sl6-submit">SQL提交</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="feedback-area" id="fb-6">
+      <div class="feedback-empty" id="fb-6-empty">⏳ 等开发点 "SQL检测"...</div>
+    </div>
+  </div>
+  <div class="step-progress" id="sp-6">步骤 0 / 2</div>
+  <div class="step-control">
+    <button class="step-btn" onclick="resetSlide(6)">↺ 重播</button>
+    <button class="step-btn primary" onclick="step6Action()">▶ 下一步</button>
+  </div>
+</section>
+
+<!-- ============ Slide 7: ⑥ v1 混合 DDL 禁止动画 ============ -->
+<section class="slide" id="slide-7">
+  <div class="slide-num">07 / 9</div>
+  <div class="slide-tag">功能 ⑥ A</div>
+  <h1 class="slide-title">⑥ v1 混合 DDL 禁止提交 — 怎么拆单</h1>
+  <div class="slide-subtitle">8 条 SQL 混 CREATE + ALTER → 红框 + 按钮变灰 + 拆成 2 个工单</div>
+  <div class="slide-body">
+    <div class="archery-mockup">
+      <div class="am-titlebar">SQL 在线</div>
+      <div class="am-form">
+        <div class="am-row">
+          <span class="am-label">实例</span>
+          <div class="am-select">prod-archery</div>
+        </div>
+        <div class="am-row">
+          <span class="am-label">数据库</span>
+          <div class="am-select">hly_accesscard</div>
+        </div>
+        <div class="am-editor" id="sl7-sql"><span class="sql-keyword">ALTER TABLE</span> hly_accesscard.t1 <span class="sql-keyword">ADD INDEX</span> idx_x (col);
+<span class="sql-keyword">ALTER TABLE</span> hly_accesscard.t2 <span class="sql-keyword">ADD COLUMN</span> col <span class="sql-keyword">int</span>;
+<span class="sql-keyword">CREATE TABLE</span> hly_accesscard.new_t (id <span class="sql-keyword">int</span>);  <span class="sql-comment">-- CREATE 混进来！</span>
+<span class="sql-keyword">CREATE INDEX</span> test_idx ON hly_accesscard.t1 (col);</div>
+        <div class="am-actions">
+          <button class="am-btn am-btn-primary" onclick="step7Detect()">SQL检测</button>
+          <button class="am-btn am-btn-success" id="sl7-submit">SQL提交</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="feedback-area" id="fb-7">
+      <div class="feedback-empty" id="fb-7-empty">⏳ 等开发点 "SQL检测"...</div>
+    </div>
+  </div>
+  <div class="step-progress" id="sp-7">步骤 0 / 2</div>
+  <div class="step-control">
+    <button class="step-btn" onclick="resetSlide(7)">↺ 重播</button>
+    <button class="step-btn primary" onclick="step7Action()">▶ 下一步</button>
+  </div>
+</section>
+
+<!-- ============ Slide 8: ⑥ DBA-bug-10 CREATE INDEX 动画 ============ -->
+<section class="slide" id="slide-8">
+  <div class="slide-num">08 / 9</div>
+  <div class="slide-tag purple">功能 ⑥ B</div>
+  <h1 class="slide-title">⑥ DBA-bug-10 CREATE INDEX 等价 ALTER — 大表自动识别</h1>
+  <div class="slide-subtitle">CREATE INDEX 大表 → 自动弹大表 alert + 自动勾 gh-ost</div>
+  <div class="slide-body">
+    <div class="archery-mockup">
+      <div class="am-titlebar">SQL 在线</div>
+      <div class="am-form">
+        <div class="am-row">
+          <span class="am-label">实例</span>
+          <div class="am-select">prod-archery</div>
+        </div>
+        <div class="am-row">
+          <span class="am-label">数据库</span>
+          <div class="am-select">hly_accesscard</div>
+        </div>
+        <div class="am-editor"><span class="sql-keyword">CREATE INDEX</span> test <span class="sql-keyword">USING BTREE</span> <span class="sql-keyword">ON</span> hly_accesscard.accesscard_channel_task (req_url);</div>
+        <div class="am-check-row" id="sl8-check">
+          <div class="am-checkbox" id="sl8-cb"></div>
+          <div>
+            <div class="label">启用 gh-ost 无锁变更</div>
+            <div class="hint">· 大表 ALTER TABLE 不锁表</div>
+          </div>
+        </div>
+        <div class="am-actions">
+          <button class="am-btn am-btn-primary" onclick="step8Action()">SQL检测</button>
+          <button class="am-btn am-btn-success">SQL提交</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="feedback-area" id="fb-8">
+      <div class="feedback-empty" id="fb-8-empty">⏳ 等开发点 "SQL检测"...</div>
+    </div>
+  </div>
+  <div class="step-progress" id="sp-8">步骤 0 / 2</div>
+  <div class="step-control">
+    <button class="step-btn" onclick="resetSlide(8)">↺ 重播</button>
+    <button class="step-btn primary" onclick="step8Action()">▶ 下一步</button>
+  </div>
+</section>
+
+<!-- ============ Slide 9: 收尾 + 路线图 ============ -->
+<section class="slide" id="slide-9">
+  <div class="slide-num">09 / 3</div>
+  <div class="slide-tag">收尾</div>
+  <h1 class="slide-title">6 功能实战指南总结 + 3 件事拍板</h1>
+  <div class="slide-subtitle">开发遇到 X 场景 — 用 Archery 这几个功能就行</div>
+  <div class="slide-body">
+    <div class="closing-kpis">
+      <div class="closing-kpi">
+        <div class="closing-kpi-num">①</div>
+        <div class="closing-kpi-label">改表前<br>看 diff</div>
+      </div>
+      <div class="closing-kpi">
+        <div class="closing-kpi-num">②</div>
+        <div class="closing-kpi-label">大表 DDL<br>勾 gh-ost</div>
+      </div>
+      <div class="closing-kpi">
+        <div class="closing-kpi-num">③</div>
+        <div class="closing-kpi-label">主库改完<br>等同步</div>
+      </div>
+      <div class="closing-kpi">
+        <div class="closing-kpi-num">④</div>
+        <div class="closing-kpi-label">跨库<br>改对库名</div>
+      </div>
+      <div class="closing-kpi">
+        <div class="closing-kpi-num">⑤</div>
+        <div class="closing-kpi-label">INSERT<br>改对 PK</div>
+      </div>
+      <div class="closing-kpi">
+        <div class="closing-kpi-num">⑥</div>
+        <div class="closing-kpi-label">混合 / INDEX<br>拆单 / 走 gh-ost</div>
+      </div>
+    </div>
+    <div class="roadmap-box">
+      <div class="roadmap-title">下个月路线图（4 项）</div>
+      <div class="roadmap-content">
+        ① gh-ost v0.3.0-alpha：134 dev 已演练，110 prod 待部署（先 1 实例跑 1 周）<br>
+        ② Doris 实战演练：建 1-2 个测试实例（DB 团队 + DBA 联合）<br>
+        ③ D35-OpLog 阶段 2.1 高级筛选 + 阶段 3.1 关联同步工单（2-3 天）<br>
+        ④ Archery 8.0 兼容改造（改 query_privileges.py:493 走 MySQL EXPLAIN）
+      </div>
+    </div>
+    <div class="roadmap-box blue">
+      <div class="roadmap-title">需要领导拍板 3 件事</div>
+      <div class="roadmap-content">
+        ① gh-ost v0.3.0 灰度策略：1 个实例先跑 1 周还是全量直接上？<br>
+        ② Doris 测试实例：是否申请新机器（DB 团队 + DBA 联合评审）？<br>
+        ③ 宣讲频次：每月一次固定（建议每月最后一个周五下午 30 分钟）？
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+// ==================== 全局导航 ====================
+function nextSlide() {
+  const current = parseInt(document.getElementById('current').textContent);
+  if (current < 9) goToSlide(current + 1);
+}
+function prevSlide() {
+  const current = parseInt(document.getElementById('current').textContent);
+  if (current > 1) goToSlide(current - 1);
+}
+function goToSlide(n) {
+  document.getElementById('current').textContent = n;
+  const target = document.getElementById('slide-' + n);
+  if (target) target.scrollIntoView({ behavior: 'smooth' });
+}
+function toggleFullscreen() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') nextSlide();
+  else if (e.key === 'ArrowLeft' || e.key === 'PageUp') prevSlide();
+  else if (e.key === 'Home') goToSlide(1);
+  else if (e.key === 'End') goToSlide(9);
+});
+
+// ==================== 辅助：添加 panel ====================
+function addPanel(areaId, html, klass = '') {
+  el = document.getElementById(areaId);
+  empty = el.querySelector('.feedback-empty');
+  if (empty) empty.remove();
+  p = document.createElement('div');
+  p.className = 'feedback-panel ' + klass;
+  p.innerHTML = html;
+  el.appendChild(p);
+  setTimeout(() => p.classList.add('visible'), 50);
+  el.scrollTop = el.scrollHeight;
+  return p;
+}
+
+function setProgress(slide, n, total) {
+  document.getElementById('sp-' + slide).textContent = '步骤 ' + n + ' / ' + total;
+}
+
+// ==================== Slide 2: 字段 diff 弹窗 ====================
+let s2step = 0;
+function step2Action() {
+  const area = 'fb-2';
+  if (s2step === 0) {
+    addPanel(area, '<div class="feedback-step">第 1 步</div><div class="panel-title">🔍 字段 diff 弹窗</div><div class="panel-body">系统自动扫描 SQL <code>ADD COLUMN</code>，比对 information_schema.columns：</div><table class="diff-table"><tr class="diff-add"><td>owner_name</td><td>VARCHAR(64)</td><td>DEFAULT NULL</td><td>COMMENT \'车主姓名\'</td></tr></table>', 'green');
+    setProgress(2, 1, 3);
+    s2step++;
+  } else if (s2step === 1) {
+    addPanel(area, '<div class="feedback-step">第 2 步</div><div class="panel-title">⚠️ 大表 DDL 警告</div><div class="panel-body">accesscard_licensefront_info 是大表：扫描行数 <strong>1,707,167</strong> / 大小 <strong>865.4 MB</strong>（超阈值 100MB / 10万行）</div>', 'red');
+    setProgress(2, 2, 3);
+    s2step++;
+  } else if (s2step === 2) {
+    addPanel(area, '<div class="feedback-step">第 3 步</div><div class="panel-title">💡 系统自动勾选 gh-ost</div><div class="panel-body">系统帮你自动勾选 <code>☑ 启用 gh-ost 无锁变更</code>，你什么都不用动。<br>现在你可以直接点 <code>SQL提交</code>，走 gh-ost 切流 0-30 秒。</div>', 'green');
+    setProgress(2, 3, 3);
+    s2step++;
+  }
+}
+function resetSlide(n) {
+  if (n === 2) {
+    document.getElementById('fb-2').innerHTML = '<div class="feedback-empty" id="fb-2-empty">⏳ 等开发点 "SQL检测"...</div>';
+    s2step = 0; setProgress(2, 0, 3);
+  }
+}
+
+// ==================== Slide 3: 大表 + v0 智能 ====================
+let s3step = 0;
+function step3Action() {
+  const area = 'fb-3';
+  if (s3step === 0) {
+    // Step 1: 检测 → 弹大表 alert
+    addPanel(area, '<div class="feedback-step">第 1 步</div><div class="panel-title">⚠️ 大表 DDL 警告</div><div class="panel-body">accesscard_channel_task 是大表：扫描行数 <strong>1,707,167</strong> / 大小 <strong>865.4 MB</strong>（超阈值）</div>', 'red');
+    setProgress(3, 1, 3);
+    s3step++;
+  } else if (s3step === 1) {
+    // Step 2: 系统自动勾选 gh-ost checkbox
+    document.getElementById('sl3-check').classList.add('visible', 'checked');
+    document.getElementById('sl3-cb').textContent = '✓';
+    addPanel(area, '<div class="feedback-step">第 2 步</div><div class="panel-title">✓ 系统自动勾选 gh-ost</div><div class="panel-body">左侧 UI 模拟：<code>☑ 启用 gh-ost 无锁变更</code> 已经被系统勾上了（你看到左边 UI 变化）</div>', 'green');
+    setProgress(3, 2, 3);
+    s3step++;
+  } else if (s3step === 2) {
+    // Step 3: 出现模式选择器，smart 自动选中
+    document.getElementById('sl3-mode').classList.add('visible');
+    addPanel(area, '<div class="feedback-step">第 3 步</div><div class="panel-title">🎯 gh-ost 模式：smart（默认）</div><div class="panel-body">左侧 UI 模拟：模式选择器滑出，<strong>smart 自动选中</strong>。<br>多 ALTER 大小表混合工单自动分流（大表 gh-ost + 小表原生 ALTER）。</div>', 'green');
+    setProgress(3, 3, 3);
+    s3step++;
+  }
+}
+function resetSlide3() {
+  document.getElementById('fb-3').innerHTML = '<div class="feedback-empty" id="fb-3-empty">⏳ 等开发点 "SQL检测"...</div>';
+  document.getElementById('sl3-check').classList.remove('visible', 'checked');
+  document.getElementById('sl3-cb').textContent = '';
+  document.getElementById('sl3-mode').classList.remove('visible');
+  s3step = 0; setProgress(3, 0, 3);
+}
+
+// ==================== Slide 4: 历史库自动同步 ====================
+let s4step = 0;
+function step4Action() {
+  const area = 'fb-4';
+  if (s4step === 0) {
+    addPanel(area, '<div class="feedback-step">第 1 步</div><div class="panel-title">✓ 主库工单 wf#4900 已 PASSED</div><div class="panel-body">workflow_review_pass 信号触发 signal handler（<code>workflow_passed_handler</code>）<br>扫描匹配的 DdlSyncPair（source_instance + source_db + enabled=True）</div>', 'green');
+    setProgress(4, 1, 3);
+    s4step++;
+  } else if (s4step === 1) {
+    addPanel(area, '<div class="feedback-step">第 2 步</div><div class="panel-title">🔄 Archery 自动同步镜像工单</div><div class="panel-body">扫描历史库实例：source_instance=5 → target=hly_accesscard_history<br>调用 <code>create_target_workflow()</code> 创建镜像工单：</div>', 'purple');
+    setProgress(4, 2, 3);
+    s4step++;
+  } else if (s4step === 2) {
+    addPanel(area, '<div class="feedback-step">第 3 步</div><div class="panel-title">📋 镜像工单已生成</div><div class="panel-body">开发侧 0 操作，镜像工单由 DBA 跟进审批：</div><div class="mirror-wf visible"><span class="mirror-wf-tag">镜像</span><span class="mirror-wf-title">[镜像] ALTER accesscard_xxx ADD COLUMN col1</span><br><span class="mirror-wf-meta">wf#4901 · 历史库: hly_accesscard_history · 状态: manreviewing</span></div><div class="mirror-wf visible" style="margin-top: 8px;"><span class="mirror-wf-tag">镜像</span><span class="mirror-wf-title">[镜像] ALTER accesscard_yyy ADD COLUMN col2</span><br><span class="mirror-wf-meta">wf#4902 · 历史库: hly_accesscard_history · 状态: manreviewing</span></div>', 'green');
+    setProgress(4, 3, 3);
+    s4step++;
+  }
+}
+function resetSlide4() {
+  document.getElementById('fb-4').innerHTML = '<div class="feedback-empty" id="fb-4-empty">⏳ 等主库工单 PASSED...</div>';
+  s4step = 0; setProgress(4, 0, 3);
+}
+
+// ==================== Slide 5: 跨库 ====================
+let s5step = 0;
+function step5Action() {
+  if (s5step === 0) { step5Detect(); return; }
+  if (s5step === 1) { step5Fix(); return; }
+  if (s5step === 2) { step5Success(); return; }
+}
+function step5Detect() {
+  if (s5step !== 0) return;
+  const area = 'fb-5';
+  addPanel(area, '<div class="feedback-step">第 1 步</div><div class="panel-title">🛡️ 检测到跨库</div><div class="panel-body">SQL 涉及库 <code>[\'hly_usercenter\']</code> 跟您选的库 <code>hly_accesscard</code> 不一致。<br>系统调 <code>cross_db_check.py</code>（6 类 DDL/DML regex 全局扫描）</div>', 'red');
+  setProgress(5, 1, 3);
+  // 按钮变灰
+  document.getElementById('sl5-submit').classList.add('am-btn-blocked');
+  document.getElementById('sl5-submit').textContent = '请先修复跨库';
+  s5step = 1;
+}
+function step5Fix() {
+  const area = 'fb-5';
+  // 模拟修复：把 SQL 里的 hly_usercenter 改成 hly_accesscard
+  const sql = document.getElementById('sl5-sql');
+  sql.innerHTML = '<span class="sql-keyword">use</span> <span class="sql-string">\'hly_accesscard\'</span>;\n<span class="sql-keyword">ALTER TABLE</span> accesscard_vehicle_change <span class="sql-keyword">ADD COLUMN</span> col1 <span class="sql-keyword">int</span>;\n<span class="sql-keyword">ALTER TABLE</span> hly_accesscard.accesscard_user_vehicle_change <span class="sql-keyword">ADD COLUMN</span> col2 <span class="sql-keyword">int</span>;  <span class="sql-comment">-- 改对了</span>';
+  addPanel(area, '<div class="feedback-step">第 2 步</div><div class="panel-title">✏️ 你手动修改 SQL</div><div class="panel-body">把所有 ALTER 改到同一个库 <code>hly_accesscard</code>。<br>左侧 SQL 编辑器已经反映修改（演示）。</div>', 'yellow');
+  setProgress(5, 2, 3);
+  // 显示 "修对" 按钮，隐藏变灰的提交
+  document.getElementById('sl5-submit').style.display = 'none';
+  document.getElementById('sl5-fix').style.display = 'inline-block';
+  s5step = 2;
+}
+function step5Success() {
+  const area = 'fb-5';
+  addPanel(area, '<div class="feedback-step">第 3 步</div><div class="panel-title">✓ 重新检测通过</div><div class="panel-body">系统重新跑 cross_db_check：所有 ALTER 都在 <code>hly_accesscard</code>，无跨库。<br>点击 <code>SQL检测</code> 按钮自动恢复绿色。</div>', 'green');
+  setProgress(5, 3, 3);
+  // 提交按钮恢复
+  document.getElementById('sl5-fix').style.display = 'none';
+  document.getElementById('sl5-submit').style.display = 'inline-block';
+  document.getElementById('sl5-submit').classList.remove('am-btn-blocked');
+  document.getElementById('sl5-submit').textContent = 'SQL提交';
+  s5step = 3;
+}
+function resetSlide5() {
+  document.getElementById('fb-5').innerHTML = '<div class="feedback-empty" id="fb-5-empty">⏳ 等开发点 "SQL检测"...</div>';
+  document.getElementById('sl5-sql').innerHTML = '<span class="sql-keyword">use</span> <span class="sql-string">\'hly_accesscard\'</span>;\n<span class="sql-keyword">ALTER TABLE</span> accesscard_vehicle_change <span class="sql-keyword">ADD COLUMN</span> col1 <span class="sql-keyword">int</span>;\n<span class="sql-keyword">ALTER TABLE</span> hly_usercenter.accesscard_user_vehicle_change <span class="sql-keyword">ADD COLUMN</span> col2 <span class="sql-keyword">int</span>;  <span class="sql-comment">-- 跨库！</span>';
+  document.getElementById('sl5-submit').classList.remove('am-btn-blocked');
+  document.getElementById('sl5-submit').textContent = 'SQL提交';
+  document.getElementById('sl5-submit').style.display = 'inline-block';
+  document.getElementById('sl5-fix').style.display = 'none';
+  s5step = 0; setProgress(5, 0, 3);
+}
+
+// ==================== Slide 6: PK 冲突 ====================
+let s6step = 0;
+function step6Action() {
+  if (s6step === 0) { step6Detect(); return; }
+  if (s6step === 1) { step6Fix(); return; }
+}
+function step6Detect() {
+  if (s6step !== 0) return;
+  const area = 'fb-6';
+  addPanel(area, '<div class="feedback-step">第 1 步</div><div class="panel-title">🔑 检测到 PK 冲突</div><div class="panel-body">系统查 <code>information_schema.statistics</code> 拿 PK 列，对比 INSERT 的 PK 值：<br><br><strong style="color:#f43f5e;">⚠ PK 值 [306, 307, 308, 309] 在 output_fee_config 表中已存在</strong><br><br>（wf#4834 实战：业务方 INSERT id 302-311 共 15 条，4 条重复）</div>', 'red');
+  setProgress(6, 1, 2);
+  document.getElementById('sl6-submit').classList.add('am-btn-blocked');
+  document.getElementById('sl6-submit').textContent = '请先修复 PK 冲突';
+  s6step = 1;
+}
+function step6Fix() {
+  const area = 'fb-6';
+  document.getElementById('sl6-sql').innerHTML = '<span class="sql-keyword">INSERT INTO</span> <span class="sql-string">\'hly_datacenter_mod\'</span>.<span class="sql-string">\'output_fee_config\'</span> (id, name) <span class="sql-keyword">VALUES</span>\n  (315, <span class="sql-string">\'fee_a\'</span>),  <span class="sql-comment">-- 跳过已存在的</span>\n  (316, <span class="sql-string">\'fee_b\'</span>),\n  (317, <span class="sql-string">\'fee_c\'</span>),\n  ...';
+  addPanel(area, '<div class="feedback-step">第 2 步</div><div class="panel-title">✏️ 你手动修改 PK 值</div><div class="panel-body">让 PK 自增或跳过已存在的（id 315 / 316 / 317 替代重复的 306-309）<br>左侧 SQL 编辑器已经反映修改（演示）。</div>', 'yellow');
+  setProgress(6, 2, 2);
+  document.getElementById('sl6-submit').classList.remove('am-btn-blocked');
+  document.getElementById('sl6-submit').textContent = 'SQL提交';
+  s6step = 2;
+}
+function resetSlide6() {
+  document.getElementById('fb-6').innerHTML = '<div class="feedback-empty" id="fb-6-empty">⏳ 等开发点 "SQL检测"...</div>';
+  document.getElementById('sl6-sql').innerHTML = '<span class="sql-keyword">INSERT INTO</span> <span class="sql-string">\'hly_datacenter_mod\'</span>.<span class="sql-string">\'output_fee_config\'</span> (id, name) <span class="sql-keyword">VALUES</span>\n  (302, <span class="sql-string">\'fee_a\'</span>),\n  (303, <span class="sql-string">\'fee_b\'</span>),\n  (304, <span class="sql-string">\'fee_c\'</span>),\n  ...\n  (306, <span class="sql-string">\'fee_d\'</span>),  <span class="sql-comment">-- DB 里 306 已存在！</span>';
+  document.getElementById('sl6-submit').classList.remove('am-btn-blocked');
+  document.getElementById('sl6-submit').textContent = 'SQL提交';
+  s6step = 0; setProgress(6, 0, 2);
+}
+
+// ==================== Slide 7: v1 混合 DDL ====================
+let s7step = 0;
+function step7Action() {
+  if (s7step === 0) { step7Detect(); return; }
+  if (s7step === 1) { step7Split(); return; }
+}
+function step7Detect() {
+  if (s7step !== 0) return;
+  const area = 'fb-7';
+  addPanel(area, '<div class="feedback-step">第 1 步</div><div class="panel-title">🚫 检测到混合 DDL</div><div class="panel-body">工单含 CREATE + ALTER 混合：<br>• ALTER 类：t1 ADD INDEX, t2 ADD COLUMN<br>• CREATE 类：CREATE TABLE new_t<br><br><strong style="color:#ff6b35;">请先拆分工单 (ALTER 与 CREATE 不能混合)</strong><br><br>（修前 7/8 失败 · wf#4841 实战 · 修后拆单全成功）</div>', 'red');
+  setProgress(7, 1, 2);
+  document.getElementById('sl7-submit').classList.add('am-btn-blocked');
+  document.getElementById('sl7-submit').textContent = '请先拆分工单';
+  s7step = 1;
+}
+function step7Split() {
+  const area = 'fb-7';
+  addPanel(area, '<div class="feedback-step">第 2 步</div><div class="panel-title">✂️ 拆分成 2 个工单</div><div class="panel-body">📋 <strong>工单 A（ALTER）</strong>：t1 ADD INDEX, t2 ADD COLUMN, CREATE INDEX test_idx<br>📋 <strong>工单 B（CREATE）</strong>：CREATE TABLE new_t<br><br>前端的 disable 是双层防护的<strong>第一层</strong>。<br>后端 <code>WorkflowContentSerializer.create()</code> 会 raise ValidationError 兜底，<strong>即使前端绕过也拦</strong>。</div>', 'green');
+  setProgress(7, 2, 2);
+  document.getElementById('sl7-submit').classList.remove('am-btn-blocked');
+  document.getElementById('sl7-submit').textContent = 'SQL提交';
+  s7step = 2;
+}
+function resetSlide7() {
+  document.getElementById('fb-7').innerHTML = '<div class="feedback-empty" id="fb-7-empty">⏳ 等开发点 "SQL检测"...</div>';
+  document.getElementById('sl7-submit').classList.remove('am-btn-blocked');
+  document.getElementById('sl7-submit').textContent = 'SQL提交';
+  s7step = 0; setProgress(7, 0, 2);
+}
+
+// ==================== Slide 8: DBA-bug-10 CREATE INDEX ====================
+let s8step = 0;
+function step8Action() {
+  const area = 'fb-8';
+  if (s8step === 0) {
+    addPanel(area, '<div class="feedback-step">第 1 步</div><div class="panel-title">⚠️ 检测到 CREATE INDEX 大表</div><div class="panel-body">accesscard_channel_task 是大表：扫描行数 <strong>1,707,167</strong> / 大小 <strong>865.4 MB</strong><br>（修前 CREATE INDEX 绕过所有检测；修后等价 ALTER，走大表 alert）</div>', 'red');
+    setProgress(8, 1, 2);
+    s8step++;
+  } else if (s8step === 1) {
+    document.getElementById('sl8-check').classList.add('visible', 'checked');
+    document.getElementById('sl8-cb').textContent = '✓';
+    addPanel(area, '<div class="feedback-step">第 2 步</div><div class="panel-title">✓ 系统自动勾选 gh-ost</div><div class="panel-body">左侧 UI 模拟：<code>☑ 启用 gh-ost 无锁变更</code> 已经被系统勾上。<br>你直接点 <code>SQL提交</code>，走 gh-ost 切流 0-30 秒（170 万行表不锁表）</div>', 'green');
+    setProgress(8, 2, 2);
+    s8step++;
+  }
+}
+function resetSlide8() {
+  document.getElementById('fb-8').innerHTML = '<div class="feedback-empty" id="fb-8-empty">⏳ 等开发点 "SQL检测"...</div>';
+  document.getElementById('sl8-check').classList.remove('visible', 'checked');
+  document.getElementById('sl8-cb').textContent = '';
+  s8step = 0; setProgress(8, 0, 2);
+}
+
+function resetSlide(n) {
+  if (n === 2) resetSlide_2 && resetSlide_2();
+  else if (n === 3) resetSlide3();
+  else if (n === 4) resetSlide4();
+  else if (n === 5) resetSlide5();
+  else if (n === 6) resetSlide6();
+  else if (n === 7) resetSlide7();
+  else if (n === 8) resetSlide8();
+}
+function resetSlide_2() { document.getElementById('fb-2').innerHTML = '<div class="feedback-empty">⏳ 等开发点 "SQL检测"...</div>'; s2step = 0; setProgress(2, 0, 3); }
+</script>
+
+</body>
+</html>
