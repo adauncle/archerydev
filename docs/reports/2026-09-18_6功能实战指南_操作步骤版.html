@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>6 大功能实战指南 — 含具体操作步骤 · DBA 一条龙</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  body {
+    background: #0f0f1e;
+    color: #e8e8f0;
+    line-height: 1.6;
+    scroll-behavior: smooth;
+  }
+
+  /* 顶部导航 */
+  .nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 48px;
+    background: rgba(15, 15, 30, 0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid #2a2a3e;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    z-index: 1000;
+    font-size: 14px;
+  }
+  .nav-title { font-weight: 600; color: #ff6b35; }
+  .nav-controls { display: flex; gap: 12px; align-items: center; }
+  .nav-btn { background: #2a2a3e; color: #e8e8f0; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .nav-btn:hover { background: #ff6b35; color: #fff; }
+  .nav-page { color: #888; font-variant-numeric: tabular-nums; }
+
+  /* slide 主样式 */
+  .slide {
+    width: 100vw;
+    height: 100vh;
+    padding: 60px 80px;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+  .slide-num {
+    position: absolute;
+    top: 20px; right: 28px;
+    font-size: 13px;
+    color: #555;
+    font-variant-numeric: tabular-nums;
+  }
+  .slide-tag {
+    display: inline-block;
+    background: #ff6b35;
+    color: #fff;
+    padding: 4px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  .slide-tag.blue { background: #5b9dd9; }
+  .slide-tag.green { background: #10b981; }
+  .slide-tag.purple { background: #a855f7; }
+  .slide-tag.yellow { background: #f59e0b; }
+  .slide-title {
+    font-size: 38px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 10px;
+    background: linear-gradient(135deg, #fff 0%, #b0b0d0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .slide-subtitle {
+    font-size: 16px;
+    color: #8888a0;
+    margin-bottom: 24px;
+  }
+  .slide-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
+
+  /* KPI 卡 */
+  .kpi-row { display: flex; gap: 14px; }
+  .kpi {
+    background: linear-gradient(135deg, #1a1a2e 0%, #2a1a1e 100%);
+    border: 1px solid #3a3a4e;
+    border-left: 4px solid #ff6b35;
+    padding: 18px 20px;
+    border-radius: 8px;
+    flex: 1;
+  }
+  .kpi-value { font-size: 32px; font-weight: 800; color: #ff6b35; line-height: 1.1; }
+  .kpi-label { font-size: 13px; color: #aaa; margin-top: 4px; }
+
+  /* SQL 代码块 */
+  .sql-block {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    border-left: 3px solid #5b9dd9;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+    font-size: 12px;
+    color: #b0b0d0;
+    line-height: 1.5;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .sql-block .hl-red { color: #ff6b35; font-weight: 700; }
+  .sql-block .hl-blue { color: #5b9dd9; font-weight: 700; }
+  .sql-block .hl-green { color: #10b981; font-weight: 700; }
+  .sql-block .hl-yellow { color: #f59e0b; font-weight: 700; }
+
+  /* 弹窗/红框/蓝框 模拟 */
+  .red-alert {
+    background: rgba(255, 107, 53, 0.15);
+    border: 1px solid #ff6b35;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .red-alert .alert-title { color: #ff6b35; font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+  .blue-alert {
+    background: rgba(91, 157, 217, 0.15);
+    border: 1px solid #5b9dd9;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .blue-alert .alert-title { color: #5b9dd9; font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+  .green-alert {
+    background: rgba(16, 185, 129, 0.10);
+    border: 1px solid #10b981;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .green-alert .alert-title { color: #10b981; font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+
+  /* 操作步骤表 */
+  .step-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .step-table th {
+    background: #1a1a2e;
+    color: #ff6b35;
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid #ff6b35;
+    font-weight: 700;
+  }
+  .step-table td {
+    background: rgba(26, 26, 46, 0.5);
+    padding: 10px 12px;
+    border-bottom: 1px solid #2a2a3e;
+    vertical-align: top;
+  }
+  .step-table tr:last-child td { border-bottom: none; }
+  .step-num {
+    display: inline-block;
+    width: 24px; height: 24px;
+    background: #ff6b35;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 50%;
+    line-height: 24px;
+    text-align: center;
+    margin-right: 6px;
+  }
+  .step-where { color: #5b9dd9; font-weight: 700; }
+  .step-do { color: #ff6b35; font-weight: 700; }
+  .step-feedback { color: #10b981; }
+
+  /* 6 功能全景表（Slide 1） */
+  .grid6 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .grid6-cell {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    border-left: 3px solid #ff6b35;
+    padding: 16px 18px;
+    border-radius: 8px;
+  }
+  .grid6-cell.b { border-left-color: #5b9dd9; }
+  .grid6-cell.c { border-left-color: #10b981; }
+  .grid6-cell.d { border-left-color: #a855f7; }
+  .grid6-cell.e { border-left-color: #f59e0b; }
+  .grid6-cell.f { border-left-color: #ff6b35; background: linear-gradient(135deg, #1a1a2e 0%, #231a1e 100%); }
+  .grid6-letter {
+    display: inline-block;
+    width: 28px; height: 28px;
+    background: #ff6b35;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 800;
+    border-radius: 50%;
+    line-height: 28px;
+    text-align: center;
+    margin-right: 6px;
+  }
+  .grid6-cell.b .grid6-letter { background: #5b9dd9; }
+  .grid6-cell.c .grid6-letter { background: #10b981; }
+  .grid6-cell.d .grid6-letter { background: #a855f7; }
+  .grid6-cell.e .grid6-letter { background: #f59e0b; }
+  .grid6-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; display: inline-block; vertical-align: middle; }
+  .grid6-scenario { font-size: 11px; color: #888; margin-bottom: 6px; }
+  .grid6-trigger { font-size: 12px; color: #ccc; line-height: 1.5; }
+
+  /* 模式选择（Slide 5） */
+  .mode-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .mode-cell {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    padding: 16px;
+    border-radius: 8px;
+    text-align: left;
+  }
+  .mode-cell.recommended {
+    border: 2px solid #10b981;
+    background: linear-gradient(135deg, #0a1e1a 0%, #1a1e1a 100%);
+  }
+  .mode-name { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .mode-tag { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 6px; margin-bottom: 8px; }
+  .mode-tag.rec { background: #10b981; color: #fff; }
+  .mode-tag.alt { background: #5b9dd9; color: #fff; }
+  .mode-tag.rare { background: #888; color: #fff; }
+  .mode-desc { font-size: 12px; color: #ccc; line-height: 1.5; }
+
+  /* 子功能对 (Slide 9) */
+  .dual-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  /* box 通用 */
+  .box { background: rgba(255, 107, 53, 0.08); border-left: 4px solid #ff6b35; padding: 14px 18px; border-radius: 6px; }
+  .box.green { background: rgba(16, 185, 129, 0.08); border-left-color: #10b981; }
+  .box.blue { background: rgba(91, 157, 217, 0.08); border-left-color: #5b9dd9; }
+  .box.purple { background: rgba(168, 85, 247, 0.08); border-left-color: #a855f7; }
+  .box-label { font-size: 12px; color: #ff6b35; text-transform: uppercase; font-weight: 700; letter-spacing: 1px; margin-bottom: 6px; }
+  .box.green .box-label { color: #10b981; }
+  .box.blue .box-label { color: #5b9dd9; }
+  .box.purple .box-label { color: #a855f7; }
+  .box-content { font-size: 14px; line-height: 1.5; }
+  .box-content strong { color: #fff; }
+
+  /* 强调 */
+  .hl { color: #ff6b35; font-weight: 700; }
+  .hl-blue { color: #5b9dd9; font-weight: 700; }
+  .hl-green { color: #10b981; font-weight: 700; }
+  .hl-purple { color: #a855f7; font-weight: 700; }
+
+  /* 打印 */
+  @media print {
+    .nav { display: none; }
+    .slide { height: auto; min-height: 100vh; page-break-after: always; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-title">6 大功能实战指南 · 含具体操作步骤</div>
+  <div class="nav-controls">
+    <span class="nav-page"><span id="current">1</span> / 9</span>
+    <button class="nav-btn" onclick="prevSlide()">← Prev</button>
+    <button class="nav-btn" onclick="nextSlide()">Next →</button>
+    <button class="nav-btn" onclick="toggleFullscreen()">⛶ Full</button>
+  </div>
+</nav>
+
+<!-- ============ Slide 1: 6 大功能全景 ============ -->
+<section class="slide" id="slide-1">
+  <div class="slide-num">01 / 9</div>
+  <div class="slide-tag">开发实战指南 · 2026 年 9 月</div>
+  <h1 class="slide-title">6 大功能实战指南<br>开发遇到 X 场景 + 在 Archery 上每一步怎么点</h1>
+  <div class="slide-subtitle">不只是功能介绍——每个功能配真实场景 + 4 步操作步骤 + 系统反馈</div>
+  <div class="slide-body">
+    <div class="grid6">
+      <div class="grid6-cell">
+        <div class="grid6-letter">①</div>
+        <div class="grid6-name">字段 diff 弹窗</div>
+        <div class="grid6-scenario">场景：改表前看影响</div>
+        <div class="grid6-trigger">触发：ALTER/CREATE INDEX 提交时<br>入口：SQL 提交页 → SQL检测</div>
+      </div>
+      <div class="grid6-cell c">
+        <div class="grid6-letter">②</div>
+        <div class="grid6-name">大表无锁 + v0 智能</div>
+        <div class="grid6-scenario">场景：大表 DDL 不锁表</div>
+        <div class="grid6-trigger">触发：≥ 100MB 或 ≥ 10万行<br>入口：SQL 提交页 → 勾 gh-ost → 选模式</div>
+      </div>
+      <div class="grid6-cell b">
+        <div class="grid6-letter">③</div>
+        <div class="grid6-name">历史库自动同步</div>
+        <div class="grid6-scenario">场景：主库改了历史库跟</div>
+        <div class="grid6-trigger">触发：主库工单 PASSED<br>入口：（开发侧 0 操作）</div>
+      </div>
+      <div class="grid6-cell e">
+        <div class="grid6-letter">④</div>
+        <div class="grid6-name">限制单库</div>
+        <div class="grid6-scenario">场景：跨库 SQL</div>
+        <div class="grid6-trigger">触发：SQL 涉及多库<br>入口：SQL 提交页 → 选对库名</div>
+      </div>
+      <div class="grid6-cell b">
+        <div class="grid6-letter">⑤</div>
+        <div class="grid6-name">PK 冲突检测</div>
+        <div class="grid6-scenario">场景：INSERT 重复 PK</div>
+        <div class="grid6-trigger">触发：INSERT 含主键<br>入口：SQL 提交页 → 改对 PK</div>
+      </div>
+      <div class="grid6-cell f">
+        <div class="grid6-letter">⑥</div>
+        <div class="grid6-name">v1 + DBA-bug-10</div>
+        <div class="grid6-scenario">场景：混合 DDL / CREATE INDEX</div>
+        <div class="grid6-trigger">触发：CREATE+ALTER 混 / 大表 CREATE INDEX<br>入口：SQL 提交页 → 拆单 / 走 gh-ost</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 2: ① 字段 diff 弹窗 ============ -->
+<section class="slide" id="slide-2">
+  <div class="slide-num">02 / 9</div>
+  <div class="slide-tag">功能 ①</div>
+  <h1 class="slide-title">① 字段 diff 弹窗 — 改表前看影响</h1>
+  <div class="slide-subtitle">场景：你写完一段 ALTER 准备提交，想知道会影响哪些列</div>
+  <div class="slide-body">
+    <div class="sql-block"><span class="hl-blue">ALTER TABLE</span> hly_accesscard.accesscard_licensefront_info
+  <span class="hl-green">ADD COLUMN</span> owner_name VARCHAR(64) DEFAULT NULL COMMENT <span class="hl-blue">'车主姓名'</span>;</div>
+    <table class="step-table">
+      <tr>
+        <th style="width: 8%;">步骤</th>
+        <th style="width: 24%;">在哪操作</th>
+        <th style="width: 32%;">做什么</th>
+        <th style="width: 36%;">系统反馈</th>
+      </tr>
+      <tr>
+        <td><span class="step-num">1</span></td>
+        <td><span class="step-where">SQL 提交页</span><br><code>/submitsq/</code></td>
+        <td>顶部下拉选 <strong>实例 + 库名</strong>（如 hly_accesscard）</td>
+        <td>编辑器加载</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">2</span></td>
+        <td><span class="step-where">SQL 编辑器</span></td>
+        <td>写你的 ALTER/CREATE INDEX SQL</td>
+        <td>实时语法高亮</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">3</span></td>
+        <td><span class="step-where">点 🔴 SQL检测 按钮</span></td>
+        <td>触发检测（自动调 4 个端点：cross_db / pk_conflict / column_diff / gh_ost_precheck）</td>
+        <td>等待 1-2 秒</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">4</span></td>
+        <td><span class="step-where">查看反馈</span></td>
+        <td>字段 diff 弹窗 + 检测结果表 + 大表 alert</td>
+        <td>列/索引变更可视化</td>
+      </tr>
+    </table>
+    <div class="blue-alert">
+      <div class="alert-title">📋 你应该看到的弹窗</div>
+      🔍 字段 diff：<code>owner_name VARCHAR(64) [+] 新增</code>（绿色）<br>
+      ⚠️ 大表 DDL：accesscard_licensefront_info 行 1707167 / 大小 865.4 MB（超阈值）<br>
+      ✓ <span class="hl">启用 gh-ost 无锁变更</span> ← 系统帮你自动勾上
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 3: ② 大表无锁 + v0 智能 ============ -->
+<section class="slide" id="slide-3">
+  <div class="slide-num">03 / 9</div>
+  <div class="slide-tag green">功能 ②</div>
+  <h1 class="slide-title">② 大表无锁 + v0 智能 — 怎么勾 gh-ost + 选模式</h1>
+  <div class="slide-subtitle">场景：你的表 170 万行 / 865 MB，系统自动帮你勾 gh-ost</div>
+  <div class="slide-body">
+    <table class="step-table">
+      <tr>
+        <th style="width: 8%;">步骤</th>
+        <th style="width: 28%;">在哪操作</th>
+        <th style="width: 28%;">做什么</th>
+        <th style="width: 36%;">系统反馈</th>
+      </tr>
+      <tr>
+        <td><span class="step-num">1</span></td>
+        <td><span class="step-where">SQL 提交页</span></td>
+        <td>选实例 + 库名 + 写 SQL</td>
+        <td>编辑器加载</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">2</span></td>
+        <td><span class="step-where">点 🔴 SQL检测</span></td>
+        <td>触发检测</td>
+        <td><span class="step-feedback">弹大表 alert 红框</span>（含 rows + size_mb）</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">3</span></td>
+        <td><span class="step-where">看 alert</span></td>
+        <td>确认表是大表（≥ 100MB 或 ≥ 10 万行）</td>
+        <td><span class="hl">系统自动勾选 ☑ 启用 gh-ost 无锁变更 checkbox</span></td>
+      </tr>
+      <tr>
+        <td><span class="step-num">4</span></td>
+        <td><span class="step-where">勾选后下拉框出现</span></td>
+        <td>选 gh-ost 模式（smart / all_ghost / all_native）</td>
+        <td>默认 <strong>smart</strong>（推荐 90% 场景）</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">5</span></td>
+        <td><span class="step-where">点 🟢 SQL提交</span></td>
+        <td>提交工单</td>
+        <td>按钮变灰提示 loading → 切流 0-30 秒</td>
+      </tr>
+    </table>
+    <div class="mode-row">
+      <div class="mode-cell recommended">
+        <div class="mode-name">smart</div>
+        <div class="mode-tag rec">⭐ 默认选</div>
+        <div class="mode-desc">大小表混合自动分流（大表 gh-ost + 小表原生 ALTER）<br>推荐 90% 场景</div>
+      </div>
+      <div class="mode-cell">
+        <div class="mode-name">all_ghost</div>
+        <div class="mode-tag alt">运维场景</div>
+        <div class="mode-desc">强制全表都走 gh-ost（运维 / DBA 评估后）</div>
+      </div>
+      <div class="mode-cell">
+        <div class="mode-name">all_native</div>
+        <div class="mode-tag rare">DBA 评估</div>
+        <div class="mode-desc">强制全表都走原生 ALTER（DBA 已评估）</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 4: ③ 历史库自动同步 ============ -->
+<section class="slide" id="slide-4">
+  <div class="slide-num">04 / 9</div>
+  <div class="slide-tag">功能 ③</div>
+  <h1 class="slide-title">③ 历史库自动同步 — 你什么都不用做</h1>
+  <div class="slide-subtitle">场景：你改了主库字段，担心 3 个月后历史库字段对不上</div>
+  <div class="slide-body">
+    <div class="sql-block"><span class="hl-blue">ALTER TABLE</span> hly_accesscard.accesscard_xxx <span class="hl-green">ADD COLUMN</span> col <span class="hl-blue">int</span>;</div>
+    <table class="step-table">
+      <tr>
+        <th style="width: 8%;">步骤</th>
+        <th style="width: 28%;">在哪操作</th>
+        <th style="width: 28%;">做什么</th>
+        <th style="width: 36%;">系统反馈</th>
+      </tr>
+      <tr>
+        <td><span class="step-num">1</span></td>
+        <td><span class="step-where">SQL 提交页</span></td>
+        <td>写主库 DDL + 点 🟢 SQL提交</td>
+        <td>工单流转到审批</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">2</span></td>
+        <td><span class="step-where">审批流</span></td>
+        <td>DBA 审批 → 工单 <code>workflow_review_pass</code></td>
+        <td>PASSED 状态</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">3</span></td>
+        <td colspan="2" style="text-align: center; color: #10b981; font-weight: 700;">⏸️ 开发侧什么都不用做</td>
+        <td><span class="hl-green">Archery 自动创建 [镜像] xxx 历史库工单</span></td>
+      </tr>
+      <tr>
+        <td><span class="step-num">4</span></td>
+        <td><span class="step-where">（观察进度）</span></td>
+        <td>等历史库同步完成</td>
+        <td>DBA 审批历史库镜像工单 + 执行</td>
+      </tr>
+    </table>
+    <div class="green-alert">
+      <div class="alert-title">✅ 多 ALTER 工单（DDL-Sync-Bug-A 修后）</div>
+      修前：黑白名单只判定<strong>第一张表</strong>，其他表被丢同步<br>
+      修后：每条 ALTER 独立判定 · 黑名单 <code>DdlSyncHistory(skipped)</code> · 白名单 拼成镜像工单
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 5: ④ 限制单库 ============ -->
+<section class="slide" id="slide-5">
+  <div class="slide-num">05 / 9</div>
+  <div class="slide-tag yellow">功能 ④</div>
+  <h1 class="slide-title">④ 限制单库 — 跨库怎么拦截</h1>
+  <div class="slide-subtitle">场景：你 SQL 写了两个库的表，没意识到是跨库</div>
+  <div class="slide-body">
+    <div class="sql-block"><span class="hl-blue">use</span> <span class="hl-green">'hly_accesscard'</span>;
+<span class="hl-blue">ALTER TABLE</span> accesscard_vehicle_change <span class="hl-green">ADD COLUMN</span> col1 <span class="hl-blue">int</span>;
+<span class="hl-blue">ALTER TABLE</span> hly_usercenter.accesscard_user_vehicle_change <span class="hl-green">ADD COLUMN</span> col2 <span class="hl-blue">int</span>;  <span class="hl-red">← 跨库！</span></div>
+    <table class="step-table">
+      <tr>
+        <th style="width: 8%;">步骤</th>
+        <th style="width: 28%;">在哪操作</th>
+        <th style="width: 28%;">做什么</th>
+        <th style="width: 36%;">系统反馈</th>
+      </tr>
+      <tr>
+        <td><span class="step-num">1</span></td>
+        <td><span class="step-where">SQL 提交页顶部</span></td>
+        <td>下拉选 <strong>实例 + 库名</strong>（如 hly_accesscard）</td>
+        <td>加载编辑器</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">2</span></td>
+        <td><span class="step-where">编辑器</span></td>
+        <td>写你的 SQL</td>
+        <td>实时高亮</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">3</span></td>
+        <td><span class="step-where">点 🔴 SQL检测</span></td>
+        <td>触发检测</td>
+        <td>跨库检测扫所有 SQL 行的 schema</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">4</span></td>
+        <td><span class="step-where">看红框</span></td>
+        <td>看错误文案</td>
+        <td><span class="hl-red">"SQL 涉及库 ['hly_usercenter'] 跟您选的库 hly_accesscard 不一致"</span></td>
+      </tr>
+      <tr>
+        <td><span class="step-num">5</span></td>
+        <td><span class="step-where">点 🟢 SQL提交</span></td>
+        <td>按钮变灰</td>
+        <td>文案变 <strong>"请先修复跨库"</strong>，按钮不可点</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">6</span></td>
+        <td><span class="step-where">改对 SQL</span></td>
+        <td>把所有 ALTER 改到同一个库</td>
+        <td><span class="hl-green">按钮自动恢复 "提交" 字样</span></td>
+      </tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============ Slide 6: ⑤ PK 冲突检测 ============ -->
+<section class="slide" id="slide-6">
+  <div class="slide-num">06 / 9</div>
+  <div class="slide-tag blue">功能 ⑤</div>
+  <h1 class="slide-title">⑤ PK 冲突检测 — INSERT 重复 PK 怎么拦截</h1>
+  <div class="slide-subtitle">场景：你准备批量 INSERT，没意识到 PK 跟表里现有数据重复</div>
+  <div class="slide-body">
+    <div class="sql-block"><span class="hl-blue">INSERT INTO</span> <span class="hl-green">'hly_datacenter_mod'</span>.<span class="hl-blue">'output_fee_config'</span> (id, name) <span class="hl-blue">VALUES</span>
+  (302, <span class="hl-green">'fee_a'</span>),
+  (303, <span class="hl-green">'fee_b'</span>),
+  ...
+  (306, <span class="hl-green">'fee_d'</span>),  <span class="hl-red">← DB 里 306 已存在！</span></div>
+    <table class="step-table">
+      <tr>
+        <th style="width: 8%;">步骤</th>
+        <th style="width: 28%;">在哪操作</th>
+        <th style="width: 28%;">做什么</th>
+        <th style="width: 36%;">系统反馈</th>
+      </tr>
+      <tr>
+        <td><span class="step-num">1</span></td>
+        <td><span class="step-where">SQL 提交页</span></td>
+        <td>选实例 + 库名 + 表所在库</td>
+        <td>加载编辑器</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">2</span></td>
+        <td><span class="step-where">编辑器</span></td>
+        <td>写 INSERT SQL</td>
+        <td>实时高亮</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">3</span></td>
+        <td><span class="step-where">点 🔴 SQL检测</span></td>
+        <td>触发检测</td>
+        <td>调 <code>pk_conflict_check</code> 端点，查 <code>information_schema.statistics</code></td>
+      </tr>
+      <tr>
+        <td><span class="step-num">4</span></td>
+        <td><span class="step-where">看红框</span></td>
+        <td>看错误</td>
+        <td><span class="hl-red">"PK 值 [306, 307, 308, 309] 在 output_fee_config 表中已存在"</span></td>
+      </tr>
+      <tr>
+        <td><span class="step-num">5</span></td>
+        <td><span class="step-where">点 🟢 SQL提交</span></td>
+        <td>按钮变灰</td>
+        <td>文案变 <strong>"请先修复 PK 冲突"</strong></td>
+      </tr>
+      <tr>
+        <td><span class="step-num">6</span></td>
+        <td><span class="step-where">改对 PK</span></td>
+        <td>让 PK 自增或跳过已存在的</td>
+        <td><span class="hl-green">按钮自动恢复 "提交"</span></td>
+      </tr>
+    </table>
+    <div class="blue-alert">
+      <div class="alert-title">📋 边界</div>
+      ✅ 单次 INSERT 支持最多 <strong>1000</strong> 个 PK 值 · ✅ 多个 INSERT 一起检测<br>
+      ❌ 不要碰运气让执行到第 N 条才发现 Duplicate entry
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 7: ⑥ v1 + DBA-bug-10 子功能 A v1 ============ -->
+<section class="slide" id="slide-7">
+  <div class="slide-num">07 / 9</div>
+  <div class="slide-tag">功能 ⑥ A</div>
+  <h1 class="slide-title">⑥ v1 混合 DDL 禁止提交 — 8 条 SQL 混 CREATE + ALTER</h1>
+  <div class="slide-subtitle">场景：你工单含 CREATE + ALTER 混合（修前 7/8 失败，修后拆单全成功）</div>
+  <div class="slide-body">
+    <div class="sql-block"><span class="hl-blue">ALTER TABLE</span> hly_accesscard.accesscard_licensefront_info <span class="hl-green">ADD INDEX</span> idx_owner_name (owner_name);
+<span class="hl-blue">ALTER TABLE</span> hly_accesscard.vehicle_info_verify <span class="hl-green">ADD COLUMN</span> col <span class="hl-blue">int</span>;
+<span class="hl-red">CREATE TABLE</span> hly_accesscard.accesscard_opendcardapply (id <span class="hl-blue">int</span>);  <span class="hl-red">← CREATE 混进来！</span>
+<span class="hl-red">CREATE INDEX</span> test_idx ON hly_accesscard.accesscard_opendcardapply (col);
+...</div>
+    <table class="step-table">
+      <tr>
+        <th style="width: 8%;">步骤</th>
+        <th style="width: 28%;">在哪操作</th>
+        <th style="width: 28%;">做什么</th>
+        <th style="width: 36%;">系统反馈</th>
+      </tr>
+      <tr>
+        <td><span class="step-num">1</span></td>
+        <td><span class="step-where">SQL 提交页</span></td>
+        <td>写混合 SQL</td>
+        <td>实时高亮</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">2</span></td>
+        <td><span class="step-where">点 🔴 SQL检测</span></td>
+        <td>触发检测</td>
+        <td>检测结果表第 2 行显示 warning</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">3</span></td>
+        <td><span class="step-where">看红框</span></td>
+        <td>看错误</td>
+        <td><span class="hl-red">"请先拆分工单 (ALTER 与 CREATE 不能混合)"</span></td>
+      </tr>
+      <tr>
+        <td><span class="step-num">4</span></td>
+        <td><span class="step-where">点 🟢 SQL提交</span></td>
+        <td>按钮变灰</td>
+        <td>文案变 <strong>"请先拆分工单"</strong></td>
+      </tr>
+      <tr>
+        <td><span class="step-num">5</span></td>
+        <td><span class="step-where">拆分 SQL</span></td>
+        <td>拆成 2 个工单：① ALTER 4 条 ② CREATE 4 条</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">6</span></td>
+        <td><span class="step-where">分别提交</span></td>
+        <td>提交 2 个工单</td>
+        <td><span class="hl-green">全部成功</span></td>
+      </tr>
+    </table>
+    <div class="box">
+      <div class="box-label">双层防护</div>
+      <div class="box-content">
+        前端：按钮 disable + 红框 alert<br>
+        后端：<code>WorkflowContentSerializer.create()</code> raise ValidationError（即使前端绕过也兜底）
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 8: ⑥ 子功能 B DBA-bug-10 ============ -->
+<section class="slide" id="slide-8">
+  <div class="slide-num">08 / 9</div>
+  <div class="slide-tag purple">功能 ⑥ B</div>
+  <h1 class="slide-title">⑥ DBA-bug-10 CREATE INDEX 等价 ALTER</h1>
+  <div class="slide-subtitle">场景：你用 CREATE INDEX 给大表加索引（修前绕过所有检测，修后弹大表 alert）</div>
+  <div class="slide-body">
+    <div class="sql-block"><span class="hl-red">CREATE INDEX</span> test <span class="hl-blue">USING BTREE</span> <span class="hl-blue">ON</span> hly_accesscard.accesscard_channel_task (req_url);</div>
+    <table class="step-table">
+      <tr>
+        <th style="width: 8%;">步骤</th>
+        <th style="width: 28%;">在哪操作</th>
+        <th style="width: 28%;">做什么</th>
+        <th style="width: 36%;">系统反馈</th>
+      </tr>
+      <tr>
+        <td><span class="step-num">1</span></td>
+        <td><span class="step-where">SQL 提交页</span></td>
+        <td>写 <code>CREATE INDEX ... ON tbl (col)</code></td>
+        <td>实时高亮</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">2</span></td>
+        <td><span class="step-where">点 🔴 SQL检测</span></td>
+        <td>触发检测</td>
+        <td>检测识别 CREATE INDEX 等价 ALTER</td>
+      </tr>
+      <tr>
+        <td><span class="step-num">3</span></td>
+        <td><span class="step-where">看红框</span></td>
+        <td>看大表 alert</td>
+        <td><span class="hl-red">accesscard_channel_task 行 1707167 / 大小 865.4 MB</span></td>
+      </tr>
+      <tr>
+        <td><span class="step-num">4</span></td>
+        <td><span class="step-where">确认 gh-ost</span></td>
+        <td>查看 gh-ost 自动勾选状态</td>
+        <td><span class="hl-green">系统自动勾选 ☑ 启用 gh-ost 无锁变更</span></td>
+      </tr>
+      <tr>
+        <td><span class="step-num">5</span></td>
+        <td><span class="step-where">点 🟢 SQL提交</span></td>
+        <td>提交</td>
+        <td>走 gh-ost 切流 0-30 秒</td>
+      </tr>
+    </table>
+    <div class="purple-alert" style="background: rgba(168, 85, 247, 0.10); border: 1px solid #a855f7; padding: 12px 16px; border-radius: 6px;">
+      <div class="alert-title" style="color: #a855f7;">📋 实战案例（wf#4849）</div>
+      业务方 CREATE INDEX on accesscard_channel_task (170 万行 / 865 MB) → 大表 alert 弹 + 自动勾 gh-ost → 切流完成<br>
+      <span style="color: #888; font-size: 12px;">演练 10/10 case PASS（双 regex / 反引号 schema / USING BTREE / 不带 USING）</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Slide 9: 总结 + 路线图 + 拍板 ============ -->
+<section class="slide" id="slide-9">
+  <div class="slide-num">09 / 9</div>
+  <div class="slide-tag">收尾</div>
+  <h1 class="slide-title">6 功能实战指南总结 + 3 件事拍板</h1>
+  <div class="slide-subtitle">开发遇到 X 场景 — 用 Archery 这几个功能就行</div>
+  <div class="slide-body">
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-value">①</div>
+        <div class="kpi-label">改表前<br>看字段 diff</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">②</div>
+        <div class="kpi-label">大表 DDL<br>勾 gh-ost</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">③</div>
+        <div class="kpi-label">主库改完<br>等同步</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">④</div>
+        <div class="kpi-label">跨库<br>改对库名</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">⑤</div>
+        <div class="kpi-label">INSERT<br>改对 PK</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">⑥</div>
+        <div class="kpi-label">混合 / INDEX<br>拆单 / 走 gh-ost</div>
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-label">下个月路线图（4 项）</div>
+      <div class="box-content">
+        <strong>①</strong> gh-ost v0.3.0-alpha：134 dev 已演练，110 prod 待部署（先 1 实例跑 1 周）<br>
+        <strong>②</strong> Doris 实战演练：建 1-2 个测试实例（DB 团队 + DBA 联合）<br>
+        <strong>③</strong> D35-OpLog 阶段 2.1 高级筛选 + 阶段 3.1 关联同步工单（2-3 天）<br>
+        <strong>④</strong> Archery 8.0 兼容改造（改 query_privileges.py:493 走 MySQL EXPLAIN）
+      </div>
+    </div>
+    <div class="box blue">
+      <div class="box-label">需要领导拍板 3 件事</div>
+      <div class="box-content">
+        <strong>①</strong> gh-ost v0.3.0 灰度策略：1 个实例先跑 1 周还是全量直接上？<br>
+        <strong>②</strong> Doris 测试实例：是否申请新机器（DB 团队 + DBA 联合评审）？<br>
+        <strong>③</strong> 宣讲频次：每月一次固定（建议每月最后一个周五下午 30 分钟）？
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') nextSlide();
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') prevSlide();
+    else if (e.key === 'Home') goToSlide(1);
+    else if (e.key === 'End') goToSlide(9);
+    else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+  });
+
+  function nextSlide() {
+    const current = parseInt(document.getElementById('current').textContent);
+    if (current < 9) goToSlide(current + 1);
+  }
+  function prevSlide() {
+    const current = parseInt(document.getElementById('current').textContent);
+    if (current > 1) goToSlide(current - 1);
+  }
+  function goToSlide(n) {
+    document.getElementById('current').textContent = n;
+    const target = document.getElementById('slide-' + n);
+    if (target) target.scrollIntoView({ behavior: 'smooth' });
+  }
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  }
+</script>
+
+</body>
+</html>
