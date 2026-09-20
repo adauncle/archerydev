@@ -1,0 +1,32 @@
+docs: 110 prod gh-ost precheck 1045 排查结论 (8/26 已修, 当前无 bug)
+
+背景 (9/20 13:40 阿达叔叔排查请求):
+- 误判: 一度以为"110 prod .env 4 变量没注释, 需要修"
+- 实际: ssh 上去 grep 发现 110 prod .env 已是注释状态, 8/26 已修
+- 134 dev .env 4 变量是 dev-only 设计如此 (instance 密文解不开), 不应清
+
+排查过程 (9/20 13:44, ssh 实际查双端 .env):
+1. 134 dev /opt/archery/prod/.env line 69-72 → 4 变量活动 (dev-only 设计)
+2. 110 prod /dbdata/archery_v114_c9236a0/.env line 69-72 → 4 变量已注释 (8/26 修后)
+3. archery/settings.py:425-428 → env(..., default="") 默认空
+4. sql/extensions/ddl_gh_ost/services/db.py:44-67 → 110 prod fallback_host="" → 走 instance.get_username_password() 标准路径
+5. 110 prod error.log 最近 200 行无 1045/precheck/dbops 报错
+
+排查结论:
+- 110 prod 当前无 1045 bug ✅
+- 134 dev .env 4 变量不应清 (dev 设计)
+- 8/26 已修过这个 P0 (changelogs/2026-08-26_push110-ghost-precheck-dev-fallback-bug.md)
+
+误判原因 (实战新发现 1 条):
+- 没 ssh 实际查就推断 prod 状态
+- 没查 8/26 changelog 历史记录
+- 没区分 dev-only 兜底凭据和 prod 应有状态
+
+实战新发现 (1 条入 MEMORY, 跨项目可复用):
+- dev-only .env 兜底凭据跟 prod 应有状态不能混判 (跨项目应急响应, 9/20 实战新发现):
+  - 不能基于"演练时设了变量"推断 prod 状态, 必须 ssh 实际 grep
+  - 实战踩坑: 9/20 阿达叔叔排查 110 prod gh-ost precheck 1045, 我没 ssh 实际查就推断
+  - 修法: (1) ssh 实际 grep 双端 (2) error.log 最近 N 行 (3) 历史 changelog (4) 区分 dev/prod 状态
+
+文件: docs/changelogs/2026-09-20_110prod-gh-ost-precheck-1045-clarify.md (6.3KB)
+关联: 8/26 P0 bug 修复 changelog + settings.py:425-428 + db.py:11-14 + db.py:44-67
