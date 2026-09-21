@@ -1,0 +1,46 @@
+fix(gh-ost): DBA-bug-11 precheck 400 修复 (## 注释支持)
+
+背景 (9/21 17:35 阿达叔叔 wf#4871 报错截图):
+- 业务方提交工单 wf#4871, SQL 用 Python 风格 ## 加注释 (不是 MySQL --)
+- 详情页点击 "启用 gh-ost" 按钮 → POST /gh_ost/precheck/4871/ 400 Bad Request
+- DevTools Console: "Failed to load resource: 400"
+- 110 prod access.log 确认: POST /gh_ost/precheck/4871/ HTTP/1.1 400 102
+
+根因 (sql/extensions/ddl_gh_ost/views.py:147):
+- _parse_all_statements 注释跳过只识别 -- (MySQL 风格)
+  if stripped.startswith("--") or not stripped:
+      continue
+- _FIRST_ALTER_RE 是 ^\\s*ALTER\\s+TABLE, 必须 ALTER 开头
+- 按分号切分后, cleaned 开头是 "## ..." 不匹配 ALTER regex
+- 解析为空 → precheck 返 400 "未找到 ALTER TABLE 语句"
+
+修法 (1 文件, 1 行, views.py:147):
+- 加 stripped.startswith("##") 跳过
+  if stripped.startswith("--") or stripped.startswith("##") or not stripped:
+      continue
+
+演练 (scripts/_w3_dba_bug11_verify.py, 6 静态 + 6 mock):
+- 旧版 (## 不跳过) 解析 0 个 ALTER → precheck 返 400 (复现 bug) ✅
+- 新版 (## 跳过)  解析 3 个 ALTER (dingding_check_waybill / downstream_waybill / hdj_open) ✅
+- 边界: 纯 -- 注释 / 混合 ## + -- / 纯注释无 ALTER / ALTER 之间 ## 注释, 全兼容 ✅
+
+部署 (DBA 一条龙):
+1. 134 dev: scp views.py + systemctl restart archery-prod-gunicorn.service + HTTP 200 ✅
+2. 110 prod: scp views.py + reload script (_reload_110_auto_check_ghost.sh) + HTTP 200 ✅
+   验证 views.py:152 已加 startswith("##") ✅
+
+已知未修 (跨文件 ## 注释审计, 6 文件只修 1 个, 待下一波统一清理):
+- sql/extensions/ddl_sync/services/sync_trigger.py:110 (镜像工单)
+- sql/views.py:288 (业务方提交流水)
+- sql/services/ddl_rollback.py:167 (DDL 回滚)
+- sql/extensions/dingtalk_oa/services/sql_type_detect.py:79 (钉钉 OA 检测)
+- sql/extensions/dingtalk_oa/drivers/dingtalk.py:281 (钉钉 OA driver)
+
+实战新发现 (1 条入 MEMORY, 跨项目可复用):
+- SQL 注释跨方言: MySQL -- / Python ## / Hash # 都要支持
+- 跨项目 SQL 解析器 (审核/gh-ost/回滚/同步/OA) 注释跳过不能只 startswith("--")
+- 修法: re.match(r"^\\s*(--|##|#)", stripped) 一行处理三种
+- 跨文件同步: 9/17 DBA-bug-10 教训 (5 文件改 4 个漏改), 这次只修紧急 1 个, 下一波统一改 5 文件
+
+CHANGELOG: docs/changelogs/2026-09-21_dba-bug-11-precheck-hash-comment.md
+关联: 9/17 DBA-bug-10 教训 + 跨文件 regex 同步实战
