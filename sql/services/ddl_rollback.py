@@ -164,7 +164,12 @@ def _split_sql_statements(sql_content: str) -> List[str]:
         lines = []
         for line in stmt.splitlines():
             stripped = line.strip()
-            if stripped.startswith("--") or not stripped:
+            ## CUSTOM-MODIFIED: DBA-bug-11 加 ## 注释跳过 (业务方习惯) @ 2026-09-21 @ mavis
+            ## 关联: docs/changelogs/2026-09-21_dba-bug-11-precheck-hash-comment.md
+            ## 根因: 业务方用 Python 风格 ## 注释, 老代码只识别 MySQL -- 注释
+            ##       cleaned 开头是 ## 不匹配 ALTER regex → DDL 回滚解析不到
+            ## 修法: startswith("--") OR startswith("##") 都跳过
+            if stripped.startswith("--") or stripped.startswith("##") or not stripped:
                 continue
             lines.append(line)
         cleaned = "\n".join(lines).strip()

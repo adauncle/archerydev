@@ -107,7 +107,12 @@ def _extract_all_alters(sql_content: str) -> list:
         cleaned_lines = []
         for line in raw_stmt.splitlines():
             stripped = line.strip()
-            if not stripped or stripped.startswith("--"):
+            ## CUSTOM-MODIFIED: DBA-bug-11 加 ## 注释跳过 (业务方习惯) @ 2026-09-21 @ mavis
+            ## 关联: docs/changelogs/2026-09-21_dba-bug-11-precheck-hash-comment.md
+            ## 根因: 业务方用 Python 风格 ## 注释, 老代码只识别 MySQL -- 注释
+            ##       cleaned 开头是 ## 不匹配 ALTER regex → 镜像工单解析不到
+            ## 修法: startswith("--") OR startswith("##") 都跳过
+            if not stripped or stripped.startswith("--") or stripped.startswith("##"):
                 continue
             # 跳过 use xxx; 这种前缀 (DBA-bug-1 实战踩坑, 9/11 17:55 修过)
             if re.match(r"^\s*use\s+", stripped, re.IGNORECASE):

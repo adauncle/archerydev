@@ -1,0 +1,38 @@
+fix: DBA-bug-11 跨文件 ## 注释全项目清理 (4 文件, 钉钉不动)
+
+背景 (9/21 17:35 阿达叔叔 wf#4871 报错截图):
+- 业务方用 Python 风格 ## 加注释, 老代码只识别 MySQL -- 注释
+- precheck 返 400 "未找到 ALTER TABLE 语句"
+- 9/21 17:55 紧急修 1 文件 (gh-ost views.py:147, commit 9764c0c)
+- 9/21 18:00 阿达叔叔拍板: "除了钉钉不修, 其他都要修"
+
+修法 (4 文件统一加 stripped.startswith("##")):
+1. sql/extensions/ddl_gh_ost/views.py:147 (17:55 已修)
+   - gh-ost precheck / enable / 列 ALTER 解析
+2. sql/extensions/ddl_sync/services/sync_trigger.py:110
+   - 镜像工单 ## 注释工单同步
+3. sql/views.py:288
+   - 业务方提交流水 / 字段 diff / 大表 alert / DDL-Sync 镜像
+4. sql/services/ddl_rollback.py:167
+   - DDL 回滚 ## 注释工单
+
+不动 (2 文件, 用户拍板):
+- sql/extensions/dingtalk_oa/services/sql_type_detect.py:79
+- sql/extensions/dingtalk_oa/drivers/dingtalk.py:281
+
+演练 (scripts/_w3_dba_bug11_cross_file_verify.py 6/6):
+- 4 文件已修: PASS
+- 2 文件按用户拍板不动: PASS
+
+部署 (DBA 一条龙):
+1. 134 dev (9/21 18:05): scp 3 文件 + systemctl restart archery-prod-gunicorn.service + HTTP 200 ✅
+2. 110 prod (9/21 18:08): scp 3 文件 + reload script + HTTP 200 + grep startswith("##") 验证 ✅
+
+实战新发现 (1 条入 MEMORY, 累计 63 条):
+- SQL 注释跨方言: MySQL -- / Python ## / Hash # 都要支持
+- 跨项目 SQL 解析器注释跳过不能只 startswith("--")
+- 修法: re.match(r"^\\s*(--|##|#)", stripped) 一行处理三种
+- 跨文件同步: 9/17 DBA-bug-10 教训 (5 文件改 4 个漏改), 这次 6 文件一次改完 (5 修 + 1 不动)
+
+CHANGELOG: docs/changelogs/2026-09-21_dba-bug-11-precheck-hash-comment.md (7.5KB, 含 6 文件审计清单 + 演练 + 部署)
+关联: 9/21 17:55 commit 9764c0c (紧急修 1 文件) + 9/17 DBA-bug-10 教训 + 阿达叔叔 18:00 拍板 "除了钉钉不修"

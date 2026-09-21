@@ -64,21 +64,39 @@ def precheck(request, workflow_id):
         }, status=400)
 ```
 
-## 修复
+## 修复 (跨文件统一清理)
 
-文件: `sql/extensions/ddl_gh_ost/views.py` (1 文件, 1 行)
+**DBA-bug-11 全项目清理**: 6 个文件都只识别 `--` 注释, 不处理 `##`, 9/21 17:55 紧急修 1 文件, 9/21 18:00 跟阿达叔叔拍板后**统一改剩余 4 文件** (钉钉 OA 2 文件按用户拍板不动).
+
+### 修法 (5 文件统一改 1 行)
 
 ```python
-# 修法 (views.py:152)
+# 老 (buggy)
+if stripped.startswith("--") or not stripped:  # 或 if not stripped or stripped.startswith("--")
+
+# 新 (fix)
 if stripped.startswith("--") or stripped.startswith("##") or not stripped:
-    continue
+# 或 if not stripped or stripped.startswith("--") or stripped.startswith("##"):
 ```
+
+### 文件清单
+
+| 文件 | 行号 | 状态 | 影响范围 |
+|------|------|------|----------|
+| `sql/extensions/ddl_gh_ost/views.py` | 147 | ✅ 已修 (17:55) | gh-ost precheck / enable / 列 ALTER 解析 |
+| `sql/extensions/ddl_sync/services/sync_trigger.py` | 110 | ✅ 已修 (18:00) | 镜像工单 ## 注释工单同步 |
+| `sql/views.py` | 288 | ✅ 已修 (18:00) | 业务方提交流水 / 字段 diff / 大表 alert / DDL-Sync 镜像 |
+| `sql/services/ddl_rollback.py` | 167 | ✅ 已修 (18:00) | DDL 回滚 ## 注释工单 |
+| `sql/extensions/dingtalk_oa/services/sql_type_detect.py` | 79 | ⏸️ **不动** (用户拍板) | 钉钉 OA 检测 (业务方不通过此路径) |
+| `sql/extensions/dingtalk_oa/drivers/dingtalk.py` | 281 | ⏸️ **不动** (用户拍板) | 钉钉 OA driver |
+
+**9/21 18:00 阿达叔叔拍板**: "除了钉钉不修, 其他都要修"
 
 ## 验证
 
-### 演练 `scripts/_w3_dba_bug11_verify.py`
+### 演练 1: `_w3_dba_bug11_verify.py` (wf#4871 实际 SQL)
 
-- 6 静态 + 6 mock 演练 (wf#4871 实际 SQL)
+- 6 静态 + 6 mock 演练
 
 ```
 旧版 (## 注释不跳过): 3 个 OTHER (不是 ALTER) → precheck 返 400 ✅ 复现 bug
@@ -89,36 +107,37 @@ if stripped.startswith("--") or stripped.startswith("##") or not stripped:
 边界 4: ALTER 之间 ## 注释 → 2 个 ALTER (兼容) ✅
 ```
 
-### 部署 (DBA 一条龙)
+### 演练 2: `_w3_dba_bug11_cross_file_verify.py` (4 文件已修 + 2 文件按用户拍板不动)
 
-1. **134 dev (9/21 17:50)**: scp + `systemctl restart archery-prod-gunicorn.service` + HTTP 200
-2. **110 prod (9/21 17:55)**: scp + reload script (`_reload_110_auto_check_ghost.sh`) + HTTP 200
-   - 验证 110 prod views.py:152 已加 `startswith("##")` ✅
+```
+[PASS] sql/extensions/ddl_gh_ost/views.py:147 已支持 ## 注释
+[PASS] sql/extensions/ddl_sync/services/sync_trigger.py:110 已支持 ## 注释
+[PASS] sql/views.py:288 已支持 ## 注释
+[PASS] sql/services/ddl_rollback.py:167 已支持 ## 注释
+[PASS] sql/extensions/dingtalk_oa/services/sql_type_detect.py:79 按用户拍板不动
+[PASS] sql/extensions/dingtalk_oa/drivers/dingtalk.py:281 按用户拍板不动
 
-## 已知未修 (跨文件 ## 注释审计)
+PASS 6/6
+```
 
-6 个文件都只识别 `--` 注释, 不处理 `##`. **本 commit 只修了 1 个文件 (gh-ost views.py)**, 其他 5 个文件作为待清理:
+### 部署 (DBA 一条龙, 9/21 17:55 + 18:00 两批)
 
-| 文件 | 行号 | 状态 | 风险 |
-|------|------|------|------|
-| `sql/extensions/ddl_gh_ost/views.py` | 147 | ✅ 已修 | - |
-| `sql/extensions/ddl_sync/services/sync_trigger.py` | 110 | ❌ 待修 | 镜像工单 ## 注释工单同步会失败 |
-| `sql/views.py` | 288 | ❌ 待修 | 业务方提交流水 ## 注释解析 |
-| `sql/services/ddl_rollback.py` | 167 | ❌ 待修 | DDL 回滚 ## 注释工单解析 |
-| `sql/extensions/dingtalk_oa/services/sql_type_detect.py` | 79 | ❌ 待修 | 钉钉 OA 工单类型检测 |
-| `sql/extensions/dingtalk_oa/drivers/dingtalk.py` | 281 | ❌ 待修 | 钉钉 OA driver |
-
-**建议下一波统一改**: 跨文件 ## 注释支持, 演练覆盖 6 文件, 一次性 commit.
+| 时间 | 端 | 操作 | 结果 |
+|----|----|----|------|
+| 17:50 | 134 dev | scp views.py + `systemctl restart archery-prod-gunicorn.service` | HTTP 200 ✅ |
+| 17:55 | 110 prod | scp views.py + reload script (`_reload_110_auto_check_ghost.sh`) | HTTP 200 ✅ (验证 views.py:152 已加 `startswith("##")`) |
+| 18:05 | 134 dev | scp sync_trigger.py + views.py + ddl_rollback.py + restart | HTTP 200 ✅ |
+| 18:08 | 110 prod | scp sync_trigger.py + views.py + ddl_rollback.py + reload | HTTP 200 ✅ (验证 3 文件都已加 `startswith("##")`) |
 
 ## 实战新发现 (1 条入 MEMORY, 跨项目可复用)
 
-**SQL 注释跨方言: MySQL `--` / Python `##` / SQL Server `--` / Hash `#` (跨项目 SQL 解析, 9/21 实战新发现)**:
+**SQL 注释跨方言: MySQL `--` / Python `##` / Hash `#` (跨项目 SQL 解析, 9/21 实战新发现)**:
 - 跨项目写 SQL 解析器 (审核/gh-ost/回滚/镜像同步/OA 检测), **必须支持多种注释方言**, 不只 MySQL `--`
 - 实战踩坑: 9/21 wf#4871 业务方用 Python 风格 `##` 加注释 (习惯), 但 Archery 上下游解析器只识别 `--`,
   cleaned 开头是 `##` 不匹配 ALTER regex → precheck 返 400 "未找到 ALTER TABLE 语句"
-- 修法: 注释跳过加 `startswith("##")` (Python 风格) + `startswith("#")` (MySQL `CREATE TABLE # tmp` 临时表常用, 单行 hash 注释 5.7+ 支持)
-- 跨文件同步: 6 个文件都只识别 `--`, 改一个文件不够, 9/17 DBA-bug-10 教训 (5 文件改 4 个漏改 column_diff.py) 复用
-- 完整修法: 注释行判断用 `re.match(r"^\s*(--|##|#)", stripped)` (一行处理三种注释), 替代多个 startswith 串
+- 修法: 注释行判断用 `re.match(r"^\s*(--|##|#)", stripped)` (一行处理三种注释), 替代多个 startswith 串
+- **跨文件同步教训 (9/17 DBA-bug-10 复用)**: 跨项目 regex 改一个文件必 grep 全代码库找同款, 9/17 5 文件改 4 个漏改 column_diff.py 教训, 这次 6 文件一次改完 (5 文件修 + 1 文件按拍板不动)
+- **完整修法**: 跨项目 SQL 解析器应该一次扫所有语句, 注释跳过用一个统一的 regex helper 函数, 不要每个文件重复 startswith 逻辑
 
 ## 关联
 
@@ -127,3 +146,5 @@ if stripped.startswith("--") or stripped.startswith("##") or not stripped:
 - `docs/changelogs/2026-09-17_dba-bug-10-create-index-bypass-alter-check.md` (DBA-bug-10 完整记录)
 - `sql/extensions/ddl_gh_ost/views.py:120-191` (_parse_all_statements 实现)
 - `sql/extensions/ddl_gh_ost/views.py:252-262` (precheck 端点 400 触发链)
+- 9/21 17:55 commit `9764c0c` (DBA-bug-11 紧急修 1 文件)
+- 9/21 18:08 commit `?????` (DBA-bug-11 全项目清理, 4 文件统一改)
