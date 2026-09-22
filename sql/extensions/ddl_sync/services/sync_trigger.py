@@ -255,6 +255,17 @@ def create_target_workflow(source_workflow: SqlWorkflow, pair: DdlSyncPair, tran
         is_backup=source_workflow.is_backup,
         instance=pair.target_instance,
         db_name=pair.target_db,
+        ## CUSTOM-MODIFIED: DBA-bug-13 镜像工单继承源工单 enable_gh_ost + gh_ost_mode @ 2026-09-22 @ mavis
+        ## 关联: docs/changelogs/2026-09-22_dba-bug-13-mirror-ef-loop-button.md
+        ## 根因: 镜像工单 enable_gh_ost=0 (默认值), 业务方/管理员需要再次点 "启用 gh-ost" 按钮
+        ##       才能触发 gh-ost 流程 (跟源工单已经走完的流程重复)
+        ## 业务 (9/22 wf#4877→wf#4878): 业务方源工单走完 gh-ost (task #33 success),
+        ##       DDL-Sync 触发镜像工单 wf#4878, 但 enable_gh_ost=0 → 镜像工单详情页显示"启用 gh-ost"按钮
+        ## 修法: 复制 enable_gh_ost + gh_ost_mode 字段
+        ##       配合 views.py:640-660 lazy auto-enable 逻辑 (enable_gh_ost=True + review_pass + 无 task → 自动 _enable_ghost_for_workflow)
+        ##       下次业务方打开镜像工单详情页时自动创建 DdlGhostTask, detail.html 显示进度面板, 不再显示"启用 gh-ost"按钮
+        enable_gh_ost=getattr(source_workflow, "enable_gh_ost", False),
+        gh_ost_mode=getattr(source_workflow, "gh_ost_mode", "smart") or "smart",
     )
     # OneToOne 关联 sql_content (W1-D3 §5.1 实战补, 不建会报 DoesNotExist)
     ## CUSTOM-MODIFIED: D21 镜像工单 review_content 填 placeholder (9/3 11:25 实战) @ 2026-09-03 @ mavis
