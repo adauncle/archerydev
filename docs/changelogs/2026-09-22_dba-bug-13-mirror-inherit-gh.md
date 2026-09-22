@@ -139,6 +139,56 @@ WHERE id=4878 AND status='workflow_review_pass'
 ```
 然后业务方下次打开 wf#4878 详情页就 lazy auto-enable 自动启用。
 
+---
+
+### ✅ 9/22 17:18 历史镜像工单 wf#4878 一次性数据修复 (DBA 一条龙闭环)
+
+**操作记录 (110 prod, 通过 Django shell)**:
+
+1. **UPDATE 前快照**:
+   ```
+   id=4878, status=workflow_review_pass, enable_gh_ost=0, gh_ost_mode=smart
+   ```
+2. **执行 SQL**:
+   ```sql
+   UPDATE sql_workflow
+   SET enable_gh_ost=1, gh_ost_mode='smart'
+   WHERE id=4878 AND enable_gh_ost=0 AND status='workflow_review_pass';
+   COMMIT;
+   ```
+3. **UPDATE 后快照**:
+   ```
+   id=4878, status=workflow_review_pass, enable_gh_ost=1, gh_ost_mode=smart
+   ```
+
+**lazy auto-enable 触发验证** (Django shell 模拟业务方打开详情页):
+```python
+from sql.models import SqlWorkflow
+from sql.extensions.ddl_gh_ost.models import DdlGhostTask
+from sql.extensions.ddl_gh_ost.views import _enable_ghost_for_workflow
+
+wf = SqlWorkflow.objects.get(id=4878)
+if wf.enable_gh_ost and wf.status == 'workflow_review_pass' \
+   and not DdlGhostTask.objects.filter(workflow_id=4878).exists():
+    result = _enable_ghost_for_workflow(wf, created_by="dba_lazy_auto_enable_fix")
+```
+
+**结果**:
+- `ok=True, passed=True`
+- `summary="smart 模式分流: 0 条大表 gh-ost + 1 条小表原生 (共 1 条 ALTER)"`
+- `gh_ost_mode='smart'`
+- `small_alters` 列表 1 条: `hly_lockwait_monitor.test ALTER (add column test5 varchar(128))`
+- `tasks=[]`, `task_id=None` (空表走原生 ALTER, 跟 wf#4873 同形态, 不创建 DdlGhostTask)
+- DdlGhostTask count 仍为 0 (符合预期)
+
+**业务方下次打开 wf#4878 详情页预期 UI**:
+- 触发 lazy auto-enable: 已完成 ✅
+- `can_enable_ghost` 守卫 (DBA-bug-13 第一波 views.py:691-702 `and not has_native_alter`) → False
+- 渲染 `{% elif has_native_alter %}` 分支 (DBA-bug-13 第一波 detail.html:396-414) → 显示"已加入小表原生 ALTER 队列"绿色信息块
+- **不再显示"启用 gh-ost"按钮** → 彻底闭环, 不会再循环点
+
+**wf#4878 实战状态: 闭环 ✅**
+
 ## 实战新发现 (1 条入 MEMORY, 跨项目可复用)
 
 **DDL-Sync 镜像工单应继承源工单 enable_gh_ost + gh_ost_mode (跨项目 DDL-Sync 设计, 9/22 实战新发现)**:
