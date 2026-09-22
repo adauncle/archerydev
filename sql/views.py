@@ -562,6 +562,13 @@ def detail(request, workflow_id):
     ghost_task = None
     has_active_ghost_task = False  # active task 在跑时禁用原路径"立即执行"按钮
     ghost_task_is_terminal = False  # 终态历史 (UI 区分 active vs terminal)
+    ## CUSTOM-MODIFIED: DBA-bug-13 加 has_native_alter 守卫 + 已加入小表原生 ALTER 队列 状态 @ 2026-09-22 @ mavis
+    ## 关联: docs/changelogs/2026-09-22_dba-bug-13-mirror-ef-loop-button.md
+    ## 根因 (9/22 wf#4873): enable 后端判 smart 模式 + size_info 查到的表 < 10w 行 → 加入 small_alters
+    ##       但**不创建 DdlGhostTask** → 返 ok=True 但 0 task
+    ##       前端 location.reload() 后 has_ghost_task=False → 又显示"启用 gh-ost"按钮 → 业务方循环点
+    ## 修法: can_enable_ghost 加 `not has_native_alter` 守卫 + UI 显示"已加入小表原生 ALTER 队列"
+    has_native_alter = False
 
     # CUSTOM: v0.3.0-beta 大表 DDL 防呆 —— 解析首条 ALTER 查表大小
     ## 业务: 防止 RD 漏勾 gh-ost 时 DBA 走原路径"立即执行" 锁表
@@ -688,6 +695,11 @@ def detail(request, workflow_id):
         ## 业务背景: DBA 是兜底角色, RD 漏勾 gh-ost 时 DBA 必须能启用, 不能让流程卡住
         ## 134 dev 上 DBA user 没绑 "DBA"/"DBA组长" auth_group, 改用 has_perm 更准
         ## @ 2026-08-11 @ mavis
+        ## CUSTOM-MODIFIED: DBA-bug-13 can_enable_ghost 加 not has_native_alter 守卫 @ 2026-09-22 @ mavis
+        ## 业务: 已加入 small_alters (smart 模式小表原生) 的工单, 不能再点"启用 gh-ost"按钮
+        ##       否则 enable 端点会再次加入 small_alters (重复, 浪费资源)
+        ##       + UI 又显示按钮 → 业务方循环点
+        has_native_alter = bool(workflow_detail.native_alter_results)
         can_enable_ghost = (
             (user.is_superuser
              or user.has_perm("sql.sql_review")  # DBA 兜底: 有审阅 perm 就能启用
@@ -695,6 +707,7 @@ def detail(request, workflow_id):
              or is_submitter)
             and workflow_detail.status in ("workflow_review_pass", "workflow_timingtask")
             and not has_ghost_task
+            and not has_native_alter
         )
 
     # 自动审批不通过的不需要获取下列信息
@@ -820,6 +833,9 @@ def detail(request, workflow_id):
         "can_enable_ghost": can_enable_ghost,
         "ghost_task": ghost_task,
         "ghost_task_is_terminal": ghost_task_is_terminal,
+        ## CUSTOM-MODIFIED: DBA-bug-13 加 has_native_alter 上下文 @ 2026-09-22 @ mavis
+        ## 关联: docs/changelogs/2026-09-22_dba-bug-13-mirror-ef-loop-button.md
+        "has_native_alter": has_native_alter,
         ## CUSTOM-MODIFIED: DBA-bug-9 多 task 列表字段 @ 2026-09-16 @ mavis
         ## 关联: docs/changelogs/2026-09-16_dba-bug-9-ghost-multi-statement.md
         "ghost_tasks": ghost_tasks,

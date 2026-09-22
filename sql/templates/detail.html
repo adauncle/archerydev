@@ -393,6 +393,23 @@
             <i class="fa fa-rocket"></i> 启用 gh-ost
         </button>
     </div>
+    {# CUSTOM-MODIFIED: DBA-bug-13 显示"已加入小表原生 ALTER 队列"状态 @ 2026-09-22 @ mavis #}
+    {# 关联: docs/changelogs/2026-09-22_dba-bug-13-mirror-ef-loop-button.md #}
+    {# 根因: enable 端点判小表 → 加入 small_alters (不创建 DdlGhostTask) → #}
+    {#       前端又显示"启用 gh-ost"按钮 → 业务方循环点 #}
+    {# 修法: UI 显示"已加入小表原生 ALTER 队列", 不再显示启用按钮 (避免循环) #}
+    {% elif has_native_alter %}
+    <div class="alert alert-success" id="gh-ost-native-alter-block" style="display:flex;align-items:center;gap:12px;">
+        <i class="fa fa-check-circle" style="font-size:18px;color:#67C23A;"></i>
+        <div style="flex:1;">
+            <strong>已加入小表原生 ALTER 队列</strong> · smart 模式小表不锁表原生执行
+            <br><small style="color:#909399;">
+                工单含 <strong>{{ workflow_detail.gh_ost_mode|default:"smart" }}</strong> 模式分流后的小表 ALTER（行数 &lt; 10w 行 或 大小 &lt; 100MB），
+                提交后会自动跑原生 ALTER（不锁表, 不走 GoInception）。
+                无 gh-ost 子进程, 无进度面板。
+            </small>
+        </div>
+    </div>
     <script>
     function getCookie(name) {
         var cookieValue = null;
@@ -449,7 +466,21 @@
                     btn.innerHTML = '<i class="fa fa-rocket"></i> 启用 gh-ost';
                     return;
                 }
-                // 成功，刷新页面显示进度面板
+                // CUSTOM-MODIFIED: DBA-bug-13 enable 后显示 summary 让业务方知道发生了什么 @ 2026-09-22 @ mavis
+                // 关联: docs/changelogs/2026-09-22_dba-bug-13-mirror-ef-loop-button.md
+                // 业务: smart 模式下小表 ALTER 加入 small_alters (不创建 DdlGhostTask),
+                //       业务方/管理员必须看到 summary 知道"为什么要生小表原生 ALTER" 而不是 gh-ost
+                var msg = '启用成功';
+                if (j.summary) msg += '\n\n' + j.summary;
+                if (j.tasks && j.tasks.length > 0) {
+                    msg += '\n\n已创建 ' + j.tasks.length + ' 个 gh-ost task, 刷新查看进度面板';
+                } else if (j.gh_ost_mode === 'smart') {
+                    msg += '\n\n(smart 模式小表已加入原生 ALTER 队列, 提交后自动执行)';
+                } else if (j.gh_ost_mode === 'all_native') {
+                    msg += '\n\n(all_native 模式全部走原生 ALTER)';
+                }
+                alert(msg);
+                // 成功，刷新页面 (UI 会根据 has_ghost_task / has_native_alter 显示对应状态)
                 location.reload();
             })
             .catch(function(err) {
@@ -1075,6 +1106,19 @@
                     btn.innerHTML = '<i class="fa fa-rocket"></i> 启用 gh-ost（DBA 兜底）';
                     return;
                 }
+                // CUSTOM-MODIFIED: DBA-bug-13 enable 后显示 summary 让 DBA 知道发生了什么 @ 2026-09-22 @ mavis
+                // 关联: docs/changelogs/2026-09-22_dba-bug-13-mirror-ef-loop-button.md
+                var msg = '启用成功';
+                if (j.summary) msg += '\n\n' + j.summary;
+                if (j.tasks && j.tasks.length > 0) {
+                    msg += '\n\n已创建 ' + j.tasks.length + ' 个 gh-ost task, 刷新查看进度面板';
+                } else if (j.gh_ost_mode === 'smart') {
+                    msg += '\n\n(smart 模式小表已加入原生 ALTER 队列, 提交后自动执行)';
+                } else if (j.gh_ost_mode === 'all_native') {
+                    msg += '\n\n(all_native 模式全部走原生 ALTER)';
+                }
+                alert(msg);
+                // 成功，刷新页面 (UI 会根据 has_ghost_task / has_native_alter 显示对应状态)
                 location.reload();
             })
             .catch(function(err) {
