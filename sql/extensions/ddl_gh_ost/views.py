@@ -534,8 +534,15 @@ def _trigger_native_alters(workflow):
     - 失败立即停止后续 (fail-fast)
     - 完成后保存 wf.native_alter_results
     """
+    ## CUSTOM-MODIFIED: DBA-bug-12 删除死 import MySQLEngine @ 2026-09-22 @ mavis
+    ## 关联: docs/changelogs/2026-09-22_dba-bug-12-start-dead-import.md
+    ## 根因 (9/21 wf#4872): views.py:538 引用 `from sql.engines.mysql import MySQLEngine`
+    ##       但 sql/engines/mysql.py 实际 class 是 `MysqlEngine` (小写 ysql) → ImportError
+    ##       而且 MySQLEngine 在函数体内根本没用 (函数用 get_engine(instance=instance))
+    ## 业务: 9/21 19:12 wf#4872 启动 gh-ost 报 500 Internal Server Error
+    ##       POST /gh_ost/start/4872/ → ImportError
+    ## 修法: 删除死 import (9/22 08:56 阿达叔叔拍板方案 A)
     from sql.engines import get_engine
-    from sql.engines.mysql import MySQLEngine
 
     native_results = workflow.native_alter_results or []
     if not native_results:
