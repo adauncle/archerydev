@@ -1874,24 +1874,13 @@
             }] : []);
             var isMultiTable = tables.length > 1;
 
-            // 8/26 大表 DDL alert (跟 detail.html big-table-alert 同样逻辑)
-            var bigTableAlertHtml = "";
-            if (data.big_table_alert) {
-                var bta = data.big_table_alert;
-                bigTableAlertHtml =
-                    '<div class="alert" ' +
-                         'style="background:rgba(176, 99, 103, 0.06);border:1px solid #b06367;border-left:4px solid #b06367;' +
-                                  'padding:14px 18px;margin-bottom:14px;border-radius:4px;">' +
-                        '<div style="display:flex;align-items:flex-start;gap:14px;">' +
-                            '<i class="fa fa-exclamation-triangle" style="font-size:22px;color:#b06367;flex-shrink:0;margin-top:2px;"></i>' +
-                            '<div style="flex:1;">' +
-                                '<strong style="font-size:15px;">⚠️ 检测到 <code>' + escapeHtml(bta.table_name) + '</code> 是大表 DDL</strong>' +
-                                '<div style="margin-top:6px;color:#5a3a3a;font-size:13px;">行数 <strong>' + (bta.rows || 0) + '</strong> / 数据大小 <strong>' + bta.size_mb + ' MB</strong>（阈值: ' + bta.row_threshold + ' 行 或 ' + bta.size_threshold_mb + ' MB）</div>' +
-                                '<div style="margin-top:8px;color:#5a3a3a;font-size:13px;line-height:1.55;">大表 DDL 走原路径"立即执行"会<strong>锁表</strong>（业务写入阻塞几秒到几分钟）。<br/><strong>强烈建议启用 gh-ost 无锁 DDL</strong>——RD 漏勾时，DBA 可在下方兜底启用。</div>' +
-                            '</div>' +
-                        '</div>' +
-                    '</div>';
-            }
+            // 9/23 DBA-bug-14 删除 JS 拼装的大表 alert (跟后端模板 line 557-614 重复)
+            // 业务: 9/23 13:50 阿达叔叔反馈 wf#4885 大表工单详情页显示两个相同 alert 块 (UX 重复)
+            // 根因: 后端模板 line 557-614 `{% if big_table_alert %}` 含字段 diff 按钮 + DBA 兜底启用 gh-ost 按钮
+            //       + 立即执行双层 confirm, 已稳定渲染; 8/26 JS 拼 bigTableAlertHtml 只是补文案, 重复且没按钮 (纯噪音)
+            // 修法: 删除 JS 拼 bigTableAlertHtml 整段 (line 1878-1894), var html 直接拼字段 diff
+            // 保留: 后端模板 line 557-614 块 (字段 diff 按钮 + DBA 兜底启用 gh-ost + 立即执行双层 confirm 全在这)
+            // 实战新发现: "页面有两块静态 + JS 拼同一 UI 内容时, 优先保留功能完整的后端模板块, 删 JS 拼的纯文案块"
 
             // 风险汇总
             var summaryBg = "#f0f9f4";
@@ -2005,7 +1994,7 @@
                 ? ('共 ' + tables.length + ' 张表, 累计 ' + high + ' 高 / ' + mid + ' 中 / ' + low + ' 低')
                 : (data.summary || "");
 
-            var html = bigTableAlertHtml +
+            var html =
                        '<div style="background:white;border:1px solid #e9e3d6;border-radius:6px;padding:14px 18px;margin-top:8px;">' +
                        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
                          '<strong style="font-size:15px;color:#14171e;">' + headerTitle + '</strong>' +

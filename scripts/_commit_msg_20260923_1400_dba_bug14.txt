@@ -1,0 +1,19 @@
+fix(detail): 大表 DDL alert 重复块修复 (删除 8/9 JS 拼装 bigTableAlertHtml)
+
+- 9/23 13:50 阿达叔叔反馈 wf#4885 详情页显示两个相同大表 alert 块 (UX 重复)
+- 根因: 后端模板 detail.html:557-614 `{% if big_table_alert %}` 已稳定渲染
+  (含字段 diff 按钮 + DBA 兜底启用 gh-ost 按钮 + 立即执行双层 confirm),
+  8/26 又加 JS bigTableAlertHtml 拼装到 #column-diff-result 容器,
+  文案跟后端模板块一样但没按钮 → UX 重复 (纯文案噪音)
+- 修法: 删除 detail.html:1877-1894 JS 拼 bigTableAlertHtml 整段 (18 行)
+  + 改 var html = bigTableAlertHtml + ... → var html = ...
+- 保留: 后端模板 line 557-614 块不动 (字段 diff 按钮 + DBA 兜底启用 gh-ost +
+  立即执行双层 confirm 全在这, 不能删)
+- 字段 diff inline 区域 (#column-diff-result) 仍自动 AJAX 加载字段 diff,
+  只渲染字段 diff 数据 (不再带大表 alert 文案)
+- 演练: scripts/_w3_dba_bug14_verify.py 13/13 PASS
+- 134 dev + 110 prod 部署 (HTTP 200, grep 验证)
+
+CHANGELOG: docs/changelogs/2026-09-23_dba-bug-14-detail-big-table-double-alert.md
+关联: 8/26 detail 页字段 diff inline + 9/11 DBA-bug-1 大表 alert 移到审核按钮上面
+       + 9/22 DBA-bug-13 第一波 can_enable_ghost 守卫
