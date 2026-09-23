@@ -1,0 +1,21 @@
+fix(detail): DBA-bug-14 hotfix 注释字面 Django 标签导致 500
+
+- 9/23 14:22 阿达叔叔反馈 110 prod wf#4885 详情页 500
+  TemplateSyntaxError: Invalid block tag on line 2050: 'endblock'
+- 根因: DBA-bug-14 (commit 509e489) 改 detail.html 时, 注释里写了
+  `{% if big_table_alert %}` 字面 Django 标签, 被 parser 当真标签 parse
+  -> 多 1 个 if, 少 1 个 endif -> {% endblock %} 找不到 endif 闭合
+- Django parser 不识别反引号 `, 只看 {% / %}, 反引号不能 escape
+- 修法 (1 文件 2 处, detail.html:1877-1885):
+  把注释里的 {% if big_table_alert %} 字面 Django 标签改写成
+  "big_table_alert 判断块" 这种不带括号块的描述
+- 演练: if=49 endif=49 平衡 + 134 dev 真实 GET wf#4885 详情页 <!DOCTYPE html> ✅
+- 134 dev + 110 prod 部署 (HTTP 200, HUP reload)
+
+实战新发现 (跨项目可复用):
+  Django 模板 // JS 注释不是 Django 注释, parser 不会跳过
+  写注释时绝对不能带 {% 或 %}, 反引号不能 escape
+  Django 演练要用项目自己配置 (mock 缺 format_tags 等也会报错, 不一定是根因)
+
+CHANGELOG: docs/changelogs/2026-09-23_dba-bug-14-hotfix-comment-tag-mismatch.md
+关联: commit 509e489 (DBA-bug-14 主修复)
