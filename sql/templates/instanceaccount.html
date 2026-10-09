@@ -1310,8 +1310,13 @@
                 },
                 onLoadError: onLoadErrorCallback,
                 onSearch: function (e) {
-                    //传搜索参数给服务器
-                    queryParams(e)
+                    // CUSTOM-MODIFIED: 10/9 删 onSearch 里对 queryParams(e) 的调用 @ 2026-10-09 @ mavis
+                    // 关联: docs/changelogs/2026-10-09_dba-bug-16-instanceaccount-onsearch-referenceerror.md
+                    // 业务: 10/9 阿达叔叔在 110 prod /instanceaccount/ 报 ReferenceError: queryParams is not defined
+                    //       触发: 用户在搜索框输入字符, bootstrap-table 触发 onSearch 钩子
+                    // 根因: 上游 1.14.0 误把 queryParams(e) 当函数调, 但 queryParams 只是 bootstrap-table 的配置项属性 (function), 不是全局函数
+                    // 修法: 删 queryParams(e) 调用, 因为 bootstrap-table 内部在 onSearch 时已自动用 queryParams 重新 fetch
+                    //       onSearch 钩子本意是 "用户搜索时触发额外动作", 删空等于回到 1.14.0 改这个钩子之前的状态
                 }
             });
 
