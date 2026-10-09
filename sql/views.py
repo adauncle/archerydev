@@ -257,6 +257,61 @@ def sqlexport_download(request, export_id):
     )
 
 
+## CUSTOM-MODIFIED: v0-delta 修列表页 JS 拉错 url 限制 @ 2026-10-09 @ mavis
+## 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow-delta.md
+## 业务: v0-gamma 后列表页 JS 仍然拉 /sqlworkflow_list/ (查 SqlWorkflow), 业务方看不到 SqlExportWorkflow
+##       阿达叔叔 134 dev 验证截图显示"没有找到匹配的记录" (实际数据在 SqlExportWorkflow 表)
+## 修法: 新增 /sqlexport_list/ API 端点 (查 SqlExportWorkflow), 模板改用新端点
+@permission_required("sql.menu_sqlexportworkflow", raise_exception=True)
+def sqlexport_list(request):
+    """数据导出工单列表 JSON API (供列表页 JS 拉数据).
+    入参 (POST form): limit / offset / search / sort / order
+    返回: {total: N, rows: [{id, title, user_name, instance_name, db_name, status, status_display, create_time, format, file_size, row_count, ...}]}
+    """
+    import json
+    user = request.user
+    # 过滤
+    if user.is_superuser or user.has_perm("sql.audit_user") or user.has_perm("sql.sql_review"):
+        queryset = SqlExportWorkflow.objects.all()
+    else:
+        queryset = SqlExportWorkflow.objects.filter(user_name=user.username)
+    total = queryset.count()
+
+    # 分页
+    try:
+        limit = int(request.POST.get("limit", 20))
+        offset = int(request.POST.get("offset", 0))
+    except (TypeError, ValueError):
+        limit, offset = 20, 0
+    # 搜索
+    search = (request.POST.get("search") or "").strip()
+    if search:
+        queryset = queryset.filter(title__icontains=search)
+    # 排序 (默认 create_time desc)
+    sort = request.POST.get("sort") or "-create_time"
+    if sort.lstrip("-") in ("id", "title", "status", "create_time", "user_name"):
+        queryset = queryset.order_by(sort)
+
+    rows_data = list(queryset[offset:offset + limit].values(
+        "id", "title", "user_name", "user_display", "instance_id",
+        "db_name", "export_format", "status", "create_time",
+        "approved_at", "finished_at", "file_size", "row_count", "file_path",
+        "error_msg",
+    ))
+    # 补 instance_name + status_display
+    instance_ids = set(r["instance_id"] for r in rows_data)
+    inst_map = {i.id: i.instance_name for i in Instance.objects.filter(pk__in=instance_ids)}
+    STATUS_DISPLAY = dict(SqlExportWorkflow.EXPORT_STATUS_CHOICES)
+    for r in rows_data:
+        r["instance_name"] = inst_map.get(r["instance_id"], "")
+        r["status_display"] = STATUS_DISPLAY.get(r["status"], "未知")
+        # 时间 ISO 格式
+        r["create_time"] = r["create_time"].strftime("%Y-%m-%d %H:%M:%S") if r["create_time"] else ""
+        r["approved_at"] = r["approved_at"].strftime("%Y-%m-%d %H:%M:%S") if r["approved_at"] else ""
+        r["finished_at"] = r["finished_at"].strftime("%Y-%m-%d %H:%M:%S") if r["finished_at"] else ""
+    return JsonResponse({"total": total, "rows": rows_data})
+
+
 @permission_required("sql.sql_submit", raise_exception=True)
 def submit_sql(request):
     """提交SQL的页面"""

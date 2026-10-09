@@ -184,4 +184,7 @@ urlpatterns = [
     ## 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
     path("sqlexportworkflow/<int:export_id>/", views.sqlexportworkflow_detail, name="sqlexport_detail"),
     path("sqlexportworkflow/<int:export_id>/download/", views.sqlexport_download, name="sqlexport_download"),
+    ## CUSTOM-MODIFIED: v0-delta 列表页 API 端点 @ 2026-10-09 @ mavis
+    ## 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow-delta.md
+    path("sqlexport_list/", views.sqlexport_list, name="sqlexport_list"),
 ]
