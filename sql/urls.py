@@ -180,4 +180,8 @@ urlpatterns = [
     ## CUSTOM-MODIFIED: v0 数据导出工单 (DBA-bug 17) 工单创建端点 @ 2026-10-09 @ mavis
     ## 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
     path("sqlexportsubmit_create/", views.sqlexportsubmit_create),
+    ## CUSTOM-MODIFIED: v0 数据导出工单详情 + 下载端点 @ 2026-10-09 @ mavis
+    ## 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
+    path("sqlexportworkflow/<int:export_id>/", views.sqlexportworkflow_detail, name="sqlexport_detail"),
+    path("sqlexportworkflow/<int:export_id>/download/", views.sqlexport_download, name="sqlexport_download"),
 ]

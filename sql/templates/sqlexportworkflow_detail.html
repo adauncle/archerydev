@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{# CUSTOM-MODIFIED: v0 数据导出工单 (DBA-bug 17) 详情页 @ 2026-10-09 @ mavis
+   关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
+   显示工单名/状态/SQL/审批人/下载链接, 走 SqlExportWorkflow + WorkflowAudit #}
+
+{% block content %}
+<div class="container-fluid" style="margin-top: 10px;">
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">
+                数据导出工单 #{{ export.id }} - {{ export.title }}
+                <span class="label label-{% if export.status == 5 %}success{% elif export.status == 4 %}info{% elif export.status == 6 %}danger{% elif export.status == 3 %}warning{% else %}default{% endif %}" style="margin-left: 10px;">
+                    {% for v, label in EXPORT_STATUS_CHOICES %}{% if v == export.status %}{{ label }}{% endif %}{% endfor %}
+                </span>
+            </h3>
+        </div>
+        <div class="panel-body">
+            <table class="table table-bordered">
+                <tr>
+                    <th style="width: 200px;">工单 ID</th>
+                    <td>{{ export.id }}</td>
+                </tr>
+                <tr>
+                    <th>工单名称</th>
+                    <td>{{ export.title }}</td>
+                </tr>
+                <tr>
+                    <th>实例</th>
+                    <td>{{ export.instance.instance_name }}</td>
+                </tr>
+                <tr>
+                    <th>数据库</th>
+                    <td>{{ export.db_name }}</td>
+                </tr>
+                <tr>
+                    <th>导出格式</th>
+                    <td>{{ export.export_format|upper }} (含 zip 压缩包)</td>
+                </tr>
+                <tr>
+                    <th>申请人</th>
+                    <td>{{ export.user_display|default:export.user_name }}</td>
+                </tr>
+                <tr>
+                    <th>审批人</th>
+                    <td>{{ export.audit_user|default:"未审批" }}</td>
+                </tr>
+                <tr>
+                    <th>审批组</th>
+                    <td>{{ export.audit_auth_groups|default:"auto_pass (无需审批)" }}</td>
+                </tr>
+                <tr>
+                    <th>创建时间</th>
+                    <td>{{ export.create_time }}</td>
+                </tr>
+                <tr>
+                    <th>审批通过时间</th>
+                    <td>{{ export.approved_at|default:"-" }}</td>
+                </tr>
+                <tr>
+                    <th>完成时间</th>
+                    <td>{{ export.finished_at|default:"-" }}</td>
+                </tr>
+                {% if export.file_size %}
+                <tr>
+                    <th>文件大小</th>
+                    <td>{{ export.file_size }} bytes</td>
+                </tr>
+                <tr>
+                    <th>导出行数</th>
+                    <td>{{ export.row_count }}</td>
+                </tr>
+                <tr>
+                    <th>文件路径</th>
+                    <td><code>{{ export.file_path }}</code></td>
+                </tr>
+                {% endif %}
+                {% if export.error_msg %}
+                <tr>
+                    <th>错误信息</th>
+                    <td style="color: red;">{{ export.error_msg }}</td>
+                </tr>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">导出 SQL</h3>
+        </div>
+        <div class="panel-body">
+            <pre style="background: #f5f5f5; padding: 10px; max-height: 400px; overflow: auto;">{{ export.sql_content }}</pre>
+        </div>
+    </div>
+
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">操作</h3>
+        </div>
+        <div class="panel-body">
+            {% if export.status == 5 and export.file_path %}
+            <a href="{% url 'sql:sqlexport_download' export.id %}" class="btn btn-primary">
+                <i class="fa fa-download"></i> 下载导出文件 ({{ export.file_size }} bytes)
+            </a>
+            {% else %}
+            <button class="btn btn-default" disabled>暂无可下载文件 (状态: {% for v, label in EXPORT_STATUS_CHOICES %}{% if v == export.status %}{{ label }}{% endif %}{% endfor %})</button>
+            {% endif %}
+            <a href="/sqlexportworkflow/" class="btn btn-default">返回列表</a>
+        </div>
+    </div>
+
+    {% if audit %}
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">审批信息</h3>
+        </div>
+        <div class="panel-body">
+            <table class="table table-bordered">
+                <tr>
+                    <th style="width: 200px;">审批 ID</th>
+                    <td>{{ audit.audit_id }}</td>
+                </tr>
+                <tr>
+                    <th>审批状态</th>
+                    <td>{{ audit.get_current_status_display|default:audit.current_status }}</td>
+                </tr>
+                <tr>
+                    <th>当前审批组</th>
+                    <td>{{ audit.current_audit }}</td>
+                </tr>
+                <tr>
+                    <th>下级审批组</th>
+                    <td>{{ audit.next_audit|default:"-" }}</td>
+                </tr>
+                <tr>
+                    <th>审批组列表</th>
+                    <td>{{ audit.audit_auth_groups|default:"auto_pass" }}</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

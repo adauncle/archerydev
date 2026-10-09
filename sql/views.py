@@ -166,50 +166,94 @@ def sqlworkflow(request):
     )
 
 
+## CUSTOM-MODIFIED: v0 数据导出工单 (DBA-bug 17) 列表页改后端接 SqlExportWorkflow @ 2026-10-09 @ mavis
+## 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
+## 业务: 10/9 拍板 v0 数据导出工单, 列表页需要查 SqlExportWorkflow 表 (新建, 不再查 SqlWorkflow)
+## 修法: 改 sqlexportworkflow view 查 SqlExportWorkflow, 模板字段映射 (engineer -> user_name / status -> 自定义 0-6 状态机)
+## 限制: SqlExportWorkflow 没有 group_id 字段, 资源组粒度权限简化为"非 superuser 只看自己"
 def sqlexportworkflow(request):
-    """SQL数据导出工单列表页面"""
+    """SQL数据导出工单列表页面 (v0 重写: 查 SqlExportWorkflow)"""
     user = request.user
-    # 获取所有配置项
     storage_type = SysConfig().get("storage_type")
-    # 离线下载权限判断
     can_offline_download = user.is_superuser or user.has_perm("sql.offline_download")
-    # 过滤筛选项的数据
-    filter_dict = dict()
-    # 管理员，可查看所有工单
-    if user.is_superuser or user.has_perm("sql.audit_user"):
-        pass
-    # 非管理员，拥有审核权限、资源组粒度执行权限的，可以查看组内所有工单
-    elif user.has_perm("sql.sql_review") or user.has_perm(
-        "sql.sql_execute_for_resource_group"
-    ):
-        # 先获取用户所在资源组列表
-        group_list = user_groups(user)
-        group_ids = [group.group_id for group in group_list]
-        filter_dict["group_id__in"] = group_ids
-    # 其他人只能查看自己提交的工单
+
+    # 过滤: 业务方只看到自己, 审批人/superuser 看全部
+    if user.is_superuser or user.has_perm("sql.audit_user") or user.has_perm("sql.sql_review"):
+        export_list = SqlExportWorkflow.objects.all().order_by("-create_time")[:200]
     else:
-        filter_dict["engineer"] = user.username
-    instance_id = (
-        SqlWorkflow.objects.filter(**filter_dict).values("instance_id").distinct()
-    )
-    instance = Instance.objects.filter(pk__in=instance_id).order_by(
-        Convert("instance_name", "gbk").asc()
-    )
-    resource_group_id = (
-        SqlWorkflow.objects.filter(**filter_dict).values("group_id").distinct()
-    )
-    resource_group = ResourceGroup.objects.filter(group_id__in=resource_group_id)
+        export_list = SqlExportWorkflow.objects.filter(user_name=user.username).order_by("-create_time")[:200]
+
+    instance_ids = set(e.instance_id for e in export_list)
+    # 模板里 for ins in instance 仍需要, 用 instance_map.values() 兼容
+    instance_map = {i.id: i for i in Instance.objects.filter(pk__in=instance_ids)}
+    instance_list = list(instance_map.values())
 
     return render(
         request,
         "sqlexportworkflow.html",
         {
             "status_list": SQL_WORKFLOW_CHOICES,
-            "instance": instance,
-            "resource_group": resource_group,
+            "instance": instance_list,  # 兼容老模板
+            "export_list": export_list,  # 新加字段
+            "resource_group": [],  # 兼容老模板 (空)
             "storage_type": storage_type,
             "can_offline_download": can_offline_download,
+            "EXPORT_STATUS_CHOICES": SqlExportWorkflow.EXPORT_STATUS_CHOICES,
         },
+    )
+
+
+## CUSTOM-MODIFIED: v0 数据导出工单详情页 + 文件下载 @ 2026-10-09 @ mavis
+@permission_required("sql.sqlexport_submit", raise_exception=True)
+def sqlexportworkflow_detail(request, export_id):
+    """数据导出工单详情页 (v0 新增)."""
+    from sql.models import WorkflowAudit
+    user = request.user
+    try:
+        export = SqlExportWorkflow.objects.get(id=export_id)
+    except SqlExportWorkflow.DoesNotExist:
+        return render(request, "error.html", {"msg": f"工单 {export_id} 不存在"}, status=404)
+
+    # 权限: 业务方/审批人/superuser 都能看
+    if not (user.is_superuser or user.has_perm("sql.audit_user")
+            or user.has_perm("sql.sql_review") or export.user_name == user.username):
+        return render(request, "error.html", {"msg": "无权查看此工单"}, status=403)
+
+    # 找对应 WorkflowAudit
+    audit = WorkflowAudit.objects.filter(
+        workflow_id=export.id,
+        workflow_type=WorkflowType.SQL_EXPORT,
+    ).first()
+
+    return render(request, "sqlexportworkflow_detail.html", {
+        "export": export,
+        "audit": audit,
+        "EXPORT_STATUS_CHOICES": SqlExportWorkflow.EXPORT_STATUS_CHOICES,
+    })
+
+
+@permission_required("sql.sqlexport_submit", raise_exception=True)
+def sqlexport_download(request, export_id):
+    """下载导出文件 (v0 新增). 仅申请人/superuser/审批人可下载."""
+    from django.http import FileResponse, Http404
+    import os
+    user = request.user
+    try:
+        export = SqlExportWorkflow.objects.get(id=export_id)
+    except SqlExportWorkflow.DoesNotExist:
+        raise Http404(f"工单 {export_id} 不存在")
+
+    if not (user.is_superuser or user.has_perm("sql.audit_user")
+            or user.has_perm("sql.sql_review") or export.user_name == user.username):
+        return render(request, "error.html", {"msg": "无权下载"}, status=403)
+
+    if not export.file_path or not os.path.exists(export.file_path):
+        return render(request, "error.html", {"msg": "文件不存在或导出失败"}, status=404)
+
+    return FileResponse(
+        open(export.file_path, "rb"),
+        as_attachment=True,
+        filename=os.path.basename(export.file_path),
     )
 
 
