@@ -382,6 +382,34 @@ class AuditWorkflow(views.APIView):
             else:
                 auditor.workflow.state = False
             auditor.workflow.save(update_fields=["status", "state"])
+        ## CUSTOM-MODIFIED: v0 数据导出工单 (DBA-bug 17) 审批 callback @ 2026-10-09 @ mavis
+        ## 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
+        ## 业务: 审批通过 -> 异步跑 SQL 导出 CSV/XLSX -> 邮件/钉钉通知交付
+        ## 修法: 通过 django_q.tasks.async_task 入队, 后台 do_sql_export 跑 SQL
+        elif auditor.workflow_type == WorkflowType.SQL_EXPORT:
+            from sql.models import SqlExportWorkflow
+            from django.utils import timezone
+            export = SqlExportWorkflow.objects.get(id=auditor.audit.workflow_id)
+            if auditor.audit.current_status == WorkflowStatus.PASSED:
+                # 改 SqlExportWorkflow 状态 + 记录审批人 + 审批时间
+                export.status = 4  # 导出中
+                export.audit_user = serializer.data["engineer"]
+                export.approved_at = timezone.now()
+                export.save(update_fields=["status", "audit_user", "approved_at", "sys_time"])
+                # 入异步任务
+                async_task(
+                    "sql.utils.sql_export.do_sql_export",
+                    export_id=export.id,
+                    timeout=600,
+                    task_name=f"sqlexport-{export.id}",
+                )
+            elif auditor.audit.current_status in [
+                WorkflowStatus.ABORTED,
+                WorkflowStatus.REJECTED,
+            ]:
+                export.status = 3  # 驳回
+                export.audit_user = serializer.data["engineer"]
+                export.save(update_fields=["status", "audit_user", "sys_time"])
 
         # 发消息
         is_notified = (

@@ -1484,6 +1484,28 @@ def sqlexportsubmit_create(request):
     except Exception as e:
         return JsonResponse({"status": 1, "msg": f"工单创建失败: {e}"})
 
+    # 6. v0-beta: auto_pass 工单 (audit_auth_groups="") 立刻入 async_task
+    ## CUSTOM-MODIFIED: v0-beta auto_pass 异步任务触发 @ 2026-10-09 @ mavis
+    ## 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
+    ## 业务: 10/9 v0 拍板 auto_pass 工单 (无审批组) 提交后立刻跑 SQL 导出
+    ##       真实审批流 (audit_auth_groups 非空) 由 api_workflow.py 审批 callback 触发
+    if not audit_group_ids:
+        # auto_pass 路径: 立刻改 status=2 (审批通过) + 入 async_task
+        from django.utils import timezone
+        from django_q.tasks import async_task as _async_task
+        export.status = 2  # 审批通过
+        export.audit_user = "auto_pass"
+        export.approved_at = timezone.now()
+        export.save(update_fields=["status", "audit_user", "approved_at", "sys_time"])
+        audit.current_status = WorkflowStatus.PASSED  # 1
+        audit.save(update_fields=["current_status", "sys_time"])
+        _async_task(
+            "sql.utils.sql_export.do_sql_export",
+            export_id=export.id,
+            timeout=600,
+            task_name=f"sqlexport-{export.id}",
+        )
+
     return JsonResponse({
         "status": 0,
         "msg": "ok",
