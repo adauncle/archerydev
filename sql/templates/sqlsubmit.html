@@ -98,6 +98,24 @@
                                     </span>
                                 </label>
                             </div>
+                            <!-- CUSTOM-MODIFIED: 10/8 纯非 ALTER 工单禁用 gh-ost checkbox + inline 警告
+                                 关联: docs/changelogs/2026-10-08-dba-bug-pure-non-alter-block-gh-ost.md
+                                 业务: 10/8 马克群截图 110 prod CREATE TABLE 工单, 启用 gh-ost checkbox 仍可点
+                                       后端会拒 (9/16 DBA-bug-9), 但前端没说不能点, UX 误导
+                                 修法: 当 SQL 是纯非 ALTER (alter_count==0 + non_alter_count>0) 时,
+                                       把 enable_ghost checkbox disable + 旁边加 inline 警告
+                                 拍板: 10/8 阿达叔叔要求"非alter语句, 禁止人为选中gh-ost" -->
+                            <div id="sqlsubmit-ghost-block-warning" style="display: none; margin-top: -8px; padding: 10px 12px; background: rgba(176, 99, 103, 0.08); border: 1px solid rgba(176, 99, 103, 0.3); border-left: 4px solid #b06367; border-radius: 4px;">
+                                <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                    <i class="fa fa-ban" style="font-size: 18px; color: #b06367; flex-shrink: 0; margin-top: 2px;"></i>
+                                    <div style="flex: 1;">
+                                        <strong style="font-size: 13px; color: #b06367;" id="sqlsubmit-ghost-block-title">⚠️ gh-ost 模式不可用</strong>
+                                        <div style="margin-top: 4px; color: #b06367; font-size: 12px; line-height: 1.5;" id="sqlsubmit-ghost-block-detail">
+                                            本工单不含 ALTER TABLE 语句, gh-ost 模式不支持, 请改成 ALTER TABLE (或拆分成独立工单)
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             <!-- CUSTOM-MODIFIED: v0 gh-ost 智能模式加 gh_ost_mode 下拉框 @ 2026-09-17 @ mavis
                                  关联: docs/changelogs/2026-09-16_v0-gh-ost-smart-mode.md
                                  业务: 单工单多 ALTER 大小表混合时, 业务方可选智能/全部 gh-ost/全部原生
@@ -501,6 +519,9 @@
     <script>
         editor.on('change', function () {
             $('#btn-submitsql').addClass('disabled').prop("disabled", this);
+            {# CUSTOM-MODIFIED: 10/8 SQL 编辑器变更时实时检测 gh-ost 状态 @ 2026-10-08 @ mavis #}
+            {# 关联: docs/changelogs/2026-10-08-dba-bug-pure-non-alter-block-gh-ost.md #}
+            debouncedUpdateGhostState();
         });
 
         function checkRunDate(gap = 60) {
@@ -872,6 +893,88 @@
             }
         }
 
+        {# CUSTOM-MODIFIED: 10/8 纯非 ALTER 工单禁用 gh-ost checkbox + inline 警告 @ 2026-10-08 @ mavis #}
+        {# 关联: docs/changelogs/2026-10-08-dba-bug-pure-non-alter-block-gh-ost.md #}
+        {# 业务: 10/8 阿达叔叔要求"非alter语句禁止人为选中gh-ost" #}
+        {# 修法: applyGhostCheckboxState 检查 naData.disable_gh_ost 决定是否 disable + 显示 inline 警告 #}
+        function applyGhostCheckboxState(naData) {
+            var $cb = $("#enable_ghost");
+            var $warn = $("#sqlsubmit-ghost-block-warning");
+            var $title = $("#sqlsubmit-ghost-block-title");
+            var $detail = $("#sqlsubmit-ghost-block-detail");
+            if (!naData || !naData.disable_gh_ost) {
+                // ALTER 路径 (含纯 ALTER + mixed 之外的 empty 状态): 恢复可用
+                $cb.prop('disabled', false).css({
+                    'cursor': 'pointer',
+                    'opacity': '1',
+                });
+                $warn.hide();
+                return;
+            }
+            // pure_non_alter 或 mixed 状态: disable checkbox + 显示警告
+            $cb.prop('checked', false).prop('disabled', true).css({
+                'cursor': 'not-allowed',
+                'opacity': '0.5',
+            });
+            // 联动: disabled 时 gh_ost_mode 下拉框不应显示
+            $("#div-gh-ost-mode").hide();
+            if (naData.pure_non_alter) {
+                $title.text("⚠️ gh-ost 模式不可用 (本工单不含 ALTER TABLE)");
+                $detail.text(
+                    "本工单 " + naData.non_alter_count + " 条全是 "
+                    + (naData.type_counts && Object.keys(naData.type_counts).join(" / ") || "CREATE")
+                    + " 语句, 没有 ALTER TABLE, gh-ost 模式不支持. "
+                    + "请改成 ALTER TABLE (或拆分成独立工单)."
+                );
+            } else if (naData.is_mixed) {
+                $title.text("⚠️ gh-ost 模式不可用 (工单含混合 DDL)");
+                $detail.text(
+                    "本工单含 " + naData.alter_count + " 条 ALTER + "
+                    + naData.non_alter_count + " 条非 ALTER, gh-ost 模式不支持. "
+                    + "请拆分: CREATE / INSERT / UPDATE / DELETE 单独提交工单."
+                );
+            } else {
+                $title.text("⚠️ gh-ost 模式不可用");
+                $detail.text("本工单 SQL 不符合 gh-ost 模式, 请检查后重新提交.");
+            }
+            $warn.show();
+        }
+
+        {# CUSTOM-MODIFIED: 10/8 debounced 实时检测, SQL 编辑器改了就自动重算 non-ALTER 状态 @ 2026-10-08 @ mavis #}
+        {# 关联: docs/changelogs/2026-10-08-dba-bug-pure-non-alter-block-gh-ost.md #}
+        {# 业务: 不等用户点 "SQL 检测", 编辑器一变就实时 disable checkbox + inline 警告 #}
+        {# 边界: 500ms debounce, 避免打字速度过快触发 spam, 编辑器空时不调 #}
+        var __ghostStateDebounceTimer = null;
+        function debouncedUpdateGhostState() {
+            if (!window.editor || typeof editor.getValue !== "function") return;
+            var sqlContent = editor.getValue();
+            if (__ghostStateDebounceTimer) {
+                clearTimeout(__ghostStateDebounceTimer);
+            }
+            if (!sqlContent || !sqlContent.trim()) {
+                // SQL 为空时重置状态 (checkbox 恢复可用, 警告隐藏)
+                window.__nonAlterData = null;
+                applyGhostCheckboxState(null);
+                return;
+            }
+            __ghostStateDebounceTimer = setTimeout(function () {
+                $.ajax({
+                    type: "post",
+                    url: "/gh_ost/check_non_alter/",
+                    dataType: "json",
+                    data: { sql_content: sqlContent },
+                    success: function (naData) {
+                        window.__nonAlterData = naData;
+                        applyGhostCheckboxState(naData);
+                    },
+                    error: function () {
+                        // AJAX 失败不破坏状态, 保留旧值
+                        console.warn("check_non_alter AJAX 失败, 保留旧状态");
+                    }
+                });
+            }, 500);
+        }
+
         {# CUSTOM-MODIFIED: v0.3.x 字段 diff 联动函数 @ 2026-08-12 @ mavis #}
         {# ALTER TABLE 自动触发; 其他类型静默; 失败 fallback 不显示 #}
         function fetchColumnDiff(sqlContent, instanceId, dbName) {
@@ -907,11 +1010,16 @@
                 data: {sql_content: sqlContent},
                 success: function (naData) {
                     window.__nonAlterData = naData;
+                    {# CUSTOM-MODIFIED: 10/8 SQL 检测时同步应用 gh-ost 状态 @ 2026-10-08 @ mavis #}
+                    {# 关联: docs/changelogs/2026-10-08-dba-bug-pure-non-alter-block-gh-ost.md #}
+                    applyGhostCheckboxState(naData);
                     // 调用主 column_diff
                     doFetchColumnDiff(sqlContent, instanceId, dbName);
                 },
                 error: function () {
                     window.__nonAlterData = null;
+                    {# CUSTOM-MODIFIED: 10/8 SQL 检测失败也重置 gh-ost 状态 @ 2026-10-08 @ mavis #}
+                    applyGhostCheckboxState(null);
                     doFetchColumnDiff(sqlContent, instanceId, dbName);
                 }
             });

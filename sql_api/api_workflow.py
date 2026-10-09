@@ -214,7 +214,23 @@ class WorkflowList(generics.ListAPIView):
         ## 改为: 只写 SqlWorkflow.enable_gh_ost=True 标记, 由 detail 视图 lazy 在审批通过时自动启用
         ## 关联 changelog: docs/changelogs/2026-08-11_gh-ost-approval-gating.md
         ## @ 2026-08-11 @ mavis
-        if request.data.get("enable_ghost") and getattr(settings, "CUSTOM_GH_OST_ENABLED", False):
+        ## CUSTOM-MODIFIED: 纯非 ALTER 工单禁止 enable_gh_ost 兜底 @ 2026-10-08 @ mavis
+        ## 关联: docs/changelogs/2026-10-08-dba-bug-pure-non-alter-block-gh-ost.md
+        ## 业务: 前端 disable checkbox 之后, 业务方可能直接调 API (curl / postman / 浏览器 DevTools) 绕过
+        ##       后端必在 wf.enable_gh_ost=True 写入前再检查一次 SQL 是否纯非 ALTER, 不让 gh-ost 模式被滥用
+        if (request.data.get("enable_ghost")
+                and getattr(settings, "CUSTOM_GH_OST_ENABLED", False)):
+            from sql.extensions.ddl_gh_ost.views import _parse_all_statements
+            _na_parsed = _parse_all_statements(full_sql or "")
+            _na_alter = sum(1 for s in _na_parsed if s["stmt_type"] == "ALTER")
+            _na_other = sum(1 for s in _na_parsed if s["stmt_type"] not in ("ALTER", "USE", "OTHER"))
+            if _na_alter == 0 and _na_other > 0:
+                raise serializers.ValidationError({
+                    "errors": (
+                        f"工单不含 ALTER TABLE 语句 (含 {_na_other} 条 CREATE/INSERT/UPDATE/DELETE), "
+                        f"gh-ost 模式不支持, 请改成 ALTER TABLE (或拆分成独立工单)"
+                    )
+                })
             try:
                 wf = workflow_content.workflow
                 wf.enable_gh_ost = True

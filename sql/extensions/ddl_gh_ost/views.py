@@ -230,6 +230,27 @@ def check_non_alter(request: HttpRequest) -> JsonResponse:
     alter_count = sum(1 for s in parsed if s["stmt_type"] == "ALTER")
     use_count = sum(1 for s in parsed if s["stmt_type"] == "USE")
 
+    ## CUSTOM-MODIFIED: 加 pure_non_alter / is_pure_alter / disable_gh_ost 字段 @ 2026-10-08 @ mavis
+    ## 关联: docs/changelogs/2026-10-08-dba-bug-pure-non-alter-block-gh-ost.md
+    ## 业务: 10/8 马克群截图 110 prod CREATE TABLE 工单, "启用 gh-ost" checkbox 仍可点
+    ##       后端 _enable_ghost_for_workflow 会拒 (9/16 DBA-bug-9 已写), 但前端没说不能点
+    ##       业务方点了, 后端才报错, UX 误导
+    ## 修法: 加 3 字段让前端直接 disable checkbox + 警告
+    ##   - is_pure_alter: alter_count>0 + non_alter_count==0 (gh-ost 可启用)
+    ##   - pure_non_alter: alter_count==0 + non_alter_count>0 (gh-ost 必拒, 整个工单不能 gh-ost)
+    ##   - mixed: alter_count>0 + non_alter_count>0 (v1 已禁, 防御也禁)
+    ##   - disable_gh_ost: pure_non_alter || mixed (前端用它 disable checkbox)
+    is_pure_alter = alter_count > 0 and len(non_alter_stmts) == 0
+    pure_non_alter = alter_count == 0 and len(non_alter_stmts) > 0
+    is_mixed = alter_count > 0 and len(non_alter_stmts) > 0
+    disable_gh_ost = pure_non_alter or is_mixed
+    if pure_non_alter:
+        block_reason = "pure_non_alter"
+    elif is_mixed:
+        block_reason = "mixed"
+    else:
+        block_reason = ""
+
     return JsonResponse({
         "ok": True,
         "has_non_alter": has_non_alter,
@@ -237,6 +258,11 @@ def check_non_alter(request: HttpRequest) -> JsonResponse:
         "alter_count": alter_count,
         "use_count": use_count,
         "type_counts": dict(type_counts),
+        "is_pure_alter": is_pure_alter,
+        "pure_non_alter": pure_non_alter,
+        "is_mixed": is_mixed,
+        "disable_gh_ost": disable_gh_ost,
+        "block_reason": block_reason,
         # 前 3 条非 ALTER 示例 (用于前端展示)
         "examples": [
             {"stmt_type": s["stmt_type"], "full": s["full"][:200]}
@@ -244,9 +270,12 @@ def check_non_alter(request: HttpRequest) -> JsonResponse:
         ],
         # 建议文案
         "advice": (
-            "本工单含非 ALTER 语句 (CREATE/INSERT/UPDATE/DELETE), gh-ost 模式不支持, "
+            "本工单不含 ALTER TABLE 语句 (只有 CREATE/INSERT/UPDATE/DELETE), gh-ost 模式不支持, "
+            "请把工单改成 ALTER TABLE (或拆分成 ALTER + CREATE 独立工单)"
+        ) if pure_non_alter else (
+            "本工单含混合 DDL (ALTER + CREATE/INSERT/UPDATE/DELETE), gh-ost 模式不支持, "
             "请拆分: CREATE / INSERT / UPDATE / DELETE 单独提交工单"
-        ) if has_non_alter else (
+        ) if is_mixed else (
             "全部是 ALTER + USE, gh-ost 模式可以启用"
         ),
     })
