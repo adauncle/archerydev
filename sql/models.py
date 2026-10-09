@@ -287,6 +287,21 @@ SQL_WORKFLOW_CHOICES = (
 )
 
 
+# CUSTOM-MODIFIED: 补 WorkflowType 枚举类 (Archery 1.14.0 上游 dead code bug) @ 2026-10-09 @ mavis
+# 背景: 1.14.0 上游 WorkflowAuditMixin.workflow_type property 引用了 WorkflowType.SQL_REVIEW
+#        / WorkflowType.ARCHIVE / WorkflowType.QUERY, 但 class WorkflowType 整个项目不存在.
+#        之前是 dead code 没触发, 9/22 升级到 v1.14.0 c9236a0 后未补完.
+# 业务: v0 数据导出工单 (DBA-bug 17) 需要新增 WorkflowType.SQL_EXPORT=4, 顺便补这个上游 dead code.
+# 修法: 在 SQL_WORKFLOW_CHOICES 之后定义 class WorkflowType (IntegerChoices), 与 mixin / 审批流 / 数据库已有数据对齐:
+#        QUERY=1 (QueryPrivilegesApply), SQL_REVIEW=2 (SqlWorkflow), ARCHIVE=3 (ArchiveConfig), SQL_EXPORT=4 (新)
+# 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
+class WorkflowType(models.IntegerChoices):
+    QUERY = 1, "QUERY"
+    SQL_REVIEW = 2, "SQL_REVIEW"
+    ARCHIVE = 3, "ARCHIVE"
+    SQL_EXPORT = 4, "SQL_EXPORT"
+
+
 class WorkflowAuditMixin:
     @property
     def workflow_type(self):
@@ -296,6 +311,8 @@ class WorkflowAuditMixin:
             return WorkflowType.ARCHIVE
         elif isinstance(self, QueryPrivilegesApply):
             return WorkflowType.QUERY
+        elif isinstance(self, SqlExportWorkflow):
+            return WorkflowType.SQL_EXPORT
 
     @property
     def workflow_pk_field(self):
@@ -305,6 +322,8 @@ class WorkflowAuditMixin:
             return "id"
         elif isinstance(self, QueryPrivilegesApply):
             return "apply_id"
+        elif isinstance(self, SqlExportWorkflow):
+            return "id"
 
     def get_audit(self) -> Optional["WorkflowAudit"]:
         try:
@@ -918,6 +937,99 @@ class ArchiveConfig(models.Model, WorkflowAuditMixin):
         db_table = "archive_config"
         verbose_name = "归档配置表"
         verbose_name_plural = "归档配置表"
+
+
+# CUSTOM-MODIFIED: v0 数据导出工单 (DBA-bug 17) 新 model @ 2026-10-09 @ mavis
+# 业务: 业务方填导出 SQL -> 选审批人 -> 提交工单 -> 审批通过 -> 后台自动跑 SQL 导出 CSV/XLSX
+#       -> 邮件 + 钉钉通知交付给申请人. 解决 Archery 1.14.0 上游 sqlexport 半成品
+#       (有 UI 34KB 没后端) 的痛点.
+# 状态机:
+#   pending(待审批) -> manreviewing(审批中) -> approved(审批通过) -> exporting(导出中) -> finished(完成)
+#                                                  \-> rejected(驳回)
+# 字段:
+#   title         工单名 (业务方填)
+#   instance      源实例 (FK)
+#   db_name       源数据库
+#   sql_content   导出 SQL (SELECT only, 限 max_export_rows 1万行)
+#   export_format 导出格式 csv / xlsx (默认 csv)
+#   audit_auth_groups 审批权限组 (逗号分隔, 跟 SqlWorkflow 一致)
+#   status        WorkflowStatus (0=待审核 / 1=审核中 / 2=通过 / 3=驳回 / 4=执行中 / 5=完成)
+#   file_path     导出文件路径 (审批通过 + 执行完成后写入, /opt/archery/prod/exports/<id>.<format>)
+#   file_size     导出文件大小 (bytes)
+#   row_count     实际导出行数
+#   user_name     申请人
+#   user_display  申请人中文名
+#   create_time / approved_at / finished_at
+# 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
+class SqlExportWorkflow(models.Model, WorkflowAuditMixin):
+    """
+    数据导出工单表 (v0 新功能, 10/9 拍板)
+    """
+
+    EXPORT_FORMAT_CHOICES = (
+        ("csv", "CSV"),
+        ("xlsx", "XLSX"),
+    )
+
+    EXPORT_STATUS_CHOICES = (
+        (0, "待审核"),
+        (1, "审核中"),
+        (2, "审批通过"),
+        (3, "驳回"),
+        (4, "导出中"),
+        (5, "导出完成"),
+        (6, "导出失败"),
+    )
+
+    title = models.CharField("导出工单名称", max_length=50)
+    instance = models.ForeignKey(Instance, on_delete=models.CASCADE)
+    db_name = models.CharField("源数据库", max_length=64)
+    sql_content = models.TextField("导出 SQL (SELECT only)")
+    export_format = models.CharField(
+        "导出格式", max_length=10, choices=EXPORT_FORMAT_CHOICES, default="csv"
+    )
+    audit_auth_groups = models.CharField(
+        "审批权限组列表", max_length=255, blank=True, default=""
+    )
+
+    # 状态机字段
+    status = models.IntegerField(
+        "工单状态",
+        choices=EXPORT_STATUS_CHOICES,
+        default=0,
+    )
+    file_path = models.CharField(
+        "导出文件路径", max_length=500, blank=True, default=""
+    )
+    file_size = models.BigIntegerField("导出文件大小 (bytes)", default=0)
+    row_count = models.IntegerField("导出行数", default=0)
+    error_msg = models.TextField("错误信息", blank=True, default="")
+
+    # 申请人
+    user_name = models.CharField("申请人", max_length=30)
+    user_display = models.CharField(
+        "申请人中文名", max_length=50, blank=True, default=""
+    )
+    # 审批人
+    audit_user = models.CharField(
+        "最后审批人", max_length=30, blank=True, default=""
+    )
+
+    # 时间戳
+    create_time = models.DateTimeField("创建时间", auto_now_add=True)
+    approved_at = models.DateTimeField("审批通过时间", null=True, blank=True)
+    finished_at = models.DateTimeField("完成时间", null=True, blank=True)
+    sys_time = models.DateTimeField("系统时间", auto_now=True)
+
+    class Meta:
+        managed = True
+        db_table = "sql_export_workflow"
+        verbose_name = "数据导出工单"
+        verbose_name_plural = "数据导出工单"
+        ordering = ["-create_time"]
+
+    def __str__(self):
+        return f"[{self.id}] {self.title} ({self.user_name})"
 
 
 class ArchiveLog(models.Model):

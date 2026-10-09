@@ -6,6 +6,7 @@ import traceback
 from django.contrib.auth.decorators import permission_required
 from django.contrib.auth.models import Group
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.shortcuts import render, get_object_or_404
 from django.http import HttpResponseRedirect, FileResponse, Http404, JsonResponse
 from django.urls import reverse
@@ -34,6 +35,9 @@ from .models import (
     ArchiveConfig,
     AuditEntry,
     TwoFactorAuthConfig,
+    ## CUSTOM-MODIFIED: v0 数据导出工单 (DBA-bug 17) 加 SqlExportWorkflow + WorkflowAudit @ 2026-10-09 @ mavis
+    SqlExportWorkflow,
+    WorkflowAudit,
 )
 from sql.utils.workflow_audit import Audit, AuditV2, AuditException
 from sql.utils.sql_review import (
@@ -43,7 +47,7 @@ from sql.utils.sql_review import (
     can_view,
     can_rollback,
 )
-from common.utils.const import Const, WorkflowType, WorkflowAction
+from common.utils.const import Const, WorkflowType, WorkflowAction, WorkflowStatus
 from sql.utils.resource_group import user_groups, user_instances
 
 import logging
@@ -1377,3 +1381,115 @@ def sqlexport_pre_check(request):
         result["status"] = 1
         result["msg"] = check_result.rows[0].errormessage if check_result.rows else ""
     return JsonResponse(result)
+
+
+# CUSTOM-MODIFIED: v0 数据导出工单 (DBA-bug 17) 工单创建端点 @ 2026-10-09 @ mavis
+# 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
+# 业务: 业务方填导出 SQL -> 提交工单 -> 创建 SqlExportWorkflow + WorkflowAudit -> 走审批流
+#       审批通过 callback 留到 v0-beta (step 4) 做, 现阶段只创建工单
+# 拍板: 10/9 14:52 阿达叔叔 (按我建议: CSV+XLSX / 1万行 / 邮件 / 复用 SQL 审批流)
+@permission_required("sql.sqlexport_submit", raise_exception=True)
+def sqlexportsubmit_create(request):
+    """数据导出工单提交端点 (POST).
+    入参 (form data):
+        title             工单名 (≤50 字符, 必填)
+        instance_name     源实例 (必填)
+        db_name           源数据库 (必填)
+        sql_content       导出 SQL (SELECT only, 必填)
+        export_format     csv / xlsx (默认 csv)
+        audit_auth_groups 审批组 id 列表 (逗号分隔, 可空; 空 = auto pass 走 auto callback)
+    返回 (JsonResponse):
+        status=0, data={workflow_id, audit_id} 成功
+        status=1, msg=... 失败
+    """
+    if request.method != "POST":
+        return JsonResponse({"status": 1, "msg": "method not allowed"}, status=405)
+
+    user = request.user
+    title = (request.POST.get("title") or "").strip()
+    instance_name = (request.POST.get("instance_name") or "").strip()
+    db_name = (request.POST.get("db_name") or "").strip()
+    sql_content = (request.POST.get("sql_content") or "").strip()
+    export_format = (request.POST.get("export_format") or "csv").strip().lower()
+    audit_auth_groups = (request.POST.get("audit_auth_groups") or "").strip()
+
+    # 1. 基础参数校验
+    if not all([title, instance_name, db_name, sql_content]):
+        return JsonResponse({"status": 1, "msg": "工单名/实例/数据库/SQL 不能为空"})
+    if len(title) > 50:
+        return JsonResponse({"status": 1, "msg": "工单名不超过 50 字符"})
+    if export_format not in ("csv", "xlsx"):
+        return JsonResponse({"status": 1, "msg": "export_format 必须是 csv 或 xlsx"})
+
+    # 2. 实例校验
+    try:
+        instance = Instance.objects.get(instance_name=instance_name)
+    except Instance.DoesNotExist:
+        return JsonResponse({"status": 1, "msg": f"实例 {instance_name} 不存在"})
+
+    # 3. 预检 (复用 OffLineDownLoad.pre_count_check, 跟 sqlexport_pre_check 一致)
+    instance.sql_content = sql_content
+    instance.selected_db_name = db_name
+    try:
+        check_result = OffLineDownLoad().pre_count_check(workflow=instance)
+    except Exception as e:
+        return JsonResponse({"status": 1, "msg": f"预检异常: {e}"})
+    if check_result.error_count:
+        err_msg = check_result.rows[0].errormessage if check_result.rows else "未知错误"
+        return JsonResponse({"status": 1, "msg": f"预检失败: {err_msg}"})
+
+    # 4. 审批组解析 (逗号分隔 -> [int, ...]; 空 = auto pass)
+    audit_group_ids = []
+    if audit_auth_groups:
+        for g in audit_auth_groups.split(","):
+            g = g.strip()
+            if not g:
+                continue
+            try:
+                audit_group_ids.append(int(g))
+            except ValueError:
+                return JsonResponse({"status": 1, "msg": f"audit_auth_groups 含非数字: {g}"})
+    current_audit = str(audit_group_ids[0]) if audit_group_ids else "-1"
+    next_audit = str(audit_group_ids[1]) if len(audit_group_ids) > 1 else ""
+    audit_auth_groups_str = ",".join(str(g) for g in audit_group_ids)
+
+    # 5. 写 SqlExportWorkflow + WorkflowAudit (事务)
+    try:
+        with transaction.atomic():
+            export = SqlExportWorkflow.objects.create(
+                title=title,
+                instance=instance,
+                db_name=db_name,
+                sql_content=sql_content,
+                export_format=export_format,
+                audit_auth_groups=audit_auth_groups_str,
+                status=0,  # 待审核
+                user_name=user.username,
+                user_display=(getattr(user, "display", "") or ""),
+            )
+            audit = WorkflowAudit.objects.create(
+                workflow_type=WorkflowType.SQL_EXPORT,
+                workflow_id=export.id,
+                workflow_title=title,
+                group_id=0,
+                group_name="数据导出工单",
+                workflow_remark=sql_content[:100] if sql_content else "",
+                audit_auth_groups=audit_auth_groups_str,
+                current_audit=current_audit,
+                next_audit=next_audit,
+                current_status=WorkflowStatus.WAITING,
+                create_user=user.username,
+                create_user_display=(getattr(user, "display", "") or ""),
+            )
+    except Exception as e:
+        return JsonResponse({"status": 1, "msg": f"工单创建失败: {e}"})
+
+    return JsonResponse({
+        "status": 0,
+        "msg": "ok",
+        "data": {
+            "workflow_id": export.id,
+            "audit_id": audit.audit_id,
+            "title": export.title,
+        },
+    })

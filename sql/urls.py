@@ -177,4 +177,7 @@ urlpatterns = [
     path("sqlexportworkflow/", views.sqlexportworkflow),
     path("sqlexportsubmit/", views.sqlexportsubmit),
     path("sqlexport/pre_check/", views.sqlexport_pre_check),
+    ## CUSTOM-MODIFIED: v0 数据导出工单 (DBA-bug 17) 工单创建端点 @ 2026-10-09 @ mavis
+    ## 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
+    path("sqlexportsubmit_create/", views.sqlexportsubmit_create),
 ]

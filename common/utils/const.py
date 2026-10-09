@@ -14,6 +14,9 @@ class WorkflowType(models.IntegerChoices):
     QUERY = 1, "查询权限申请"
     SQL_REVIEW = 2, "SQL上线申请"
     ARCHIVE = 3, "数据归档申请"
+    ## CUSTOM-MODIFIED: v0 数据导出工单 (DBA-bug 17) 新增 SQL_EXPORT=4 @ 2026-10-09 @ mavis
+    ## 关联: docs/changelogs/2026-10-09_v0-sql-export-workflow.md
+    SQL_EXPORT = 4, "数据导出申请"
 
 
 class WorkflowStatus(models.IntegerChoices):
